@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'features/marketplace/data/marketplace_mock_data.dart';
 import 'features/marketplace/models/marketplace_models.dart';
+import 'features/marketplace/routes/marketplace_routes.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
-import 'features/marketplace/screens/offer_wizard_screen.dart';
 
 /// Point d'entrée principal de l'application EduLink (Module M5 — Marketplace).
 void main() {
   runApp(const EduLinkMarketplaceApp());
 }
 
-/// Widget racine de l'application qui configure le thème Material 3
-/// et définit `MarketplaceShell` comme écran d'accueil.
+/// Widget racine de l'application qui configure :
+/// - Le thème Material 3 (Charte graphique EduLink)
+/// - Le gestionnaire de routes nommées centralisé (`MarketplaceRoutes.onGenerateRoute`)
+/// - L'écran principal `MarketplaceShell`
 class EduLinkMarketplaceApp extends StatelessWidget {
   const EduLinkMarketplaceApp({super.key});
 
@@ -27,6 +29,8 @@ class EduLinkMarketplaceApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
+      initialRoute: MarketplaceRoutes.home,
+      onGenerateRoute: MarketplaceRoutes.onGenerateRoute,
       home: const MarketplaceShell(),
     );
   }
@@ -36,8 +40,9 @@ class EduLinkMarketplaceApp extends StatelessWidget {
 /// Contient :
 /// - L'AppBar supérieure avec le titre du module
 /// - Le bouton de bascule de rôle simulé (Étudiant <-> Enseignant vérifié) pour tester RoleAware & Règle 5
-/// - Le raccourci '+' vers l'assistant de création d'offre (`OfferWizardScreen`)
+/// - Le raccourci '+' vers l'assistant de création d'offre (`MarketplaceRoutes.offerWizard`)
 /// - Le corps principal `MarketplaceScreen` (Explorer | Mes offres | Mes commandes)
+/// - La barre de navigation inférieure à 5 onglets (Page 2 du Plan d'équipe) positionnée sur `Marketplace`
 class MarketplaceShell extends StatelessWidget {
   const MarketplaceShell({super.key});
 
@@ -130,15 +135,13 @@ class MarketplaceShell extends StatelessWidget {
                   ),
                 ),
               ),
-              // Bouton rapide pour pousser la route de l'Assistant de création d'offre (Métier 2)
+              // Bouton rapide pour pousser la route nommée de l'Assistant de création d'offre (Métier 2)
               IconButton(
                 tooltip: 'Publier une nouvelle offre (Assistant M5)',
                 onPressed: () {
-                  Navigator.push(
+                  Navigator.pushNamed(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const OfferWizardScreen(),
-                    ),
+                    MarketplaceRoutes.offerWizard,
                   );
                 },
                 icon: const Icon(
@@ -151,6 +154,64 @@ class MarketplaceShell extends StatelessWidget {
           ),
           // Écran principal de la Marketplace (avec la bascule Explorer | Mes offres | Mes commandes)
           body: const MarketplaceScreen(),
+
+          // Barre de navigation inférieure (5 onglets définis en Page 2 du Plan d'équipe)
+          // Positionnée sur l'onglet 3 : Marketplace (M5)
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: 3,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            indicatorColor: const Color(0xFFDBEAFE),
+            onDestinationSelected: (index) {
+              if (index != 3) {
+                const moduleNames = [
+                  'M2 · Cours',
+                  'M3 · Forum (Selim)',
+                  'M4 · Évaluations',
+                  'M5 · Marketplace',
+                  'M1 · Profil & Badges',
+                ];
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    duration: const Duration(seconds: 2),
+                    content: Text(
+                      'Onglet ${moduleNames[index]} : géré sur la branche de son responsable. Vous êtes sur M5 · Marketplace.',
+                    ),
+                  ),
+                );
+              }
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.menu_book_outlined),
+                selectedIcon: Icon(Icons.menu_book_rounded),
+                label: 'Cours',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.forum_outlined),
+                selectedIcon: Icon(Icons.forum_rounded),
+                label: 'Forum',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.quiz_outlined),
+                selectedIcon: Icon(Icons.quiz_rounded),
+                label: 'Évaluations',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.storefront_outlined),
+                selectedIcon: Icon(
+                  Icons.storefront_rounded,
+                  color: Color(0xFF1D4ED8),
+                ),
+                label: 'Marketplace',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline_rounded),
+                selectedIcon: Icon(Icons.person_rounded),
+                label: 'Profil',
+              ),
+            ],
+          ),
         );
       },
     );

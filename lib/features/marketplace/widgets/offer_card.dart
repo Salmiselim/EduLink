@@ -47,15 +47,23 @@ class OfferCard extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(compact ? 12 : 16),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Ligne du haut : Badge Type d'offre + Badge Origine du vendeur (Règle 5) + Bouton Favori
               Row(
                 children: [
-                  _TypeBadge(type: offer.type),
-                  const SizedBox(width: 8),
-                  _SellerOriginBadge(isTeacher: isTeacher),
-                  const Spacer(),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _TypeBadge(type: offer.type),
+                        _SellerOriginBadge(isTeacher: isTeacher),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   InkWell(
                     onTap: onFavoriteToggle,
                     borderRadius: BorderRadius.circular(20),
@@ -209,26 +217,20 @@ class OfferCard extends StatelessWidget {
                               color: Color(0xFFF59E0B),
                             ),
                             const SizedBox(width: 2),
-                            Text(
-                              offer.ratingCount > 0
-                                  ? '${offer.ratingAvg.toStringAsFixed(1)} (${offer.ratingCount})'
-                                  : 'Nouveau',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            if (!compact) ...[
-                              const SizedBox(width: 6),
-                              Text(
-                                '· ${offer.salesCount} ventes',
+                            Flexible(
+                              child: Text(
+                                offer.ratingCount > 0
+                                    ? '${offer.ratingAvg.toStringAsFixed(1)} (${offer.ratingCount})${!compact ? ' · ${offer.salesCount} ventes' : ''}'
+                                    : 'Nouveau',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade500,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade600,
                                 ),
                               ),
-                            ],
+                            ),
                           ],
                         ),
                       ],

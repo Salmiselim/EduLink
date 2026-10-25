@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
-import 'order_chat_screen.dart';
+import '../routes/marketplace_routes.dart';
 
 // ============================================================================
 // ROUTE POUSSÉE : ÉCRAN DE COMMANDE OU DE RÉSERVATION (OrderCheckoutScreen)
@@ -9,6 +9,7 @@ import 'order_chat_screen.dart';
 // « L'acheteur commande une ressource ou choisit un créneau libre d'un cours
 // particulier : la commande passe à "requested" ; le créneau est verrouillé
 // (transaction Firestore) pour éviter une double réservation. »
+// Inclut les contrôles de saisie et validations (`Form` + `TextFormField`).
 // ============================================================================
 
 class OrderCheckoutScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class OrderCheckoutScreen extends StatefulWidget {
 
 class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   final MarketplaceController _controller = MarketplaceController.instance;
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _noteController = TextEditingController();
 
   /// Quantité souhaitée (utilisée pour les ressources physiques)
@@ -34,6 +36,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
   /// Créneau de disponibilité sélectionné (utilisé pour les cours particuliers)
   AvailabilitySlot? _selectedSlot;
+
+  /// Message d'erreur de validation si aucun créneau n'est sélectionné
+  String? _slotValidationError;
 
   @override
   void initState() {
@@ -57,12 +62,27 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     super.dispose();
   }
 
-  /// Valide la commande (`POST /orders`), verrouille le créneau et redirige vers le Chat de la commande
+  /// Exécute tous les contrôles de saisie avant de créer la commande (`POST /orders`)
   void _confirmOrder() {
+    bool isSlotValid = true;
     if (widget.offer.type == OfferType.privateLesson && _selectedSlot == null) {
+      setState(() {
+        _slotValidationError =
+            'Sélection obligatoire : veuillez choisir un créneau horaire libre.';
+      });
+      isSlotValid = false;
+    } else {
+      setState(() => _slotValidationError = null);
+    }
+
+    final isFormValid = _formKey.currentState?.validate() ?? false;
+    if (!isSlotValid || !isFormValid) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Veuillez choisir un créneau libre pour réserver ce cours particulier.'),
+          backgroundColor: Color(0xFFDC2626),
+          content: Text(
+            'Veuillez corriger les champs en erreur avant de confirmer la commande.',
+          ),
         ),
       );
       return;
@@ -72,15 +92,14 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       offer: widget.offer,
       quantity: _quantity,
       selectedSlot: _selectedSlot,
-      note: _noteController.text,
+      note: _noteController.text.trim(),
     );
 
-    // Remplace l'écran de validation par l'écran de Chat lié à la commande créée
-    Navigator.pushReplacement(
+    // Navigation par route nommée vers le Chat lié à la commande créée
+    Navigator.pushReplacementNamed(
       context,
-      MaterialPageRoute(
-        builder: (_) => OrderChatScreen(orderId: createdOrder.id),
-      ),
+      MarketplaceRoutes.orderChat,
+      arguments: OrderChatArgs(orderId: createdOrder.id),
     );
   }
 
@@ -103,111 +122,117 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 1. Carte récapitulative de l'offre et du vendeur
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: offer.type.color.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
+      body: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // 1. Carte récapitulative de l'offre et du vendeur
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: offer.type.color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(offer.type.icon, color: offer.type.color),
                       ),
-                      child: Icon(offer.type.icon, color: offer.type.color),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            offer.type.label,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: offer.type.color,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              offer.type.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: offer.type.color,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            offer.title,
-                            style: const TextStyle(
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
+                            const SizedBox(height: 2),
+                            Text(
+                              offer.title,
+                              style: const TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Divider(height: 1),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(
-                      offer.sellerRole == SellerRole.teacher
-                          ? Icons.verified_rounded
-                          : Icons.person_outline_rounded,
-                      size: 16,
-                      color: const Color(0xFF2563EB),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${offer.sellerName} (${offer.sellerRole.badgeLabel})',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF334155),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(
+                        offer.sellerRole == SellerRole.teacher
+                            ? Icons.verified_rounded
+                            : Icons.person_outline_rounded,
+                        size: 16,
+                        color: const Color(0xFF2563EB),
                       ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      offer.formattedPrice,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${offer.sellerName} (${offer.sellerRole.badgeLabel})',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const Spacer(),
+                      Text(
+                        offer.formattedPrice,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-          // 2A. Cas d'un Cours particulier (`private_lesson`) : sélection d'un créneau libre
-          if (offer.type == OfferType.privateLesson) ...[
-            _SectionCard(
-              title: '1. Choisir un créneau de disponibilité',
-              subtitle:
-                  'Le créneau choisi sera verrouillé par une transaction Firestore pour éviter toute double réservation.',
-              icon: Icons.calendar_month_rounded,
-              child: slots.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Aucun créneau publié pour le moment.',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    )
-                  : Column(
-                      children: slots.map((slot) {
+            // 2A. Cas d'un Cours particulier (`private_lesson`) : sélection d'un créneau libre
+            if (offer.type == OfferType.privateLesson) ...[
+              _SectionCard(
+                title: '1. Choisir un créneau de disponibilité *',
+                subtitle:
+                    'Le créneau choisi sera verrouillé par une transaction Firestore pour éviter toute double réservation.',
+                icon: Icons.calendar_month_rounded,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (slots.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Aucun créneau publié pour le moment.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
+                    else
+                      ...slots.map((slot) {
                         final isSelected = _selectedSlot?.id == slot.id;
                         return Container(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -230,7 +255,10 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                           child: ListTile(
                             onTap: slot.isBooked
                                 ? null
-                                : () => setState(() => _selectedSlot = slot),
+                                : () => setState(() {
+                                      _selectedSlot = slot;
+                                      _slotValidationError = null;
+                                    }),
                             leading: Icon(
                               slot.isBooked
                                   ? Icons.lock_outline_rounded
@@ -287,210 +315,236 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                             ),
                           ),
                         );
-                      }).toList(),
-                    ),
-            ),
-            const SizedBox(height: 16),
-            _SectionCard(
-              title: 'Modalité du cours particulier',
-              subtitle: offer.mode == DeliveryMode.online
-                  ? 'En ligne via Jitsi Meet : le lien de la salle de visio sera généré automatiquement dès l\'acceptation par le vendeur.'
-                  : 'En présentiel : ${offer.location?.address ?? "Lieu convenu avec le tuteur"}',
-              icon: offer.mode == DeliveryMode.online
-                  ? Icons.videocam_rounded
-                  : Icons.location_on_rounded,
-              child: const SizedBox.shrink(),
-            ),
-          ],
-
-          // 2B. Cas d'une Ressource physique (`resource_physical`) : quantité & adresse de remise
-          if (offer.type == OfferType.resourcePhysical) ...[
-            _SectionCard(
-              title: '1. Quantité et remise en main propre',
-              subtitle:
-                  'État : ${offer.condition?.label ?? "Bon état"} · Stock disponible : $maxStock exemplaire(s)',
-              icon: Icons.inventory_2_rounded,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Quantité souhaitée :',
-                        style: TextStyle(
+                      }),
+                    if (_slotValidationError != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _slotValidationError!,
+                        style: const TextStyle(
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          fontSize: 14,
+                          color: Color(0xFFDC2626),
                         ),
                       ),
-                      const Spacer(),
-                      IconButton.outlined(
-                        onPressed: _quantity > 1
-                            ? () => setState(() => _quantity--)
-                            : null,
-                        icon: const Icon(Icons.remove_rounded, size: 18),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Text(
-                          '$_quantity',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _SectionCard(
+                title: 'Modalité du cours particulier',
+                subtitle: offer.mode == DeliveryMode.online
+                    ? 'En ligne via Jitsi Meet : le lien de la salle de visio sera généré automatiquement dès l\'acceptation par le vendeur.'
+                    : 'En présentiel : ${offer.location?.address ?? "Lieu convenu avec le tuteur"}',
+                icon: offer.mode == DeliveryMode.online
+                    ? Icons.videocam_rounded
+                    : Icons.location_on_rounded,
+                child: const SizedBox.shrink(),
+              ),
+            ],
+
+            // 2B. Cas d'une Ressource physique (`resource_physical`) : quantité & adresse de remise
+            if (offer.type == OfferType.resourcePhysical) ...[
+              _SectionCard(
+                title: '1. Quantité et remise en main propre',
+                subtitle:
+                    'État : ${offer.condition?.label ?? "Bon état"} · Stock disponible : $maxStock exemplaire(s)',
+                icon: Icons.inventory_2_rounded,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Quantité souhaitée :',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
                           ),
                         ),
+                        const Spacer(),
+                        IconButton.outlined(
+                          onPressed: _quantity > 1
+                              ? () => setState(() => _quantity--)
+                              : null,
+                          icon: const Icon(Icons.remove_rounded, size: 18),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Text(
+                            '$_quantity',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton.outlined(
+                          onPressed: _quantity < maxStock
+                              ? () => setState(() => _quantity++)
+                              : null,
+                          icon: const Icon(Icons.add_rounded, size: 18),
+                        ),
+                      ],
+                    ),
+                    if (offer.location != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.map_outlined,
+                              size: 18,
+                              color: Color(0xFF2563EB),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Lieu de remise (OpenStreetMap) : ${offer.location!.address}',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      IconButton.outlined(
-                        onPressed: _quantity < maxStock
-                            ? () => setState(() => _quantity++)
-                            : null,
-                        icon: const Icon(Icons.add_rounded, size: 18),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+
+            // 2C. Cas d'une Ressource numérique (`resource_digital`) : information de téléchargement privé
+            if (offer.type == OfferType.resourceDigital) ...[
+              _SectionCard(
+                title: '1. Accès au fichier numérique (PDF)',
+                subtitle: offer.isFree
+                    ? 'Cette ressource est gratuite (0 TND) : le téléchargement sera disponible immédiatement après validation.'
+                    : 'Le fichier est stocké en privé sur Cloudinary. Le téléchargement sera débloqué dès l\'acceptation de la commande par le vendeur.',
+                icon: Icons.cloud_download_outlined,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.picture_as_pdf_rounded,
+                        color: Color(0xFF2563EB),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          offer.fileSizeLabel ?? 'Document PDF haute résolution',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E3A8A),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  if (offer.location != null) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.map_outlined,
-                            size: 18,
-                            color: Color(0xFF2563EB),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // 3. Champ de message initial à destination du vendeur (`orders.note`) avec contrôle de saisie
+            _SectionCard(
+              title: '2. Message pour le vendeur (`orders.note`) *',
+              subtitle:
+                  'Ce message ouvrira automatiquement la conversation liée à votre commande.',
+              icon: Icons.chat_bubble_outline_rounded,
+              child: TextFormField(
+                controller: _noteController,
+                maxLines: 3,
+                maxLength: 300,
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isEmpty) {
+                    return 'Veuillez écrire un message au vendeur pour préciser votre demande.';
+                  }
+                  if (text.length < 10) {
+                    return 'Votre message doit contenir au moins 10 caractères (${text.length}/10).';
+                  }
+                  return null;
+                },
+                decoration: InputDecoration(
+                  labelText: 'Votre message ou précision *',
+                  hintText: offer.type == OfferType.privateLesson
+                      ? 'Ex: Bonjour, j\'aimerais réviser le chapitre sur Dijkstra et les arbres AVL...'
+                      : 'Ex: Bonjour, seriez-vous disponible demain à 12h devant la bibliothèque ?',
+                  helperText: 'Minimum 10 caractères requis',
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // 4. Encadré d'information sur le paiement hors-application (Page 7)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.handshake_outlined,
+                    color: Color(0xFFD97706),
+                    size: 22,
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Paiement hors application',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF92400E),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Lieu de remise (OpenStreetMap) : ${offer.location!.address}',
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF334155),
-                              ),
-                            ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Le règlement s\'effectue en main propre ou selon les modalités convenues entre étudiant/enseignant dans le chat de la commande.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF92400E),
+                            height: 1.35,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
           ],
-
-          // 2C. Cas d'une Ressource numérique (`resource_digital`) : information de téléchargement privé
-          if (offer.type == OfferType.resourceDigital) ...[
-            _SectionCard(
-              title: '1. Accès au fichier numérique (PDF)',
-              subtitle: offer.isFree
-                  ? 'Cette ressource est gratuite (0 TND) : le téléchargement sera disponible immédiatement après validation.'
-                  : 'Le fichier est stocké en privé sur Cloudinary. Le téléchargement sera débloqué dès l\'acceptation de la commande par le vendeur.',
-              icon: Icons.cloud_download_outlined,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.picture_as_pdf_rounded,
-                      color: Color(0xFF2563EB),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        offer.fileSizeLabel ?? 'Document PDF haute résolution',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E3A8A),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 16),
-
-          // 3. Champ de message initial à destination du vendeur (`orders.note`)
-          _SectionCard(
-            title: '2. Message pour le vendeur (`orders.note`)',
-            subtitle:
-                'Ce message ouvrira automatiquement la conversation liée à votre commande.',
-            icon: Icons.chat_bubble_outline_rounded,
-            child: TextField(
-              controller: _noteController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: offer.type == OfferType.privateLesson
-                    ? 'Précisez les chapitres ou exercices que vous souhaitez travailler...'
-                    : 'Proposez un horaire de rencontre sur le campus ou posez une question...',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // 4. Encadré d'information sur le paiement hors-application (Page 7)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFBEB),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFFDE68A)),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.handshake_outlined,
-                  color: Color(0xFFD97706),
-                  size: 22,
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Paiement hors application',
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF92400E),
-                        ),
-                      ),
-                      SizedBox(height: 3),
-                      Text(
-                        'Le règlement s\'effectue en main propre ou selon les modalités convenues entre étudiant/enseignant dans le chat de la commande.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF92400E),
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
 
       // Barre inférieure : Total en TND + Bouton de validation

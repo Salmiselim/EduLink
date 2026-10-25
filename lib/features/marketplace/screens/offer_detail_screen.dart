@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
-import 'order_checkout_screen.dart';
+import '../routes/marketplace_routes.dart';
 
 // ============================================================================
 // ROUTE POUSSÉE : DÉTAIL D'UNE OFFRE (OfferDetailScreen)
@@ -13,7 +13,7 @@ import 'order_checkout_screen.dart';
 // - Les créneaux horaires libres/réservés (`availabilities`) si cours particulier
 // - Le profil public du vendeur et ses badges M5 (Liaison L9)
 // - Les avis vérifiés des acheteurs (`GET /reviews`)
-// - Le bouton de signalement (`POST /reports`, masquage auto à 3 signalements)
+// - Le bouton de signalement (`POST /reports`, masquage auto à 3 signalements) avec validation
 // - Le bouton d'achat / réservation (bloqué si c'est sa propre offre — Règle 5)
 // ============================================================================
 
@@ -45,6 +45,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
   }
 
   /// Affiche la boîte de dialogue de signalement d'une offre (`POST /reports`, Page 8 Métier 1)
+  /// Inclut un contrôle de saisie si l'utilisateur sélectionne « Autre motif ».
   void _showReportDialog(Offer offer) {
     String selectedReason = 'Contenu inapproprié ou trompeur';
     final reasons = [
@@ -52,7 +53,10 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
       'Violation de droits d\'auteur / plagiat',
       'Prix abusif ou arnaque suspectée',
       'Offre hors sujet académique',
+      'Autre motif (préciser)',
     ];
+    final formKey = GlobalKey<FormState>();
+    final detailsCtrl = TextEditingController();
 
     showDialog(
       context: context,
@@ -70,39 +74,68 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Une offre est masquée automatiquement à partir de 3 signalements (actuellement : ${offer.reportsCount}/3).',
-                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 12),
-              RadioGroup<String>(
-                groupValue: selectedReason,
-                onChanged: (val) {
-                  if (val != null) {
-                    setModalState(() => selectedReason = val);
-                  }
-                },
-                child: Column(
-                  children: reasons
-                      .map(
-                        (reason) => RadioListTile<String>(
-                          value: reason,
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            reason,
-                            style: const TextStyle(fontSize: 13.5),
-                          ),
+          content: Form(
+            key: formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Une offre est masquée automatiquement à partir de 3 signalements (actuellement : ${offer.reportsCount}/3).',
+                    style:
+                        TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 12),
+                  RadioGroup<String>(
+                    groupValue: selectedReason,
+                    onChanged: (val) {
+                      if (val != null) {
+                        setModalState(() => selectedReason = val);
+                      }
+                    },
+                    child: Column(
+                      children: reasons
+                          .map(
+                            (reason) => RadioListTile<String>(
+                              value: reason,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                reason,
+                                style: const TextStyle(fontSize: 13.5),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  if (selectedReason == 'Autre motif (préciser)') ...[
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: detailsCtrl,
+                      maxLength: 150,
+                      validator: (val) {
+                        final text = val?.trim() ?? '';
+                        if (text.length < 6) {
+                          return 'Veuillez préciser le motif (min. 6 caractères).';
+                        }
+                        return null;
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Précisez le motif du signalement *',
+                        hintText: 'Ex: Lien invalide ou description erronée...',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                      )
-                      .toList(),
-                ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -111,8 +144,14 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
             ),
             FilledButton(
               onPressed: () {
+                if (!(formKey.currentState?.validate() ?? true)) {
+                  return;
+                }
+                final reasonToSend = selectedReason == 'Autre motif (préciser)'
+                    ? detailsCtrl.text.trim()
+                    : selectedReason;
                 final autoHidden =
-                    _controller.reportOffer(offer.id, selectedReason);
+                    _controller.reportOffer(offer.id, reasonToSend);
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -698,7 +737,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
             ],
           ),
 
-          // Barre d'action inférieure : affiche le prix et pousse `OrderCheckoutScreen`
+          // Barre d'action inférieure : affiche le prix et pousse la route nommée `MarketplaceRoutes.orderCheckout`
           // Règle 5 (Page 2) : Désactivée si `isOwnOffer` (on ne peut ni acheter ni réserver sa propre offre)
           bottomNavigationBar: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
@@ -744,13 +783,12 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                                 offer.status == OfferStatus.soldOut
                             ? null
                             : () {
-                                Navigator.push(
+                                Navigator.pushNamed(
                                   context,
-                                  MaterialPageRoute(
-                                    builder: (_) => OrderCheckoutScreen(
-                                      offer: offer,
-                                      preselectedSlot: _highlightedSlot,
-                                    ),
+                                  MarketplaceRoutes.orderCheckout,
+                                  arguments: OrderCheckoutArgs(
+                                    offer: offer,
+                                    preselectedSlot: _highlightedSlot,
                                   ),
                                 );
                               },

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
+import '../routes/marketplace_routes.dart';
 import '../widgets/offer_card.dart';
 import '../widgets/review_dialog.dart';
-import 'offer_detail_screen.dart';
-import 'offer_wizard_screen.dart';
-import 'order_chat_screen.dart';
 
 // ============================================================================
 // ÉCRAN PRINCIPAL DE L'ONGLET MARKETPLACE (MarketplaceScreen)
@@ -24,6 +22,9 @@ class MarketplaceScreen extends StatefulWidget {
 
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final MarketplaceController _controller = MarketplaceController.instance;
+
+  /// Expression régulière validant le format horaire 24h `HH:mm`
+  static final RegExp _timeRegex = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
 
   /// Bascule principale en haut de l'écran :
   /// - 0 : « Explorer » (Catalogue public, recherche, filtres, favoris, recommandations L6)
@@ -426,8 +427,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 
   /// Ouvre la feuille modale permettant au vendeur de gérer les créneaux horaires
-  /// d'un cours particulier (`availabilities` CRUD, Page 8)
+  /// d'un cours particulier (`availabilities` CRUD, Page 8) avec contrôles de saisie (`HH:mm`).
   void _openManageSlotsModal(Offer offer) {
+    final slotFormKey = GlobalKey<FormState>();
     final dateCtrl = TextEditingController(text: 'Sam 31 Oct 2026');
     final startCtrl = TextEditingController(text: '14:00');
     final endCtrl = TextEditingController(text: '15:00');
@@ -447,129 +449,199 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
           return Padding(
             padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.calendar_month_rounded,
-                      color: Color(0xFF7C3AED),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Créneaux (`availabilities` CRUD) — ${offer.title}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w800,
-                        ),
+            child: Form(
+              key: slotFormKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.calendar_month_rounded,
+                        color: Color(0xFF7C3AED),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ...slots.map(
-                  (slot) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      slot.isBooked
-                          ? Icons.lock_rounded
-                          : Icons.event_available_rounded,
-                      color: slot.isBooked
-                          ? const Color(0xFFD97706)
-                          : const Color(0xFF16A34A),
-                    ),
-                    title: Text(
-                      '${slot.date} · ${slot.startTime} - ${slot.endTime}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      slot.isBooked
-                          ? 'Créneau réservé (verrouillé par commande)'
-                          : 'Libre à la réservation',
-                    ),
-                    trailing: slot.isBooked
-                        ? null
-                        : IconButton(
-                            onPressed: () => _controller.removeAvailabilitySlot(
-                              offer.id,
-                              slot.id,
-                            ),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              color: Color(0xFFDC2626),
-                            ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Créneaux (`availabilities` CRUD) — ${offer.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
                           ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const Divider(height: 20),
-                const Text(
-                  'Ajouter un nouveau créneau horaire',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: dateCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Date',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                        ),
+                  const SizedBox(height: 12),
+                  ...slots.map(
+                    (slot) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        slot.isBooked
+                            ? Icons.lock_rounded
+                            : Icons.event_available_rounded,
+                        color: slot.isBooked
+                            ? const Color(0xFFD97706)
+                            : const Color(0xFF16A34A),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: startCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Début',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                        ),
+                      title: Text(
+                        '${slot.date} · ${slot.startTime} - ${slot.endTime}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: endCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Fin',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                        ),
+                      subtitle: Text(
+                        slot.isBooked
+                            ? 'Créneau réservé (verrouillé par commande)'
+                            : 'Libre à la réservation',
                       ),
+                      trailing: slot.isBooked
+                          ? null
+                          : IconButton(
+                              onPressed: () =>
+                                  _controller.removeAvailabilitySlot(
+                                offer.id,
+                                slot.id,
+                              ),
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Color(0xFFDC2626),
+                              ),
+                            ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      _controller.addAvailabilitySlot(
-                        offer.id,
-                        dateCtrl.text.trim(),
-                        startCtrl.text.trim(),
-                        endCtrl.text.trim(),
-                      );
-                    },
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('Ajouter ce créneau'),
                   ),
-                ),
-              ],
+                  const Divider(height: 20),
+                  const Text(
+                    'Ajouter un nouveau créneau horaire *',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: dateCtrl,
+                          validator: (v) {
+                            if (v == null || v.trim().length < 5) {
+                              return 'Date requise';
+                            }
+                            return null;
+                          },
+                          decoration: const InputDecoration(
+                            labelText: 'Date *',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: startCtrl,
+                          validator: (v) {
+                            if (v == null || !_timeRegex.hasMatch(v.trim())) {
+                              return 'HH:mm';
+                            }
+                            return null;
+                          },
+                          decoration: const InputDecoration(
+                            labelText: 'Début *',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: endCtrl,
+                          validator: (v) {
+                            final text = v?.trim() ?? '';
+                            if (!_timeRegex.hasMatch(text)) {
+                              return 'HH:mm';
+                            }
+                            final start = startCtrl.text.trim();
+                            if (_timeRegex.hasMatch(start) &&
+                                text.compareTo(start) <= 0) {
+                              return '> Début';
+                            }
+                            return null;
+                          },
+                          decoration: const InputDecoration(
+                            labelText: 'Fin *',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        if (slotFormKey.currentState!.validate()) {
+                          _controller.addAvailabilitySlot(
+                            offer.id,
+                            dateCtrl.text.trim(),
+                            startCtrl.text.trim(),
+                            endCtrl.text.trim(),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Ajouter ce créneau'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Affiche une boîte de dialogue de confirmation avant la suppression d'une offre (`DELETE /offers/:id`)
+  void _confirmDeleteOffer(Offer offer) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          'Confirmer la suppression',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          'Voulez-vous vraiment supprimer définitivement l\'offre « ${offer.title} » ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () {
+              _controller.deleteOffer(offer.id);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Offre supprimée (DELETE /offers/:id).'),
+                ),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+            child: const Text('Supprimer'),
+          ),
+        ],
       ),
     );
   }
@@ -653,11 +725,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           floatingActionButton: _topSectionIndex == 1
               ? FloatingActionButton.extended(
                   onPressed: () {
-                    Navigator.push(
+                    Navigator.pushNamed(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const OfferWizardScreen(),
-                      ),
+                      MarketplaceRoutes.offerWizard,
                     );
                   },
                   backgroundColor: const Color(0xFF2563EB),
@@ -678,7 +748,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   Widget _buildExplorerView() {
     final catalogOffers = _getFilteredCatalogOffers();
     final recommendedOffers = _controller.allOffers
-        .where((o) => o.status == OfferStatus.published && o.isRecommendedByCourse)
+        .where(
+          (o) => o.status == OfferStatus.published && o.isRecommendedByCourse,
+        )
         .toList();
 
     return ListView(
@@ -692,7 +764,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  hintText: 'Rechercher une ressource, un tuteur, une matière...',
+                  hintText:
+                      'Rechercher une ressource, un tuteur, une matière...',
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
@@ -731,9 +804,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             IconButton.filledTonal(
               tooltip: 'Afficher uniquement mes favoris',
               style: IconButton.styleFrom(
-                backgroundColor: _onlyFavorites
-                    ? const Color(0xFFFEE2E2)
-                    : null,
+                backgroundColor:
+                    _onlyFavorites ? const Color(0xFFFEE2E2) : null,
               ),
               onPressed: () =>
                   setState(() => _onlyFavorites = !_onlyFavorites),
@@ -833,7 +905,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 195,
+            height: 260,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: recommendedOffers.length,
@@ -848,11 +920,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     isFavorite: _controller.isFavorite(rec.id),
                     onFavoriteToggle: () => _controller.toggleFavorite(rec.id),
                     onTap: () {
-                      Navigator.push(
+                      Navigator.pushNamed(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => OfferDetailScreen(offerId: rec.id),
-                        ),
+                        MarketplaceRoutes.offerDetail,
+                        arguments: OfferDetailArgs(offerId: rec.id),
                       );
                     },
                   ),
@@ -877,11 +948,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             const Spacer(),
             TextButton.icon(
               onPressed: () {
-                Navigator.push(
+                Navigator.pushNamed(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const OfferWizardScreen(),
-                  ),
+                  MarketplaceRoutes.offerWizard,
                 );
               },
               icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
@@ -928,11 +997,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 isFavorite: _controller.isFavorite(offer.id),
                 onFavoriteToggle: () => _controller.toggleFavorite(offer.id),
                 onTap: () {
-                  Navigator.push(
+                  Navigator.pushNamed(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => OfferDetailScreen(offerId: offer.id),
-                    ),
+                    MarketplaceRoutes.offerDetail,
+                    arguments: OfferDetailArgs(offerId: offer.id),
                   );
                 },
               ),
@@ -1113,7 +1181,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         ),
         const SizedBox(height: 12),
 
-        // 3. Liste des offres du vendeur avec actions rapides
+        // 3. Liste des offres du vendeur avec actions CRUD complètes
         ...filteredMyOffers.map((offer) {
           final slotsCount = _controller.getSlotsForOffer(offer.id).length;
           return Container(
@@ -1163,11 +1231,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 const SizedBox(height: 8),
                 InkWell(
                   onTap: () {
-                    Navigator.push(
+                    Navigator.pushNamed(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => OfferDetailScreen(offerId: offer.id),
-                      ),
+                      MarketplaceRoutes.offerDetail,
+                      arguments: OfferDetailArgs(offerId: offer.id),
                     );
                   },
                   child: Text(
@@ -1202,7 +1269,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         style: OutlinedButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                         ),
-                        icon: const Icon(Icons.visibility_off_outlined, size: 16),
+                        icon:
+                            const Icon(Icons.visibility_off_outlined, size: 16),
                         label: const Text('Masquer'),
                       )
                     else
@@ -1218,23 +1286,37 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         icon: const Icon(Icons.publish_rounded, size: 16),
                         label: const Text('Publier'),
                       ),
+                    // Bouton d'édition d'offre (`PATCH /offers/:id`)
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pushNamed(
+                          context,
+                          MarketplaceRoutes.offerWizard,
+                          arguments: OfferWizardArgs(existingOffer: offer),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Modifier'),
+                    ),
                     if (offer.type == OfferType.privateLesson)
                       OutlinedButton.icon(
                         onPressed: () => _openManageSlotsModal(offer),
                         style: OutlinedButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                         ),
-                        icon: const Icon(Icons.calendar_month_rounded, size: 16),
+                        icon:
+                            const Icon(Icons.calendar_month_rounded, size: 16),
                         label: Text('Créneaux ($slotsCount)'),
                       ),
                     OutlinedButton.icon(
                       onPressed: () {
-                        Navigator.push(
+                        Navigator.pushNamed(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                OfferDetailScreen(offerId: offer.id),
-                          ),
+                          MarketplaceRoutes.offerDetail,
+                          arguments: OfferDetailArgs(offerId: offer.id),
                         );
                       },
                       style: OutlinedButton.styleFrom(
@@ -1245,7 +1327,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     ),
                     IconButton(
                       tooltip: 'Supprimer cette offre',
-                      onPressed: () => _controller.deleteOffer(offer.id),
+                      onPressed: () => _confirmDeleteOffer(offer),
                       icon: const Icon(
                         Icons.delete_outline_rounded,
                         color: Color(0xFFDC2626),
@@ -1388,11 +1470,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               order: order,
               isSellerView: _viewAsSellerOrders,
               onOpenChat: () {
-                Navigator.push(
+                Navigator.pushNamed(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => OrderChatScreen(orderId: order.id),
-                  ),
+                  MarketplaceRoutes.orderChat,
+                  arguments: OrderChatArgs(orderId: order.id),
                 );
               },
               onUpdateStatus: (newStatus) {

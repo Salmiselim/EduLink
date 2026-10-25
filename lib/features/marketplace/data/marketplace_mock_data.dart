@@ -161,6 +161,18 @@ class MarketplaceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Met à jour une offre existante via l'Assistant d'offre (`PATCH /offers/:id`)
+  void updateOffer(Offer updatedOffer, {List<AvailabilitySlot>? slots}) {
+    final idx = _offers.indexWhere((o) => o.id == updatedOffer.id);
+    if (idx != -1) {
+      _offers[idx] = updatedOffer;
+      if (slots != null) {
+        _slotsByOffer[updatedOffer.id] = List.from(slots);
+      }
+      notifyListeners();
+    }
+  }
+
   /// Change le statut d'une offre : publier ou masquer (`PATCH /offers/:id/publish|hide`)
   void updateOfferStatus(String offerId, OfferStatus newStatus) {
     final idx = _offers.indexWhere((o) => o.id == offerId);
