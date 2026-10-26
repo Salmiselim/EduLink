@@ -1,122 +1,251 @@
 import 'package:flutter/material.dart';
+import 'features/evaluations/data/evaluations_mock_data.dart';
+import 'features/evaluations/models/evaluations_models.dart';
+import 'features/evaluations/routes/evaluations_routes.dart';
+import 'features/evaluations/screens/evaluations_screen.dart';
+import 'features/evaluations/widgets/eval_ui.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const EduLinkEvaluationsApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class EduLinkEvaluationsApp extends StatelessWidget {
+  const EduLinkEvaluationsApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'EduLink — Évaluations',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: EduColors.primary,
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: EduColors.scaffold,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      onGenerateRoute: EvaluationsRoutes.onGenerateRoute,
+      home: const EvaluationsShell(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+class EvaluationsShell extends StatelessWidget {
+  const EvaluationsShell({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+    final controller = EvaluationsController.instance;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isTeacher = controller.currentUserRole == UserRole.teacher;
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            elevation: 0,
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: EduColors.primary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.quiz_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'EduLink · Évaluations',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          color: EduColors.text,
+                        ),
+                      ),
+                      Text(
+                        'Quiz, dépôts, documents & carnet de notes',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: EduColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ActionChip(
+                  tooltip: 'Changer de rôle simulé (RoleAware)',
+                  onPressed: controller.toggleCurrentUserRole,
+                  backgroundColor:
+                      isTeacher ? EduColors.infoBg : EduColors.neutralBg,
+                  avatar: Icon(
+                    isTeacher
+                        ? Icons.verified_rounded
+                        : Icons.school_outlined,
+                    size: 16,
+                    color: isTeacher
+                        ? const Color(0xFF1D4ED8)
+                        : const Color(0xFF475569),
+                  ),
+                  label: Text(
+                    isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isTeacher
+                          ? const Color(0xFF1D4ED8)
+                          : const Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          body: const EvaluationsScreen(),
+          floatingActionButton: isTeacher
+              ? FloatingActionButton.extended(
+                  onPressed: () => _newEvalSheet(context),
+                  backgroundColor: EduColors.primary,
+                  foregroundColor: Colors.white,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Nouvelle évaluation'),
+                )
+              : null,
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: 2,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            indicatorColor: EduColors.infoBg,
+            onDestinationSelected: (index) {
+              if (index != 2) {
+                const names = [
+                  'M2 · Cours',
+                  'M3 · Forum (Selim)',
+                  'M4 · Évaluations',
+                  'M5 · Marketplace',
+                  'M1 · Profil & Badges',
+                ];
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    duration: const Duration(seconds: 2),
+                    content: Text(
+                      'Onglet ${names[index]} : géré sur la branche de son responsable. Vous êtes sur M4 · Évaluations.',
+                    ),
+                  ),
+                );
+              }
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.menu_book_outlined),
+                selectedIcon: Icon(Icons.menu_book_rounded),
+                label: 'Cours',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.forum_outlined),
+                selectedIcon: Icon(Icons.forum_rounded),
+                label: 'Forum',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.quiz_outlined),
+                selectedIcon: Icon(
+                  Icons.quiz_rounded,
+                  color: Color(0xFF1D4ED8),
+                ),
+                label: 'Évaluations',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.storefront_outlined),
+                selectedIcon: Icon(Icons.storefront_rounded),
+                label: 'Marketplace',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline_rounded),
+                selectedIcon: Icon(Icons.person_rounded),
+                label: 'Profil',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _newEvalSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Créer',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.quiz_rounded, color: EduColors.primary),
+                title: const Text('Quiz'),
+                subtitle: const Text('Assistant + brouillon Gemini'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(context, EvaluationsRoutes.quizWizard);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.assignment_rounded,
+                  color: EduColors.warning,
+                ),
+                title: const Text('Devoir (dépôt)'),
+                subtitle: const Text('Consignes, échéance, note max'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(
+                    context,
+                    EvaluationsRoutes.assignmentWizard,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.folder_rounded,
+                  color: Color(0xFF7C3AED),
+                ),
+                title: const Text('Document'),
+                subtitle: const Text('Polycopié, corrigé ou annales'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.pushNamed(
+                    context,
+                    EvaluationsRoutes.documentWizard,
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
