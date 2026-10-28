@@ -25,7 +25,13 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
   void initState() {
     super.initState();
     if (!_controller.isTeacher) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => Navigator.pop(context));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Accès réservé aux enseignants (Règle 2).')),
+        );
+      });
     }
     final e = widget.existing;
     _title = TextEditingController(text: e?.title ?? '');
@@ -49,13 +55,22 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        title: Text(
-          widget.existing == null ? 'Nouveau document' : 'Modifier le document',
-          style: const TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 17,
-            color: EduColors.text,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.existing == null ? 'Nouveau document' : 'Modifier le document',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 17,
+                color: EduColors.text,
+              ),
+            ),
+            const Text(
+              'Enseignant · Espace Blackboard · POST /documents',
+              style: TextStyle(fontSize: 11.5, color: EduColors.muted),
+            ),
+          ],
         ),
       ),
       body: Form(
@@ -66,81 +81,130 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
           children: [
             DropdownButtonFormField<String>(
               initialValue: _courseId,
-              decoration: evalInputDecoration(label: 'Cours'),
+              decoration: evalInputDecoration(
+                label: 'Cours associé (Liaison L4)',
+                icon: Icons.menu_book_rounded,
+              ),
               items: _controller.accessibleCourses
                   .map(
-                    (c) => DropdownMenuItem(value: c.id, child: Text(c.title)),
+                    (c) => DropdownMenuItem(
+                      value: c.id,
+                      child: Text('${c.title} (${c.level})'),
+                    ),
                   )
                   .toList(),
               onChanged: (v) => setState(() => _courseId = v!),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
+            const Text(
+              'Dossier de classement (façon Blackboard) :',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: EduColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: DocumentFolder.values
                   .map(
                     (f) => ChoiceChip(
+                      avatar: Icon(f.icon, size: 16, color: _folder == f ? Colors.white : f.color),
                       label: Text(f.label),
                       selected: _folder == f,
+                      selectedColor: f.color,
+                      labelStyle: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: _folder == f ? Colors.white : EduColors.textSecondary,
+                      ),
                       onSelected: (_) => setState(() => _folder = f),
                     ),
                   )
                   .toList(),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _title,
               maxLength: 80,
-              decoration: evalInputDecoration(label: 'Titre'),
+              decoration: evalInputDecoration(
+                label: 'Titre du document',
+                hint: 'Ex. Polycopié de cours — Chapitre 3',
+                icon: Icons.title_rounded,
+              ),
               validator: (v) {
-                if ((v?.trim().length ?? 0) < 5) {
-                  return 'Titre obligatoire (5 à 80 caractères).';
-                }
+                final t = v?.trim() ?? '';
+                if (t.length < 5) return 'Titre requis (au moins 5 caractères).';
                 return null;
               },
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _description,
-              maxLines: 3,
+              maxLines: 4,
               maxLength: 300,
-              decoration: evalInputDecoration(label: 'Description'),
+              decoration: evalInputDecoration(
+                label: 'Description du contenu',
+                hint: 'Précisez le contenu pédagogique, les chapitres concernés ou les exercices traités…',
+                icon: Icons.description_outlined,
+              ),
               validator: (v) {
-                if ((v?.trim().length ?? 0) < 10) {
-                  return 'Description obligatoire (10 à 300 caractères).';
+                final t = v?.trim() ?? '';
+                if (t.length < 10) {
+                  return 'Description requise (au moins 10 caractères).';
                 }
                 return null;
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
+            const SectionHeader(
+              title: 'Fichier pédagogique (MediaService L10)',
+              subtitle: 'Fichier PDF, annale ou corrigé',
+            ),
             OutlinedButton.icon(
               onPressed: () {
                 setState(() {
-                  _fileUrl = 'document_${DateTime.now().millisecondsSinceEpoch}.pdf';
+                  _fileUrl = 'doc_${_folder.name}_${DateTime.now().millisecondsSinceEpoch}.pdf';
                   _fileError = null;
                 });
               },
               icon: const Icon(Icons.upload_file_rounded),
-              label: Text(_fileUrl ?? 'Choisir un fichier PDF (L10, simulé)'),
+              label: Text(_fileUrl ?? 'Téléverser un fichier PDF (Cloudinary L10)'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size(double.infinity, 48),
+              ),
             ),
             if (_fileError != null)
-              Text(_fileError!, style: const TextStyle(color: EduColors.danger)),
-            const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _fileError!,
+                  style: const TextStyle(color: EduColors.danger, fontWeight: FontWeight.w600, fontSize: 12.5),
+                ),
+              ),
+            if (_fileUrl != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                decoration: evalCardDecoration(),
+                child: ListTile(
+                  leading: Icon(_folder.icon, color: _folder.color),
+                  title: Text(_fileUrl!, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  subtitle: Text('${_folder.label} · Prêt pour publication', style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.check_circle_rounded, color: EduColors.success, size: 20),
+                ),
+              ),
+            const SizedBox(height: 24),
             PrimaryCta(
-              label: 'Enregistrer le document',
+              label: widget.existing == null ? 'Publier le document' : 'Enregistrer les modifications',
               icon: Icons.save_rounded,
               onPressed: () {
                 if (_fileUrl == null) {
-                  setState(() => _fileError = 'Un fichier est obligatoire.');
+                  setState(() => _fileError = 'Veuillez téléverser un fichier PDF.');
                   return;
                 }
                 if (!(_formKey.currentState?.validate() ?? false)) return;
-                final course =
-                    _controller.courses.firstWhere((c) => c.id == _courseId);
+
+                final course = _controller.courses.firstWhere((c) => c.id == _courseId);
                 _controller.upsertDocument(
                   CourseDocument(
-                    id: widget.existing?.id ??
-                        'doc_${DateTime.now().millisecondsSinceEpoch}',
+                    id: widget.existing?.id ?? 'doc_${DateTime.now().millisecondsSinceEpoch}',
                     courseId: course.id,
                     courseTitle: course.title,
                     teacherId: _controller.currentUserId,
@@ -149,15 +213,18 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
                     description: _description.text.trim(),
                     folder: _folder,
                     fileUrl: _fileUrl!,
-                    order: widget.existing?.order ??
-                        _controller.documents.length + 1,
+                    order: widget.existing?.order ?? _controller.documents.length + 1,
                     visibleFrom: DateTime.now(),
                     downloadsCount: widget.existing?.downloadsCount ?? 0,
                   ),
                 );
+
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Document enregistré dans le dossier du cours.')),
+                  SnackBar(
+                    backgroundColor: EduColors.success,
+                    content: Text('Document publié dans le dossier ${_folder.label} du cours ${course.title}.'),
+                  ),
                 );
               },
             ),

@@ -16,7 +16,7 @@ class DocumentDetailScreen extends StatelessWidget {
         final doc = controller.documentById(documentId);
         if (doc == null) {
           return const Scaffold(
-            body: Center(child: Text('Document introuvable')),
+            body: Center(child: Text('Document introuvable.')),
           );
         }
         return Scaffold(
@@ -25,7 +25,7 @@ class DocumentDetailScreen extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             title: const Text(
-              'Document du cours',
+              'Document de cours',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 17,
@@ -51,60 +51,100 @@ class DocumentDetailScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             children: [
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(18),
                 decoration: evalCardDecoration(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    StatusChip(
-                      label: doc.folder.label,
-                      color: doc.folder.color,
-                      icon: doc.folder.icon,
+                    Row(
+                      children: [
+                        StatusChip(
+                          label: doc.folder.label,
+                          color: doc.folder.color,
+                          icon: doc.folder.icon,
+                        ),
+                        const SizedBox(width: 8),
+                        StatusChip(
+                          label: doc.courseTitle,
+                          color: EduColors.muted,
+                          background: EduColors.neutralBg,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Text(
                       doc.title,
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
+                        color: EduColors.text,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
-                      '${doc.courseTitle} · ${doc.teacherName}',
-                      style: const TextStyle(color: EduColors.muted),
+                      'Publié par ${doc.teacherName}',
+                      style: const TextStyle(color: EduColors.muted, fontSize: 13),
                     ),
-                    const SizedBox(height: 10),
+                    const Divider(height: 24),
+                    const Text(
+                      'Description :',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
                     Text(
                       doc.description,
                       style: const TextStyle(
                         height: 1.5,
+                        fontSize: 13.5,
                         color: EduColors.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Fichier : ${doc.fileUrl}',
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12.5,
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: EduColors.neutralBg,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ),
-                    Text(
-                      '${doc.downloadsCount} téléchargement(s)',
-                      style: const TextStyle(color: EduColors.muted),
+                      child: Row(
+                        children: [
+                          Icon(Icons.picture_as_pdf_rounded, color: doc.folder.color, size: 24),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  doc.fileUrl,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Text(
+                                  '${doc.downloadsCount} téléchargement(s)',
+                                  style: const TextStyle(fontSize: 11.5, color: EduColors.muted),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               PrimaryCta(
-                label: 'Télécharger (simulé)',
+                label: 'Télécharger le document (${doc.downloadsCount} téléchargements)',
                 icon: Icons.download_rounded,
+                backgroundColor: doc.folder.color,
                 onPressed: () {
                   controller.incrementDownload(doc.id);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('${doc.fileUrl} téléchargé (compteur +1).'),
+                      backgroundColor: EduColors.success,
+                      content: Text('${doc.fileUrl} téléchargé avec succès (compteur mis à jour).'),
                     ),
                   );
                 },

@@ -753,6 +753,57 @@ class EvaluationsController extends ChangeNotifier {
         : score.toStringAsFixed(1);
   }
 
+  /// Calcule la moyenne générale sur 20 d'un étudiant (quiz + devoirs notés)
+  double? calculateStudentAverage(String studentId) {
+    final gradesOn20 = <double>[];
+
+    // Quiz : dernière tentative notée par quiz
+    for (final q in quizzes.where((q) => q.isPublished)) {
+      final userAttempts = attempts
+          .where((a) => a.quizId == q.id && a.studentId == studentId && a.isSubmitted)
+          .toList();
+      if (userAttempts.isNotEmpty) {
+        userAttempts.sort((a, b) => b.attemptNo.compareTo(a.attemptNo));
+        if (userAttempts.first.score != null) {
+          gradesOn20.add(userAttempts.first.score!);
+        }
+      }
+    }
+
+    // Devoirs notés
+    for (final s in submissions.where((s) => s.studentId == studentId && s.status == SubmissionStatus.graded)) {
+      final asg = assignmentById(s.assignmentId);
+      if (asg != null && s.grade != null && asg.maxGrade > 0) {
+        gradesOn20.add((s.grade! / asg.maxGrade) * 20);
+      }
+    }
+
+    if (gradesOn20.isEmpty) return null;
+    final total = gradesOn20.fold<double>(0, (sum, g) => sum + g);
+    return double.parse((total / gradesOn20.length).toStringAsFixed(1));
+  }
+
+  /// Nombre total de devoirs ou quiz passés ou soumis par l'étudiant
+  int studentCompletedCount(String studentId) {
+    final quizCount = quizzes.where((q) => attemptCountFor(q.id, studentId) > 0).length;
+    final asgCount = submissions.where((s) => s.studentId == studentId).length;
+    return quizCount + asgCount;
+  }
+
+  /// Nombre d'évaluations en attente pour l'étudiant
+  int studentPendingTodoCount(String studentId) {
+    final pendingQuizzes = publishedQuizzesForStudent()
+        .where((q) => attemptCountFor(q.id, studentId) < q.attemptsAllowed)
+        .length;
+    final pendingAsg = assignmentsForStudent()
+        .where((a) => submissionFor(a.id, studentId) == null)
+        .length;
+    return pendingQuizzes + pendingAsg;
+  }
+
+  /// Nombre de copies en attente de correction pour l'enseignant
+  int get pendingCopiesCount => copiesToGrade().length;
+
   /// POST /quizzes/generate — brouillon Gemini simulé
   List<QuizQuestion> generateGeminiQuestions(String chapterHint) {
     final hint = chapterHint.trim().isEmpty ? 'le chapitre' : chapterHint.trim();
