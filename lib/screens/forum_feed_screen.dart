@@ -1,16 +1,44 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/user.dart';
 import '../providers/forum_provider.dart';
+import '../routes/app_routes.dart';
 import '../widgets/post_card.dart';
-import 'ask_question_screen.dart';
 
-class ForumFeedScreen extends StatelessWidget {
+class ForumFeedScreen extends StatefulWidget {
   const ForumFeedScreen({super.key});
+
+  @override
+  State<ForumFeedScreen> createState() => _ForumFeedScreenState();
+}
+
+class _ForumFeedScreenState extends State<ForumFeedScreen> {
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController =
+        TextEditingController(text: context.read<ForumProvider>().searchQuery);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _resetFilters() {
+    _searchController.clear();
+    context.read<ForumProvider>().resetFilters();
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ForumProvider>();
     final posts = provider.filteredPosts;
+    final pendingCount = provider.pendingPosts.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FD),
@@ -25,6 +53,41 @@ class ForumFeedScreen extends StatelessWidget {
             color: Color(0xFF1E293B),
           ),
         ),
+        actions: [
+          // Boîte « questions à traiter » : réservée à l'enseignant
+          if (provider.isTeacher)
+            IconButton(
+              tooltip: 'Questions à traiter',
+              onPressed: () =>
+                  Navigator.pushNamed(context, AppRoutes.forumInbox),
+              icon: Badge(
+                label: Text('$pendingCount'),
+                isLabelVisible: pendingCount > 0,
+                child: const Icon(Icons.inbox_outlined,
+                    color: Color(0xFF1E293B)),
+              ),
+            ),
+          // Sélecteur de rôle : outil de test, absent en version finale
+          if (kDebugMode)
+            PopupMenuButton<UserRole>(
+              tooltip: 'Changer de rôle (mode test)',
+              icon: const Icon(Icons.swap_horiz_rounded,
+                  color: Color(0xFF1E293B)),
+              onSelected: provider.setRole,
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem<UserRole>(
+                  value: UserRole.student,
+                  checked: !provider.isTeacher,
+                  child: const Text('Étudiant'),
+                ),
+                CheckedPopupMenuItem<UserRole>(
+                  value: UserRole.teacher,
+                  checked: provider.isTeacher,
+                  child: const Text('Enseignant'),
+                ),
+              ],
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -36,13 +99,26 @@ class ForumFeedScreen extends StatelessWidget {
               children: [
                 // Search Input
                 TextField(
-                  onChanged: (val) => provider.setSearchQuery(val),
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onChanged: provider.setSearchQuery,
                   decoration: InputDecoration(
                     hintText: 'Rechercher une question...',
                     hintStyle:
                         TextStyle(color: Colors.grey.shade400, fontSize: 13),
                     prefixIcon:
                         const Icon(Icons.search, size: 20, color: Colors.grey),
+                    suffixIcon: provider.searchQuery.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Effacer la recherche',
+                            icon: const Icon(Icons.close,
+                                size: 18, color: Colors.grey),
+                            onPressed: () {
+                              _searchController.clear();
+                              provider.setSearchQuery('');
+                            },
+                          ),
                     filled: true,
                     fillColor: const Color(0xFFF1F5F9),
                     contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -93,22 +169,24 @@ class ForumFeedScreen extends StatelessWidget {
 
           const SizedBox(height: 6),
 
-          // Questions List
+          // Questions List (tirer vers le bas pour rafraîchir)
           Expanded(
-            child: posts.isEmpty
-                ? Center(
-                    child: Text(
-                      'Aucune question trouvée',
-                      style: TextStyle(color: Colors.grey.shade600),
+            child: RefreshIndicator(
+              onRefresh: provider.refresh,
+              child: posts.isEmpty
+                  ? _EmptyState(
+                      hasFilters: provider.hasActiveFilters,
+                      onReset: _resetFilters,
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(top: 4, bottom: 80),
+                      itemCount: posts.length,
+                      itemBuilder: (context, index) {
+                        return PostCard(post: posts[index]);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(top: 4, bottom: 80),
-                    itemCount: posts.length,
-                    itemBuilder: (context, index) {
-                      return PostCard(post: posts[index]);
-                    },
-                  ),
+            ),
           ),
         ],
       ),
@@ -119,15 +197,46 @@ class ForumFeedScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: const Text('Poser une question'),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AskQuestionScreen(),
-            ),
-          );
-        },
+        onPressed: () => Navigator.pushNamed(context, AppRoutes.forumAsk),
       ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final bool hasFilters;
+  final VoidCallback onReset;
+
+  const _EmptyState({required this.hasFilters, required this.onReset});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        const SizedBox(height: 80),
+        Icon(Icons.search_off_rounded, size: 56, color: Colors.grey.shade400),
+        const SizedBox(height: 12),
+        Center(
+          child: Text(
+            hasFilters
+                ? 'Aucune question ne correspond à votre recherche'
+                : 'Aucune question pour le moment',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ),
+        if (hasFilters) ...[
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton.icon(
+              onPressed: onReset,
+              icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+              label: const Text('Réinitialiser les filtres'),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

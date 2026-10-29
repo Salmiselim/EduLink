@@ -1,23 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/post.dart';
-import '../screens/question_detail_screen.dart';
+import '../routes/app_routes.dart';
+import '../utils/time_format.dart';
 import 'role_badge.dart';
 
 class PostCard extends StatelessWidget {
   final Post post;
 
   const PostCard({super.key, required this.post});
-
-  String _formatTime(DateTime dateTime) {
-    final diff = DateTime.now().difference(dateTime);
-    if (diff.inMinutes < 60) {
-      return 'Il y a ${diff.inMinutes} min';
-    } else if (diff.inHours < 24) {
-      return 'Il y a ${diff.inHours} h';
-    } else {
-      return 'Il y a ${diff.inDays} j';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,14 +20,11 @@ class PostCard extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => QuestionDetailScreen(postId: post.id),
-            ),
-          );
-        },
+        onTap: () => Navigator.pushNamed(
+          context,
+          AppRoutes.forumQuestion,
+          arguments: post.id,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -80,7 +67,7 @@ class PostCard extends StatelessWidget {
                           ],
                         ),
                         Text(
-                          _formatTime(post.createdAt),
+                          formatTimeAgo(post.createdAt),
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade500,

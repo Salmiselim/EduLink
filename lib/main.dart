@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/forum_provider.dart';
+import 'routes/app_routes.dart';
 import 'screens/forum_feed_screen.dart';
 
 void main() {
@@ -41,6 +42,8 @@ class EduLinkApp extends StatelessWidget {
         ),
       ),
       home: const MainNavigationScreen(),
+      onGenerateRoute: AppRoutes.onGenerateRoute,
+      onUnknownRoute: AppRoutes.onUnknownRoute,
     );
   }
 }
@@ -49,36 +52,37 @@ class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => MainNavigationScreenState();
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class MainNavigationScreenState extends State<MainNavigationScreen> {
-  // Default to Tab 2 (Forum - Member 3 Q&A)
-  int _currentIndex = 2;
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  // Onglets du plan v3 : Cours · Forum · Évaluations · Marketplace · Profil
+  static const int _forumTab = 1;
+  int _currentIndex = _forumTab;
 
-  void switchTab(int index) {
+  void _switchTab(int index) {
     setState(() => _currentIndex = index);
   }
 
   final List<Widget> _screens = const [
     _PlaceholderTab(
-      title: 'Offres & Soutien',
-      member: 'Membre 5',
-      icon: Icons.local_offer_outlined,
-    ),
-    _PlaceholderTab(
-      title: 'Cours & Flashcards',
+      title: 'Cours',
       member: 'Membre 2',
       icon: Icons.menu_book_rounded,
     ),
     ForumFeedScreen(), // Onglet M3 : Forum Q&A
     _PlaceholderTab(
-      title: 'Séances & Messagerie',
+      title: 'Évaluations',
       member: 'Membre 4',
-      icon: Icons.video_call_outlined,
+      icon: Icons.assignment_outlined,
     ),
     _PlaceholderTab(
-      title: 'Profil & Auth',
+      title: 'Marketplace',
+      member: 'Membre 5',
+      icon: Icons.storefront_outlined,
+    ),
+    _PlaceholderTab(
+      title: 'Profil',
       member: 'Membre 1',
       icon: Icons.person_outline_rounded,
     ),
@@ -106,13 +110,8 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
           backgroundColor: Colors.white,
           indicatorColor: Colors.indigo.shade100,
           elevation: 0,
-          onDestinationSelected: switchTab,
+          onDestinationSelected: _switchTab,
           destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.local_offer_outlined),
-              selectedIcon: Icon(Icons.local_offer, color: Colors.indigo),
-              label: 'Offres',
-            ),
             NavigationDestination(
               icon: Icon(Icons.menu_book_outlined),
               selectedIcon: Icon(Icons.menu_book, color: Colors.indigo),
@@ -121,12 +120,17 @@ class MainNavigationScreenState extends State<MainNavigationScreen> {
             NavigationDestination(
               icon: Icon(Icons.forum_outlined),
               selectedIcon: Icon(Icons.forum, color: Colors.indigo),
-              label: 'Forum (Q&A)',
+              label: 'Forum',
             ),
             NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today, color: Colors.indigo),
-              label: 'Séances',
+              icon: Icon(Icons.assignment_outlined),
+              selectedIcon: Icon(Icons.assignment, color: Colors.indigo),
+              label: 'Évaluations',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront, color: Colors.indigo),
+              label: 'Marketplace',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline),
@@ -175,20 +179,6 @@ class _PlaceholderTab extends StatelessWidget {
               Text(
                 'Module géré par $member selon le plan EduLink.',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.forum),
-                label: const Text('Aller sur le Forum (Mon module M3)'),
-                onPressed: () {
-                  final state = context
-                      .findAncestorStateOfType<MainNavigationScreenState>();
-                  state?.switchTab(2);
-                },
               ),
             ],
           ),

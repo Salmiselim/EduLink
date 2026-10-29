@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/answer.dart';
 import '../providers/forum_provider.dart';
+import '../utils/time_format.dart';
 import 'role_badge.dart';
 
 class AnswerCard extends StatelessWidget {
@@ -9,27 +10,22 @@ class AnswerCard extends StatelessWidget {
 
   const AnswerCard({super.key, required this.answer});
 
-  String _formatTime(DateTime dateTime) {
-    final diff = DateTime.now().difference(dateTime);
-    if (diff.inMinutes < 60) {
-      return 'Il y a ${diff.inMinutes} min';
-    } else if (diff.inHours < 24) {
-      return 'Il y a ${diff.inHours} h';
-    } else {
-      return 'Il y a ${diff.inDays} j';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<ForumProvider>();
+    final provider = context.watch<ForumProvider>();
+    // Seul un enseignant peut vérifier la réponse d'un autre utilisateur.
+    final canVerify = provider.isTeacher && !answer.isTeacher;
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(
+          color: answer.isTeacherVerified
+              ? Colors.green.shade300
+              : Colors.grey.shade200,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -77,7 +73,7 @@ class AnswerCard extends StatelessWidget {
                         ],
                       ),
                       Text(
-                        _formatTime(answer.createdAt),
+                        formatTimeAgo(answer.createdAt),
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.grey.shade500,
@@ -140,6 +136,58 @@ class AnswerCard extends StatelessWidget {
                 height: 1.4,
               ),
             ),
+
+            // Réponse vérifiée + action enseignant
+            if (answer.isTeacherVerified || canVerify) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (answer.isTeacherVerified)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified,
+                              size: 14, color: Colors.green.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Réponse vérifiée',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const Spacer(),
+                  if (canVerify)
+                    TextButton.icon(
+                      onPressed: () =>
+                          provider.toggleVerifyAnswer(answer.id),
+                      icon: Icon(
+                        answer.isTeacherVerified
+                            ? Icons.remove_done_outlined
+                            : Icons.verified_outlined,
+                        size: 16,
+                      ),
+                      label: Text(
+                        answer.isTeacherVerified
+                            ? 'Retirer la vérification'
+                            : 'Marquer comme vérifiée',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

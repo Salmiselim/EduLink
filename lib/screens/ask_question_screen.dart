@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/forum_provider.dart';
+import '../routes/app_routes.dart';
 
 class AskQuestionScreen extends StatefulWidget {
   const AskQuestionScreen({super.key});
@@ -10,11 +11,28 @@ class AskQuestionScreen extends StatefulWidget {
 }
 
 class _AskQuestionScreenState extends State<AskQuestionScreen> {
+  static const int _titleMin = 5;
+  static const int _titleMax = 120;
+  static const int _bodyMin = 10;
+  static const int _bodyMax = 2000;
+
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _bodyController = TextEditingController();
 
-  String _selectedCourse = 'Développement Mobile (Flutter)';
+  late String _selectedCourse;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<ForumProvider>();
+    final courses =
+        provider.courses.where((c) => c != ForumProvider.allCourses).toList();
+    // Pré-sélectionne le cours filtré dans le fil, sinon le premier de la liste.
+    _selectedCourse = courses.contains(provider.selectedCourse)
+        ? provider.selectedCourse
+        : courses.first;
+  }
 
   @override
   void dispose() {
@@ -23,12 +41,30 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
     super.dispose();
   }
 
+  String? _validateTitle(String? val) {
+    final text = val?.trim() ?? '';
+    if (text.isEmpty) return 'Veuillez saisir un titre';
+    if (text.length < _titleMin) {
+      return 'Le titre doit contenir au moins $_titleMin caractères';
+    }
+    return null;
+  }
+
+  String? _validateBody(String? val) {
+    final text = val?.trim() ?? '';
+    if (text.isEmpty) return 'Veuillez décrire votre question';
+    if (text.length < _bodyMin) {
+      return 'La description doit contenir au moins $_bodyMin caractères';
+    }
+    return null;
+  }
+
   void _submitQuestion() {
     if (!_formKey.currentState!.validate()) return;
 
-    context.read<ForumProvider>().createPost(
-          title: _titleController.text.trim(),
-          body: _bodyController.text.trim(),
+    final postId = context.read<ForumProvider>().createPost(
+          title: _titleController.text,
+          body: _bodyController.text,
           courseName: _selectedCourse,
         );
 
@@ -39,14 +75,19 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
       ),
     );
 
-    Navigator.pop(context);
+    // Ouvre directement la question publiée (remplace l'écran de saisie).
+    Navigator.pushReplacementNamed(
+      context,
+      AppRoutes.forumQuestion,
+      arguments: postId,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ForumProvider>();
     final courses = provider.courses
-        .where((c) => c != 'Tous les cours')
+        .where((c) => c != ForumProvider.allCourses)
         .toList();
 
     return Scaffold(
@@ -69,6 +110,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
       ),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -95,6 +137,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
                       initialValue: _selectedCourse,
+                      isExpanded: true,
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
@@ -110,6 +153,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                           value: course,
                           child: Text(
                             course,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 13),
                           ),
                         );
@@ -150,9 +194,10 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _titleController,
-                      validator: (val) => val == null || val.trim().isEmpty
-                          ? 'Veuillez saisir un titre'
-                          : null,
+                      maxLength: _titleMax,
+                      textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.sentences,
+                      validator: _validateTitle,
                       decoration: InputDecoration(
                         hintText: 'ex: Comment organiser les providers ?',
                         hintStyle: TextStyle(
@@ -166,7 +211,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
 
                     const Text(
                       'Votre question',
@@ -180,9 +225,9 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                     TextFormField(
                       controller: _bodyController,
                       maxLines: 5,
-                      validator: (val) => val == null || val.trim().isEmpty
-                          ? 'Veuillez décrire votre question'
-                          : null,
+                      maxLength: _bodyMax,
+                      textCapitalization: TextCapitalization.sentences,
+                      validator: _validateBody,
                       decoration: InputDecoration(
                         hintText: 'Détaillez votre question ou problème...',
                         hintStyle: TextStyle(

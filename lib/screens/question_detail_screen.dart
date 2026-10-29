@@ -15,17 +15,33 @@ class QuestionDetailScreen extends StatefulWidget {
 }
 
 class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
+  static const int _answerMin = 3;
+  static const int _answerMax = 1000;
+
   final TextEditingController _answerController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  String? _answerError;
 
   @override
   void dispose() {
     _answerController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   void _submitAnswer() {
     final text = _answerController.text.trim();
-    if (text.isEmpty) return;
+
+    String? error;
+    if (text.isEmpty) {
+      error = "Écrivez votre réponse avant de l'envoyer";
+    } else if (text.length < _answerMin) {
+      error = 'Votre réponse est trop courte ($_answerMin caractères minimum)';
+    }
+    if (error != null) {
+      setState(() => _answerError = error);
+      return;
+    }
 
     context.read<ForumProvider>().addAnswer(
           postId: widget.postId,
@@ -33,7 +49,18 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
         );
 
     _answerController.clear();
+    setState(() => _answerError = null);
     FocusScope.of(context).unfocus();
+
+    // Fait défiler la liste jusqu'à la nouvelle réponse.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -46,9 +73,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ForumProvider>();
-    final Post? post = provider.filteredPosts
-        .where((p) => p.id == widget.postId)
-        .firstOrNull;
+    final Post? post = provider.getPostById(widget.postId);
 
     if (post == null) {
       return Scaffold(
@@ -82,6 +107,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
         children: [
           Expanded(
             child: ListView(
+              controller: _scrollController,
               padding: const EdgeInsets.symmetric(vertical: 10),
               children: [
                 // Question Card
@@ -225,11 +251,25 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
               ],
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: TextField(
                     controller: _answerController,
+                    maxLength: _answerMax,
+                    minLines: 1,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.send,
+                    textCapitalization: TextCapitalization.sentences,
+                    onSubmitted: (_) => _submitAnswer(),
+                    onChanged: (_) {
+                      if (_answerError != null) {
+                        setState(() => _answerError = null);
+                      }
+                    },
                     decoration: InputDecoration(
+                      counterText: '',
+                      errorText: _answerError,
                       hintText: 'Écrire une réponse...',
                       hintStyle:
                           TextStyle(color: Colors.grey.shade400, fontSize: 13),
@@ -245,13 +285,17 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.indigo,
-                  child: IconButton(
-                    icon: const Icon(Icons.send_rounded,
-                        color: Colors.white, size: 16),
-                    onPressed: _submitAnswer,
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.indigo,
+                    child: IconButton(
+                      tooltip: 'Envoyer la réponse',
+                      icon: const Icon(Icons.send_rounded,
+                          color: Colors.white, size: 16),
+                      onPressed: _submitAnswer,
+                    ),
                   ),
                 ),
               ],

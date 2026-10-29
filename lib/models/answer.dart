@@ -6,6 +6,7 @@ class Answer {
   final String body;
   int votesCount;
   bool isUpvoted;
+  bool isTeacherVerified; // « Réponse vérifiée » par l'enseignant du cours
   final DateTime createdAt;
 
   Answer({
@@ -16,6 +17,7 @@ class Answer {
     required this.body,
     this.votesCount = 0,
     this.isUpvoted = false,
+    this.isTeacherVerified = false,
     required this.createdAt,
   });
 
