@@ -9,7 +9,7 @@ import '../models/marketplace_models.dart';
 // - Le badge obligatoire d'origine du vendeur (« Offre étudiant » / « Enseignant vérifié », Règle 5)
 // - Le bouton Favori ♥ (PUT | DELETE /favorites)
 // - Le titre, la matière, le niveau, le mode (Jitsi / Ville) et l'état/stock
-// - Le cours rattaché (Liaison L6)
+// - Le cours rattaché
 // - L'avatar et le nom du vendeur, la note moyenne ★ et le prix en TND (ou Gratuit)
 // ============================================================================
 
@@ -132,7 +132,7 @@ class OfferCard extends StatelessWidget {
                 ],
               ),
 
-              // 4. Bandeau Liaison L6 : affiche le cours rattaché s'il existe
+              // 4. Bandeau : affiche le cours rattaché s'il existe
               if (!compact && offer.courseTitle != null) ...[
                 const SizedBox(height: 8),
                 Container(

@@ -3,11 +3,11 @@ import '../models/courses_models.dart';
 
 // ============================================================================
 // CONTRÔLEUR D'ÉTAT & DONNÉES DE DÉMONSTRATION — MODULE M2 : COURS
-// Hérite de [ChangeNotifier] (même pattern que MarketplaceController de M5
-// et EvaluationsController de M4) pour synchroniser toutes les vues du module.
-// Les ids de cours sont alignés sur les mocks de M4 (`evaluations_mock_data`)
-// et de M5 (`availableCoursesL6`) pour que les liaisons L4, L5 et L6 pointent
-// vers les mêmes cours lors des démos inter-modules.
+// Hérite de [ChangeNotifier] (même pattern que les contrôleurs des autres
+// modules) pour synchroniser toutes les vues du module.
+// Les ids de cours sont alignés sur les mocks des modules partenaires
+// (évaluations et marketplace) pour que les intégrations pointent
+// vers les mêmes cours lors des démos.
 // ============================================================================
 
 class CoursesController extends ChangeNotifier {

@@ -10,7 +10,7 @@ import '../models/marketplace_models.dart';
 //   2. Informations, photos ou fichier
 //   3. Prix (en TND ou Gratuit)
 //   4. Lieu ou mode et disponibilités
-//   5. Cours lié (optionnel — Liaison L6)
+//   5. Cours lié (optionnel)
 //   6. Aperçu -> Publication (ou Brouillon) »
 //
 // Répond au critère d'évaluation : « Contrôles de saisie et validations »
@@ -69,7 +69,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
   ];
   String? _slotsValidationError;
 
-  // --- ÉTAPE 5 : Cours rattaché optionnel (Liaison L6 avec le module M2 Cours) ---
+  // --- ÉTAPE 5 : Cours rattaché optionnel (intégration avec le module Cours) ---
   String? _selectedCourseId = 'course_algo_1';
 
   /// Expression régulière validant le format horaire 24h `HH:mm` (ex: `09:30`, `14:00`)
@@ -1385,7 +1385,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 5 : Rattachement optionnel de l'offre à un cours (Liaison L6)
+  /// ÉTAPE 5 : Rattachement optionnel de l'offre à un cours
   Widget _buildStep5LinkedCourse() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1398,7 +1398,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Rattacher l\'offre à un cours (Optionnel — Liaison L6)',
+            'Rattacher l\'offre à un cours (Optionnel)',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,

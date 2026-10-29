@@ -8,10 +8,10 @@ import '../routes/marketplace_routes.dart';
 // Page 8 — Endpoint associé : `GET /offers/:id` (incrémente `viewsCount`).
 // Affiche :
 // - Le type d'offre et l'origine du vendeur (« Enseignant vérifié » / « Offre étudiant », Règle 5)
-// - Le cours rattaché (Liaison L6)
+// - Le cours rattaché
 // - Les caractéristiques détaillées, l'adresse OpenStreetMap ou les infos PDF
 // - Les créneaux horaires libres/réservés (`availabilities`) si cours particulier
-// - Le profil public du vendeur et ses badges M5 (Liaison L9)
+// - Le profil public du vendeur et ses badges
 // - Les avis vérifiés des acheteurs (`GET /reviews`)
 // - Le bouton de signalement (`POST /reports`, masquage auto à 3 signalements) avec validation
 // - Le bouton d'achat / réservation (bloqué si c'est sa propre offre — Règle 5)
@@ -377,7 +377,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 2. Liaison L6 : affiche le cours rattaché (`offers.courseId`)
+              // 2. Affiche le cours rattaché (`offers.courseId`)
               if (offer.courseTitle != null) ...[
                 Container(
                   padding: const EdgeInsets.all(14),
@@ -406,7 +406,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Ressource rattachée à un cours (Liaison L6)',
+                              'Ressource rattachée à un cours',
                               style: TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
@@ -573,7 +573,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                 const SizedBox(height: 16),
               ],
 
-              // 5. Profil public du vendeur & ses badges M5 (Liaison L9)
+              // 5. Profil public du vendeur & ses badges
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(

@@ -32,9 +32,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       _controller.courseById(widget.courseId)?.teacherId ==
       _controller.currentUserId;
 
-  /// Feuille coulissante « Ressources liées » (liaison L6) : offres de la
+  /// Feuille coulissante « Ressources liées » : offres de la
   /// Marketplace rattachées à ce cours via `offers.courseId`. En attendant le
-  /// backend NestJS, la lecture se fait directement sur le contrôleur de M5
+  /// backend NestJS, la lecture se fait directement sur le contrôleur Marketplace
   /// (équivalent de `OffersService.listByCourse(courseId)`).
   void _openLinkedResourcesSheet(Course course) {
     final offers = _marketplace.allOffers
@@ -102,7 +102,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
-                        'Liaison L6',
+                        'Marketplace',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -400,7 +400,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              // Enseignant (liaison L9 — profil public, module M1)
+              // Enseignant (profil public)
               InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () {
@@ -408,8 +408,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
-                        'Liaison L9 — profil public de l\'enseignant '
-                        '(module M1 · branche feat/m1-user).',
+                        'Profil public de l\'enseignant — '
+                        'intégration à venir.',
                       ),
                     ),
                   );
@@ -569,8 +569,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
-                        'Liaison L3 — ouvre le forum du cours '
-                        '(module M3 · branche QA).',
+                        'Forum du cours — '
+                        'intégration à venir.',
                       ),
                     ),
                   );
@@ -585,8 +585,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
-                        'Liaison L5 — quiz, devoirs et carnet de notes '
-                        '(module M4 · branche evaluations).',
+                        'Évaluations du cours — '
+                        'intégration à venir.',
                       ),
                     ),
                   );

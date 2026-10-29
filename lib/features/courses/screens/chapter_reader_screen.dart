@@ -49,7 +49,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
   }
 
   /// Marque le chapitre comme terminé / non terminé et célèbre la fin du cours
-  /// (l'attribution du badge « Premier pas » se fera via la liaison L2).
+  /// (les badges seront attribués prochainement).
   void _toggleCompleted(Chapter chapter, bool currentlyCompleted) {
     final enrollment = _controller.enrollmentFor(widget.courseId);
     final before = enrollment?.completedChapterIds.length ?? 0;
@@ -98,8 +98,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
         ),
         content: const Text(
           'Tous les chapitres sont terminés, progression 100 %. Un badge '
-          '« Premier pas » sera attribué selon la liaison L2 '
-          '(BadgesService — module M1).',
+          '« Premier pas » vous attend : '
+          'il sera attribué prochainement.',
           style: TextStyle(fontSize: 13, height: 1.5),
         ),
         actions: [
@@ -471,7 +471,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
   }
 
   /// PDF : visionneuse simplifiée — le fichier est stocké en privé sur
-  /// Cloudinary (liaison L10, MediaService exposé par M2).
+  /// Cloudinary (service média partagé).
   Widget _pdfContent(Chapter chapter) {
     return Center(
       child: Padding(
@@ -536,8 +536,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
-                        'Liaison L10 — téléchargement via MediaService '
-                        '(Cloudinary) : branchement semaine 2.',
+                        'Téléchargement via le service média '
+                        '(Cloudinary) — intégration à venir.',
                       ),
                     ),
                   );
@@ -788,8 +788,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                         const SnackBar(
                           duration: Duration(seconds: 2),
                           content: Text(
-                            'Ouverture externe — url_launcher à brancher '
-                            '(semaine 2).',
+                            'Ouverture externe — '
+                            'intégration à venir.',
                           ),
                         ),
                       );

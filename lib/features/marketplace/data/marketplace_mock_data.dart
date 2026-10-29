@@ -77,7 +77,7 @@ class MarketplaceController extends ChangeNotifier {
     'Monastir',
   ];
 
-  /// Cours suivis ou enseignés (Liaison L6 avec le module M2 Cours)
+  /// Cours suivis ou enseignés (intégration avec le module Cours)
   static const List<Map<String, String>> availableCoursesL6 = [
     {
       'id': 'course_algo_1',

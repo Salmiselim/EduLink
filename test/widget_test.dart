@@ -3,41 +3,58 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  Future<void> skipAuth(WidgetTester tester) async {
+    await tester.pumpWidget(const EduLinkApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Passer'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
-    'Le shell EduLink intégré (M4 + M5) affiche Marketplace et la barre à 5 onglets',
+    "L'écran de connexion s'affiche puis « Passer » ouvre l'onglet Cours",
     (WidgetTester tester) async {
       await tester.pumpWidget(const EduLinkApp());
+      await tester.pumpAndSettle();
 
-      // Onglet de démarrage : Marketplace (M5)
-      expect(find.text('EduLink · Marketplace'), findsOneWidget);
-      expect(find.text('Explorer'), findsOneWidget);
+      expect(find.text('EduLink'), findsOneWidget);
+      expect(find.text('Se connecter'), findsOneWidget);
+      expect(find.text('Se souvenir de moi'), findsOneWidget);
+      expect(find.text('Mot de passe oublié ?'), findsOneWidget);
+      expect(find.text('Google'), findsOneWidget);
+      expect(find.text('Apple'), findsOneWidget);
 
-      // Barre de navigation inférieure commune aux 5 modules
+      await tester.tap(find.text('Passer'));
+      await tester.pumpAndSettle();
+      expect(find.text('EduLink · Cours'), findsOneWidget);
+      expect(find.text('Mes cours'), findsOneWidget);
+      expect(find.text('Catalogue'), findsOneWidget);
+      expect(find.text('Continuer la lecture'), findsOneWidget);
       expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Cours'), findsOneWidget);
-      expect(find.text('Évaluations'), findsOneWidget);
-      expect(find.text('Profil'), findsOneWidget);
     },
   );
 
   testWidgets(
-    "L'onglet Cours (M2) affiche la vue étudiant « Mes cours »",
+    "L'onglet Cours affiche la vue étudiant « Mes cours »",
     (WidgetTester tester) async {
-      await tester.pumpWidget(const EduLinkApp());
-      await tester.pumpAndSettle();
+      await skipAuth(tester);
 
-      // Bascule vers l'onglet Cours (M2) via la barre inférieure
-      await tester.tap(find.text('Cours'));
-      await tester.pumpAndSettle();
-
-      // AppBar du module + bascule des vues (SegmentedButton)
       expect(find.text('EduLink · Cours'), findsOneWidget);
       expect(find.text('Mes cours'), findsOneWidget);
       expect(find.text('Catalogue'), findsOneWidget);
-
-      // L'étudiant simulé suit déjà des cours dans le mock : la section
-      // « reprise de lecture » et les cartes de progression s'affichent.
       expect(find.text('Continuer la lecture'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    "La barre inférieure permet d'atteindre la Marketplace",
+    (WidgetTester tester) async {
+      await skipAuth(tester);
+
+      await tester.tap(find.text('Marketplace'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('EduLink · Marketplace'), findsOneWidget);
+      expect(find.text('Explorer'), findsOneWidget);
     },
   );
 }
