@@ -1,18 +1,27 @@
+// Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, ListenableBuilder,
+// ListView.builder, ScrollController, TextField, ModalBottomSheet, Align et CircleBorder.
 import 'package:flutter/material.dart';
+
+// Liaisons avec le contrôleur (`sendMessage`, `updateOrderStatus`, `markConversationRead`, `submitReview`),
+// les modèles (`MarketplaceOrder`, `ChatMessage`) et la feuille modale `ReviewBottomSheet` :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../widgets/review_dialog.dart';
 
 // ============================================================================
 // ROUTE POUSSÉE : CHAT LIÉ À UNE COMMANDE (OrderChatScreen)
-// Page 8 — Étape 3 du parcours d'une commande :
-// « Un chat lié à la commande s'ouvre entre l'acheteur et le vendeur
-// (écouteurs Firestore, compteur de non-lus). »
-// Permet aussi :
-// - De suivre et modifier le statut de la commande (Accepter, Refuser, Terminer, Annuler)
-// - D'accéder directement à la salle de visio Jitsi Meet générée à l'acceptation
-// - De télécharger le fichier PDF privé une fois la commande acceptée
-// - De laisser un avis (1 à 5 ★) une fois la commande terminée
+// Route nommée : `MarketplaceRoutes.orderChat` (`/marketplace/order-chat`)
+// Reçoit `OrderChatArgs(orderId: ...)` depuis `OrderCheckoutScreen` ou `MarketplaceScreen`.
+//
+// Composants clés et liaisons techniques :
+// - `initState()` + `addPostFrameCallback` : appelle `_controller.markConversationRead(widget.orderId)`
+//   pour remettre à 0 le badge `unreadCount` dès l'ouverture de la conversation.
+// - `ListenableBuilder` : écoute `_controller` (simulant un listener temps réel `snapshots()` Firestore)
+//   afin d'afficher instantanément les nouveaux messages, le lien Jitsi Meet généré à l'acceptation
+//   et le déblocage du bouton de téléchargement PDF privé.
+// - `ListView.builder` + `ScrollController` : construit à la demande les bulles `_SystemMessageBubble`
+//   (messages système centrés) et `_ChatBubble` (alignées à droite `Alignment.centerRight` pour soi,
+//   à gauche `Alignment.centerLeft` pour l'interlocuteur) et défile automatiquement vers le bas (`animateTo`).
 // ============================================================================
 
 class OrderChatScreen extends StatefulWidget {

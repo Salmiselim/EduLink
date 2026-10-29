@@ -1,18 +1,28 @@
+// Bibliothèque officielle Material Design de Flutter : fournit MaterialApp, Scaffold,
+// AppBar, NavigationBar, ActionChip, IconButton, SnackBar, ThemeData et ColorScheme.
 import 'package:flutter/material.dart';
+
+// Liaisons internes vers les couches du module M5 (Data, Models, Routes, Screens) :
 import 'features/marketplace/data/marketplace_mock_data.dart';
 import 'features/marketplace/models/marketplace_models.dart';
 import 'features/marketplace/routes/marketplace_routes.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
 
 /// Point d'entrée principal de l'application EduLink (Module M5 — Marketplace).
+/// `runApp` (fourni par `package:flutter/widgets.dart` via `material.dart`) monte
+/// le widget racine [EduLinkMarketplaceApp] en haut de l'arbre de widgets Flutter.
 void main() {
   runApp(const EduLinkMarketplaceApp());
 }
 
-/// Widget racine de l'application qui configure :
-/// - Le thème Material 3 (Charte graphique EduLink)
-/// - Le gestionnaire de routes nommées centralisé (`MarketplaceRoutes.onGenerateRoute`)
-/// - L'écran principal `MarketplaceShell`
+/// Widget racine (`StatelessWidget` car sa configuration globale ne possède pas d'état local mutable).
+/// Configure :
+/// 1. `MaterialApp` : enveloppe Material Design gérant le thème global et le `Navigator` racine.
+/// 2. `ThemeData` + `useMaterial3: true` + `ColorScheme.fromSeed` : charte graphique unifiée EduLink
+///    basée sur le bleu primaire `#2563EB` et le fond ardoise clair `#F8FAFC`.
+/// 3. `onGenerateRoute: MarketplaceRoutes.onGenerateRoute` : branchement du routeur centralisé
+///    qui intercepte tous les appels `Navigator.pushNamed(...)` du module.
+/// 4. `home: MarketplaceShell()` : écran d'accueil contenant l'AppBar et la barre à 5 onglets.
 class EduLinkMarketplaceApp extends StatelessWidget {
   const EduLinkMarketplaceApp({super.key});
 
@@ -48,15 +58,22 @@ class MarketplaceShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Récupération du contrôleur partagé (singleton ChangeNotifier)
+    // Récupération de l'instance unique (Singleton) du contrôleur d'état `MarketplaceController`.
+    // Ce contrôleur hérite de `ChangeNotifier` (`package:flutter/foundation.dart`).
     final controller = MarketplaceController.instance;
 
-    // ListenableBuilder reconstruit automatiquement l'interface quand le rôle change
+    // `ListenableBuilder` (widget réactif natif de Flutter) s'abonne à `controller`.
+    // Dès que `controller.notifyListeners()` est appelé (ex: bascule Étudiant <-> Enseignant),
+    // seul ce sous-arbre est reconstruit automatiquement sans recréer toute l'application.
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final isTeacher = controller.currentUserRole == SellerRole.teacher;
 
+        // `Scaffold` : structure visuelle Material 3 standard fournissant :
+        // - `appBar` (en-tête fixe en haut)
+        // - `body` (contenu principal : `MarketplaceScreen`)
+        // - `bottomNavigationBar` (barre de navigation à 5 onglets de l'application EduLink)
         return Scaffold(
           appBar: AppBar(
             backgroundColor: Colors.white,

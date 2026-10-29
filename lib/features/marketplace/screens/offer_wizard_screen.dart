@@ -1,20 +1,26 @@
+// Bibliothèque Material Design de Flutter : fournit Form, GlobalKey<FormState>, TextFormField,
+// DropdownButtonFormField, SwitchListTile, SegmentedButton, ChoiceChip, Chip, ActionChip,
+// RadioGroup, RadioListTile, AlertDialog, OutlinedButton et FilledButton.
 import 'package:flutter/material.dart';
+
+// Liaisons avec le contrôleur d'état (`addOffer` / `updateOffer`) et les modèles de données :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 
 // ============================================================================
 // ROUTE POUSSÉE : ASSISTANT DE CRÉATION / ÉDITION D'OFFRE EN 6 ÉTAPES (OfferWizardScreen)
-// Page 8 — Métier 2 :
-// « Assistant de création d'offre (route poussée, étudiant ou enseignant) :
-//   1. Choix du type
-//   2. Informations, photos ou fichier
-//   3. Prix (en TND ou Gratuit)
-//   4. Lieu ou mode et disponibilités
-//   5. Cours lié (optionnel — Liaison L6)
-//   6. Aperçu -> Publication (ou Brouillon) »
+// Route nommée : `MarketplaceRoutes.offerWizard` (`/marketplace/offer-wizard`)
+// Reçoit un argument optionnel `OfferWizardArgs(existingOffer: ...)` :
+// - Si `existingOffer == null` -> Mode Création (`POST /offers` via `_controller.addOffer`)
+// - Si `existingOffer != null` -> Mode Modification (`PATCH /offers/:id` via `_controller.updateOffer`),
+//   avec pré-remplissage automatique de tous les `TextEditingController` dans `initState()`.
 //
-// Répond au critère d'évaluation : « Contrôles de saisie et validations »
-// via des clés [GlobalKey<FormState>] et des [TextFormField] sur chaque étape.
+// Architecture des contrôles de saisie (Critère d'évaluation n°4) :
+// - `_step2FormKey` (`GlobalKey<FormState>`) valide le Titre (5-80 car., non numérique) et la Description (>= 20 car.)
+// - `_step3FormKey` (`GlobalKey<FormState>`) valide le Prix en TND (nombre réel > 0 et <= 500) lorsque `!_isFree`
+// - `_step4FormKey` (`GlobalKey<FormState>`) valide l'Adresse OpenStreetMap (>= 6 car.) et impose >= 1 créneau
+//   horaire validé par expression régulière `_timeRegex` (`HH:mm`, `fin > début`).
+// - `_goToNextStep()` bloque le passage à l'étape suivante tant que `_validateStep(_currentStep)` renvoie `false`.
 // ============================================================================
 
 class OfferWizardScreen extends StatefulWidget {

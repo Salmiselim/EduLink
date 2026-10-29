@@ -1,4 +1,9 @@
+// Bibliothèque Material Design 3 de Flutter : fournit SegmentedButton, IndexedStack,
+// FloatingActionButton.extended, TextField, Badge, IconButton.filledTonal, FilterChip,
+// ChoiceChip, Slider, DraggableScrollableSheet, ModalBottomSheet, AlertDialog et Form.
 import 'package:flutter/material.dart';
+
+// Liaisons internes avec le contrôleur d'état, les modèles, le routeur et les widgets réutilisables :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
@@ -7,10 +12,19 @@ import '../widgets/review_dialog.dart';
 
 // ============================================================================
 // ÉCRAN PRINCIPAL DE L'ONGLET MARKETPLACE (MarketplaceScreen)
-// Page 8 — Section Flutter :
-// « Onglet Marketplace avec bascule "Explorer | Mes offres | Mes commandes"
-// en haut ; détail d'une offre, assistant d'offre, écran de commande ou de
-// réservation et chat en routes poussées. »
+// Hérite de `StatefulWidget` pour gérer l'état local des filtres, de la barre de recherche
+// et de l'index de la bascule supérieure (`_topSectionIndex` : 0, 1 ou 2).
+//
+// Composants clés et raisons de leur choix :
+// - `ListenableBuilder` : écoute `MarketplaceController.instance` pour rafraîchir automatiquement
+//   les compteurs d'offres, les favoris, les statistiques vendeur et les commandes.
+// - `SegmentedButton<int>` (Material 3) : bascule ergonomique à 3 segments (« Explorer | Mes offres | Mes commandes »)
+//   avec un `Badge` rouge indiquant le nombre de demandes en attente côté vendeur.
+// - `IndexedStack` : conserve en mémoire la position de défilement (`ScrollPosition`) des 3 vues
+//   lorsqu'on passe de « Explorer » à « Mes offres » ou « Mes commandes ».
+// - `DraggableScrollableSheet` + `StatefulBuilder` : feuille modale glissante pour les filtres avancés
+//   (`Slider` de prix max en TND, `ChoiceChip` de matière, niveau, ville, note ★ et tri).
+// - `AlertDialog` (`_confirmDeleteOffer`) : confirmation obligatoire avant toute suppression (`DELETE /offers/:id`).
 // ============================================================================
 
 class MarketplaceScreen extends StatefulWidget {

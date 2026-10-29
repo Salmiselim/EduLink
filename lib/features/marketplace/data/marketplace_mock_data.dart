@@ -1,10 +1,22 @@
+// `package:flutter/foundation.dart` est la bibliothèque légère de base de Flutter :
+// elle fournit la classe `ChangeNotifier` (patron de conception Observateur / Observer Pattern)
+// sans importer toute la couche graphique UI dans la couche de gestion des données.
 import 'package:flutter/foundation.dart';
+
+// Liaison vers la couche Modèles (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`, `OfferReview`, `ChatMessage`)
 import '../models/marketplace_models.dart';
 
 // ============================================================================
 // CONTRÔLEUR D'ÉTAT & DONNÉES DE DÉMONSTRATION — MODULE M5 : MARKETPLACE
-// Hérite de [ChangeNotifier] (compatible avec Provider) pour synchroniser
-// toutes les vues (Catalogue, Détail, Assistant, Commandes, Chat, Avis).
+//
+// Rôle architectural et liaison avec les écrans :
+// - Implémente le patron Singleton (`MarketplaceController.instance`) pour partager
+//   exactement le même état entre les 5 écrans de la Marketplace.
+// - Hérite de `ChangeNotifier` : chaque méthode métier (`addOffer`, `updateOffer`,
+//   `deleteOffer`, `toggleFavorite`, `createOrder`, `updateOrderStatus`, `sendMessage`,
+//   `submitReview`) se termine par `notifyListeners()`.
+// - Tous les écrans abonnés via le widget `ListenableBuilder(listenable: _controller, ...)`
+//   se reconstruisent instantanément dès qu'une donnée est modifiée.
 // ============================================================================
 
 class MarketplaceController extends ChangeNotifier {

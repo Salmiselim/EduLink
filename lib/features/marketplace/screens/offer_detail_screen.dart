@@ -1,20 +1,29 @@
+// Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, ListView, Wrap,
+// ChoiceChip, CircleAvatar, AlertDialog, RadioGroup, RadioListTile, Form, TextFormField,
+// SafeArea et FilledButton.icon.
 import 'package:flutter/material.dart';
+
+// Liaisons internes avec le contrôleur Singleton, les modèles et la table des routes nommées :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
 
 // ============================================================================
 // ROUTE POUSSÉE : DÉTAIL D'UNE OFFRE (OfferDetailScreen)
-// Page 8 — Endpoint associé : `GET /offers/:id` (incrémente `viewsCount`).
-// Affiche :
-// - Le type d'offre et l'origine du vendeur (« Enseignant vérifié » / « Offre étudiant », Règle 5)
-// - Le cours rattaché (Liaison L6)
-// - Les caractéristiques détaillées, l'adresse OpenStreetMap ou les infos PDF
-// - Les créneaux horaires libres/réservés (`availabilities`) si cours particulier
-// - Le profil public du vendeur et ses badges M5 (Liaison L9)
-// - Les avis vérifiés des acheteurs (`GET /reviews`)
-// - Le bouton de signalement (`POST /reports`, masquage auto à 3 signalements) avec validation
-// - Le bouton d'achat / réservation (bloqué si c'est sa propre offre — Règle 5)
+// Route nommée : `MarketplaceRoutes.offerDetail` (`/marketplace/offer-detail`)
+// Reçoit un argument typé `OfferDetailArgs(offerId: ...)` via `MarketplaceRoutes.onGenerateRoute`.
+//
+// Cycle de vie & liaisons techniques :
+// 1. Dans `initState()`, `WidgetsBinding.instance.addPostFrameCallback` attend la fin du 1er rendu
+//    pour appeler `_controller.incrementViewCount(widget.offerId)` (`GET /offers/:id`) sans provoquer
+//    d'erreur `setState() or markNeedsBuild() called during build`.
+// 2. `ChoiceChip` permet à l'étudiant de présélectionner un créneau libre (`_highlightedSlot`),
+//    qui est ensuite transmis dans `OrderCheckoutArgs(offer: offer, preselectedSlot: _highlightedSlot)`
+//    lors du `Navigator.pushNamed(context, MarketplaceRoutes.orderCheckout, ...)`.
+// 3. `AlertDialog` + `StatefulBuilder` + `RadioGroup<String>` + `Form` gèrent le signalement
+//    (`POST /reports`) avec masquage automatique dès 3 signalements.
+// 4. Règle 5 : si `isOwnOffer` (`offer.sellerId == currentUserId`), le `FilledButton.icon`
+//    en bas de l'écran reçoit `onPressed: null`, ce qui le désactive visuellement et techniquement.
 // ============================================================================
 
 class OfferDetailScreen extends StatefulWidget {

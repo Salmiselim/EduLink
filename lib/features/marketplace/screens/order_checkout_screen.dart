@@ -1,15 +1,28 @@
+// Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, Form, GlobalKey<FormState>,
+// TextFormField, ListTile, IconButton.outlined, SafeArea, FilledButton.icon et SnackBar.
 import 'package:flutter/material.dart';
+
+// Liaisons avec le contrôleur (`createOrder`), les modèles et la table des routes (`pushReplacementNamed`) :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
 
 // ============================================================================
 // ROUTE POUSSÉE : ÉCRAN DE COMMANDE OU DE RÉSERVATION (OrderCheckoutScreen)
-// Page 8 — Étape 1 du parcours d'une commande (`POST /orders`) :
-// « L'acheteur commande une ressource ou choisit un créneau libre d'un cours
-// particulier : la commande passe à "requested" ; le créneau est verrouillé
-// (transaction Firestore) pour éviter une double réservation. »
-// Inclut les contrôles de saisie et validations (`Form` + `TextFormField`).
+// Route nommée : `MarketplaceRoutes.orderCheckout` (`/marketplace/order-checkout`)
+// Reçoit `OrderCheckoutArgs(offer: ..., preselectedSlot: ...)` depuis `OfferDetailScreen`.
+//
+// Liaisons techniques et parcours utilisateur :
+// 1. Adapte dynamiquement son interface selon `offer.type` :
+//    - `privateLesson` : sélection d'un `AvailabilitySlot` libre via `ListTile` radio (les créneaux déjà
+//      réservés `slot.isBooked` sont grisés, barrés et ont `onTap: null`).
+//    - `resourcePhysical` : sélecteur de quantité borné `[1..maxStock]` via `IconButton.outlined`
+//      et affichage du lieu de remise OpenStreetMap Nominatim.
+//    - `resourceDigital` : récapitulatif du PDF privé Cloudinary (débloqué immédiatement si gratuit).
+// 2. Valide le message initial `orders.note` (>= 10 caractères) via `_formKey.currentState!.validate()`.
+// 3. Appelle `_controller.createOrder(...)` puis utilise `Navigator.pushReplacementNamed` vers
+//    `MarketplaceRoutes.orderChat` afin de remplacer l'écran de paiement par le chat de suivi
+//    (évite de recréer une commande en double si l'utilisateur appuie sur le bouton Retour).
 // ============================================================================
 
 class OrderCheckoutScreen extends StatefulWidget {

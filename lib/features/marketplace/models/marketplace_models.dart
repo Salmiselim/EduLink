@@ -1,15 +1,21 @@
+// `package:flutter/material.dart` est importé ici uniquement pour les types `Color` et `IconData`
+// associés aux énumérations (`OfferType`, `OfferStatus`, `OrderStatus`), ce qui centralise
+// la charte graphique (couleurs et icônes par type/statut) directement sur les modèles typés.
 import 'package:flutter/material.dart';
 
 // ============================================================================
 // MODÈLES DE DONNÉES — MODULE M5 : MARKETPLACE (Pages 7 et 8 du Plan d'équipe)
-// Correspond aux collections Firestore :
-// - offers
-// - availabilities
-// - orders
-// - reviews (id = orderId)
-// - favorites
-// - reports
-// - conversations & conversations/{id}/messages
+//
+// Architecture de liaison :
+// - Immuabilité : toutes les classes (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`,
+//   `OfferReview`, `ChatMessage`, `OfferLocation`) utilisent des attributs `final`
+//   et exposent une méthode `copyWith(...)` pour créer une copie mise à jour sans effet de bord.
+// - Correspondance exacte avec les collections Firestore du schéma :
+//   * `Offer`            <-> collection `offers`
+//   * `AvailabilitySlot` <-> collection `availabilities`
+//   * `MarketplaceOrder` <-> collection `orders`
+//   * `OfferReview`      <-> collection `reviews` (avec `id = orderId`)
+//   * `ChatMessage`      <-> sous-collection `conversations/{orderId}/messages`
 // ============================================================================
 
 /// Les 3 types d'offres autorisés dans la Marketplace (Page 7) :

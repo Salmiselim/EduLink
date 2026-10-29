@@ -1,4 +1,7 @@
+// Bibliothèque Material Design de Flutter : fournit Route, RouteSettings et MaterialPageRoute.
 import 'package:flutter/material.dart';
+
+// Liaisons avec les modèles de données et les 4 écrans secondaires (routes poussées) du module M5 :
 import '../models/marketplace_models.dart';
 import '../screens/offer_detail_screen.dart';
 import '../screens/offer_wizard_screen.dart';
@@ -8,7 +11,12 @@ import '../screens/order_checkout_screen.dart';
 // ============================================================================
 // GESTION CENTRALISÉE DES ROUTES — MODULE M5 : MARKETPLACE
 // Répond au critère d'évaluation : « Navigation et gestion des routes ».
-// Définit toutes les routes nommées et leurs arguments typés via [onGenerateRoute].
+//
+// Architecture de liaison :
+// 1. Un écran appelle `Navigator.pushNamed(context, MarketplaceRoutes.offerDetail, arguments: OfferDetailArgs(...))`
+// 2. `MaterialApp` (dans `lib/main.dart`) délègue la requête à `MarketplaceRoutes.onGenerateRoute`
+// 3. `onGenerateRoute` lit `settings.name` et caste `settings.arguments` vers la classe `*Args` typée
+// 4. Il retourne une `MaterialPageRoute` (animation native Android/iOS + pile de retour `Navigator.pop`)
 // ============================================================================
 
 /// Arguments typés pour la route de détail d'une offre (`OfferDetailScreen`)

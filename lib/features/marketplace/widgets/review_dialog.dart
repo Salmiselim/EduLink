@@ -1,12 +1,25 @@
+// Bibliothèque Material Design de Flutter : fournit StatefulWidget, Form, GlobalKey<FormState>,
+// TextFormField, TextEditingController, MediaQuery, IconButton et FilledButton.icon.
 import 'package:flutter/material.dart';
+
+// Liaison avec le modèle `MarketplaceOrder` pour afficher le titre de l'offre et le nom du vendeur
 import '../models/marketplace_models.dart';
 
 // ============================================================================
 // FEUILLE MODALE : DÉPÔT D'UN AVIS AVEC CONTRÔLE DE SAISIE (ReviewBottomSheet)
-// Appelée depuis « Mes commandes » ou depuis le Chat d'une commande lorsque
-// le statut de la commande est passé à `completed` (Étape 4 du parcours, Page 8).
-// Règle 5 (Page 2) : Un seul avis par commande terminée (id du document = orderId).
-// Inclut un [Form] et un [TextFormField] avec validation stricte du commentaire.
+// Hérite de `StatefulWidget` car il gère localement :
+// - `_selectedRating` (note interactive de 1 à 5 étoiles ★ mise à jour via `setState`)
+// - `_commentController` (`TextEditingController` libéré proprement dans `dispose()`)
+// - `_formKey` (`GlobalKey<FormState>`) pilotant la validation du `TextFormField`
+//
+// Comment est-il ouvert et relié au reste du code ?
+// - Ouvert via la fonction Material `showModalBottomSheet(isScrollControlled: true, ...)`
+//   depuis `MarketplaceScreen` (vue « Mes commandes ») ET depuis `OrderChatScreen`
+//   uniquement lorsque `order.status == OrderStatus.completed && !order.hasReview`.
+// - À la validation (`_handleSubmit`), il appelle le callback `onSubmit(rating, comment)`
+//   qui invoque `MarketplaceController.instance.submitReview(...)`, recalculant `ratingAvg`.
+// - `MediaQuery.of(context).viewInsets.bottom` ajoute une marge dynamique égale à la hauteur
+//   du clavier virtuel du téléphone afin que le champ de saisie ne soit jamais masqué.
 // ============================================================================
 
 class ReviewBottomSheet extends StatefulWidget {

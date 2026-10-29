@@ -1,16 +1,26 @@
+// Bibliothèque Material Design de Flutter : fournit Card, InkWell, Wrap, Row, Column,
+// Expanded, Flexible, CircleAvatar, Divider, Icon et Text.
 import 'package:flutter/material.dart';
+
+// Liaison avec le modèle `Offer`, `OfferType`, `SellerRole` et `DeliveryMode`
 import '../models/marketplace_models.dart';
 
 // ============================================================================
 // COMPOSANT RÉUTILISABLE : CARTE D'OFFRE (OfferCard)
-// Utilisée dans le catalogue principal et dans le carrousel des recommandations (L6).
-// Affiche :
-// - Le type d'offre (Numérique PDF, Physique, Cours 1h)
-// - Le badge obligatoire d'origine du vendeur (« Offre étudiant » / « Enseignant vérifié », Règle 5)
-// - Le bouton Favori ♥ (PUT | DELETE /favorites)
-// - Le titre, la matière, le niveau, le mode (Jitsi / Ville) et l'état/stock
-// - Le cours rattaché (Liaison L6)
-// - L'avatar et le nom du vendeur, la note moyenne ★ et le prix en TND (ou Gratuit)
+// Hérite de `StatelessWidget` : composant purement déclaratif qui reçoit ses données
+// (`offer`, `isFavorite`, `compact`) et remonte les actions utilisateur à son parent
+// via deux callbacks (`VoidCallback onTap`, `VoidCallback onFavoriteToggle`).
+//
+// Où est-il relié dans le code ?
+// - Dans `MarketplaceScreen._buildExplorerView()` :
+//   1) En mode `compact: true` dans le carrousel horizontal `ListView.separated` des recommandations (L6)
+//   2) En mode normal (`compact: false`) dans la liste verticale du catalogue public
+//
+// Composants Flutter utilisés à l'intérieur :
+// - `Card` + `RoundedRectangleBorder` + `Clip.antiAlias` : conteneur Material 3 aux coins arrondis (16px)
+// - `InkWell` : détecte le clic (`onTap`) avec effet d'onde visuelle Material (ripple effect)
+// - `Wrap` : permet aux badges et métadonnées de passer automatiquement à la ligne sur petit écran (zéro overflow)
+// - `CircleAvatar` : affiche les initiales du vendeur avec code couleur selon son rôle (Étudiant / Enseignant)
 // ============================================================================
 
 class OfferCard extends StatelessWidget {
