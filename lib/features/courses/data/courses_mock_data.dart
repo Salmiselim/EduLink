@@ -259,16 +259,18 @@ class CoursesController extends ChangeNotifier {
   }
 
   /// Réordonne les chapitres après un glisser-déposer
-  /// (`PATCH /courses/:id/chapters/reorder`)
+  /// (`PATCH /courses/:id/chapters/reorder`).
+  /// [newIndex] est déjà ajusté par `ReorderableListView.onReorderItem`
+  /// (position finale d'insertion après retrait de l'élément déplacé).
   void reorderChapters(String courseId, int oldIndex, int newIndex) {
     final chapters = _chaptersByCourse[courseId];
     if (chapters == null ||
         oldIndex < 0 ||
         oldIndex >= chapters.length ||
-        newIndex > chapters.length) {
+        newIndex < 0 ||
+        newIndex >= chapters.length) {
       return;
     }
-    if (newIndex > oldIndex) newIndex -= 1;
     final chapter = chapters.removeAt(oldIndex);
     chapters.insert(newIndex, chapter);
     for (var i = 0; i < chapters.length; i++) {

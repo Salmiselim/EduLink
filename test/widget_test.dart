@@ -19,4 +19,25 @@ void main() {
       expect(find.text('Profil'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    "L'onglet Cours (M2) affiche la vue étudiant « Mes cours »",
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const EduLinkApp());
+      await tester.pumpAndSettle();
+
+      // Bascule vers l'onglet Cours (M2) via la barre inférieure
+      await tester.tap(find.text('Cours'));
+      await tester.pumpAndSettle();
+
+      // AppBar du module + bascule des vues (SegmentedButton)
+      expect(find.text('EduLink · Cours'), findsOneWidget);
+      expect(find.text('Mes cours'), findsOneWidget);
+      expect(find.text('Catalogue'), findsOneWidget);
+
+      // L'étudiant simulé suit déjà des cours dans le mock : la section
+      // « reprise de lecture » et les cartes de progression s'affichent.
+      expect(find.text('Continuer la lecture'), findsOneWidget);
+    },
+  );
 }

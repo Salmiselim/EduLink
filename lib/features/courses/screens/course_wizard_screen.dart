@@ -550,7 +550,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: chapters.length,
-            onReorder: (oldIndex, newIndex) {
+            onReorderItem: (oldIndex, newIndex) {
               if (_course != null) {
                 _controller.reorderChapters(_course!.id, oldIndex, newIndex);
               }

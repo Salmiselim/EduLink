@@ -402,7 +402,7 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: chapters.length,
-            onReorder: (oldIndex, newIndex) =>
+            onReorderItem: (oldIndex, newIndex) =>
                 _controller.reorderChapters(course.id, oldIndex, newIndex),
             itemBuilder: (context, i) {
               final chapter = chapters[i];
