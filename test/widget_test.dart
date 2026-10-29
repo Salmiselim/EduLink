@@ -3,30 +3,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets(
-    'Le shell EduLink intégré (M4 + M5) affiche Marketplace et la barre à 5 onglets',
-    (WidgetTester tester) async {
-      await tester.pumpWidget(const EduLinkApp());
-
-      // Onglet de démarrage : Marketplace (M5)
-      expect(find.text('EduLink · Marketplace'), findsOneWidget);
-      expect(find.text('Explorer'), findsOneWidget);
-
-      // Barre de navigation inférieure commune aux 5 modules
-      expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Cours'), findsOneWidget);
-      expect(find.text('Évaluations'), findsOneWidget);
-      expect(find.text('Profil'), findsOneWidget);
-    },
-  );
+  /// Ouvre l'application et saute l'écran de connexion (mode démonstration)
+  Future<void> skipAuth(WidgetTester tester) async {
+    await tester.pumpWidget(const EduLinkApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Passer'));
+    await tester.pumpAndSettle();
+  }
 
   testWidgets(
-    "L'onglet Cours (M2) affiche la vue étudiant « Mes cours »",
+    "L'écran de connexion s'affiche puis « Passer » ouvre l'application",
     (WidgetTester tester) async {
       await tester.pumpWidget(const EduLinkApp());
       await tester.pumpAndSettle();
 
-      // Bascule vers l'onglet Cours (M2) via la barre inférieure
+      // Écran de connexion (interface de démonstration)
+      expect(find.text('EduLink'), findsOneWidget);
+      expect(find.text('Se connecter'), findsOneWidget);
+      expect(find.text('Se souvenir de moi'), findsOneWidget);
+      expect(find.text('Mot de passe oublié ?'), findsOneWidget);
+      expect(find.text('Google'), findsOneWidget);
+      expect(find.text('Apple'), findsOneWidget);
+
+      // « Passer » ouvre directement le shell intégré (onglet Marketplace)
+      await tester.tap(find.text('Passer'));
+      await tester.pumpAndSettle();
+      expect(find.text('EduLink · Marketplace'), findsOneWidget);
+      expect(find.text('Explorer'), findsOneWidget);
+      expect(find.byType(NavigationBar), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    "L'onglet Cours affiche la vue étudiant « Mes cours »",
+    (WidgetTester tester) async {
+      await skipAuth(tester);
+
+      // Bascule vers l'onglet Cours via la barre inférieure
       await tester.tap(find.text('Cours'));
       await tester.pumpAndSettle();
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'features/auth/screens/sign_in_screen.dart';
 import 'features/courses/data/courses_mock_data.dart';
 import 'features/courses/models/courses_models.dart';
 import 'features/courses/routes/courses_routes.dart';
@@ -14,7 +15,9 @@ import 'features/marketplace/models/marketplace_models.dart';
 import 'features/marketplace/routes/marketplace_routes.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
 
-/// Point d'entrée principal de l'application EduLink (intégration M2 + M4 + M5).
+/// Point d'entrée principal de l'application EduLink.
+/// Le shell intégré [EduLinkShell] est ouvert après la connexion (ou via le
+/// bouton « Passer » de l'écran de démonstration).
 void main() {
   runApp(const EduLinkApp());
 }
@@ -40,7 +43,7 @@ class EduLinkApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
       onGenerateRoute: EduLinkRoutes.onGenerateRoute,
-      home: const EduLinkShell(),
+      home: const SignInScreen(),
     );
   }
 }
