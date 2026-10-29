@@ -12,7 +12,7 @@ void main() {
   }
 
   testWidgets(
-    "L'écran de connexion s'affiche puis « Passer » ouvre l'application",
+    "L'écran de connexion s'affiche puis « Passer » ouvre l'onglet Cours",
     (WidgetTester tester) async {
       await tester.pumpWidget(const EduLinkApp());
       await tester.pumpAndSettle();
@@ -25,32 +25,28 @@ void main() {
       expect(find.text('Google'), findsOneWidget);
       expect(find.text('Apple'), findsOneWidget);
 
-      // « Passer » ouvre directement le shell intégré (onglet Marketplace)
+      // « Passer » ouvre le shell intégré : l'onglet de démarrage est Cours
       await tester.tap(find.text('Passer'));
       await tester.pumpAndSettle();
-      expect(find.text('EduLink · Marketplace'), findsOneWidget);
-      expect(find.text('Explorer'), findsOneWidget);
+      expect(find.text('EduLink · Cours'), findsOneWidget);
+      expect(find.text('Mes cours'), findsOneWidget);
+      expect(find.text('Catalogue'), findsOneWidget);
+      expect(find.text('Continuer la lecture'), findsOneWidget);
       expect(find.byType(NavigationBar), findsOneWidget);
     },
   );
 
   testWidgets(
-    "L'onglet Cours affiche la vue étudiant « Mes cours »",
+    "La barre inférieure permet d'atteindre la Marketplace",
     (WidgetTester tester) async {
       await skipAuth(tester);
 
-      // Bascule vers l'onglet Cours via la barre inférieure
-      await tester.tap(find.text('Cours'));
+      // Depuis l'onglet Cours (démarrage), bascule vers Marketplace
+      await tester.tap(find.text('Marketplace'));
       await tester.pumpAndSettle();
 
-      // AppBar du module + bascule des vues (SegmentedButton)
-      expect(find.text('EduLink · Cours'), findsOneWidget);
-      expect(find.text('Mes cours'), findsOneWidget);
-      expect(find.text('Catalogue'), findsOneWidget);
-
-      // L'étudiant simulé suit déjà des cours dans le mock : la section
-      // « reprise de lecture » et les cartes de progression s'affichent.
-      expect(find.text('Continuer la lecture'), findsOneWidget);
+      expect(find.text('EduLink · Marketplace'), findsOneWidget);
+      expect(find.text('Explorer'), findsOneWidget);
     },
   );
 }

@@ -67,8 +67,8 @@ class EduLinkRoutes {
 }
 
 /// Shell intégré de l'application : une seule barre de navigation inférieure
-/// à 5 onglets (Page 2 du Plan d'équipe) et un [IndexedStack] qui conserve
-/// l'état de chaque module quand on change d'onglet.
+/// à 5 onglets et un [IndexedStack] qui conserve l'état de chaque module
+/// quand on change d'onglet.
 /// - Onglet 0 : Cours (live)
 /// - Onglet 2 : Évaluations (live)
 /// - Onglet 3 : Marketplace (live)
@@ -81,8 +81,8 @@ class EduLinkShell extends StatefulWidget {
 }
 
 class _EduLinkShellState extends State<EduLinkShell> {
-  /// Onglet affiché au démarrage : Marketplace (M5), module de référence.
-  int _currentIndex = 3;
+  /// Onglet affiché au démarrage : Cours.
+  int _currentIndex = 0;
 
   @override
   Widget build(BuildContext context) {
