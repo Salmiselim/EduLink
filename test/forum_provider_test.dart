@@ -103,7 +103,7 @@ void main() {
 
     test('un enseignant peut vérifier, et la réponse passe en tête', () {
       final provider = ForumProvider();
-      provider.setRole(UserRole.teacher);
+      provider.setRole(ForumRole.teacher);
       provider.toggleVerifyAnswer('ans_2');
 
       final answers = provider.getAnswersForPost('post_1');
@@ -115,14 +115,14 @@ void main() {
       final provider = ForumProvider();
       expect(provider.pendingPosts.map((p) => p.id), ['post_3']);
 
-      provider.setRole(UserRole.teacher);
+      provider.setRole(ForumRole.teacher);
       provider.addAnswer(postId: 'post_3', body: 'find() renvoie un tableau.');
       expect(provider.pendingPosts, isEmpty);
     });
 
     test('les contenus créés portent le rôle courant', () {
       final provider = ForumProvider();
-      provider.setRole(UserRole.teacher);
+      provider.setRole(ForumRole.teacher);
       final id = provider.createPost(
         title: 'Annonce',
         body: 'Contenu de annonce',

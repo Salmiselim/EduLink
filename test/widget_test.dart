@@ -68,7 +68,8 @@ void main() {
     testWidgets("L'onglet Forum affiche le fil de questions", (tester) async {
       await openForum(tester);
 
-      expect(find.text("Forum d'entraide"), findsOneWidget);
+      expect(find.text('EduLink · Forum'), findsOneWidget);
+      expect(find.text('Questions, réponses & réactions'), findsOneWidget);
       expect(find.text('Poser une question'), findsOneWidget);
     });
 

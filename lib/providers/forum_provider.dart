@@ -11,12 +11,12 @@ class ForumProvider with ChangeNotifier {
   static const ForumUser _testStudent = ForumUser(
     id: 'user_selim',
     name: 'Selim Riahi',
-    role: UserRole.student,
+    role: ForumRole.student,
   );
   static const ForumUser _testTeacher = ForumUser(
     id: 'user_sarah',
     name: 'Dr. Sarah Mansour',
-    role: UserRole.teacher,
+    role: ForumRole.teacher,
     title: 'Enseignante',
   );
 
@@ -43,9 +43,9 @@ class ForumProvider with ChangeNotifier {
       _searchQuery.trim().isNotEmpty || _selectedCourse != allCourses;
 
   // ---------------------------------------------------------- Rôle de test
-  void setRole(UserRole role) {
+  void setRole(ForumRole role) {
     if (role == _currentUser.role) return;
-    _currentUser = role == UserRole.teacher ? _testTeacher : _testStudent;
+    _currentUser = role == ForumRole.teacher ? _testTeacher : _testStudent;
     notifyListeners();
   }
 

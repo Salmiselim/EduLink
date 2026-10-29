@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/answer.dart';
 import '../providers/forum_provider.dart';
 import '../utils/time_format.dart';
+import 'forum_ui.dart';
 import 'role_badge.dart';
 
 class AnswerCard extends StatelessWidget {
@@ -16,42 +17,27 @@ class AnswerCard extends StatelessWidget {
     // Seul un enseignant peut vérifier la réponse d'un autre utilisateur.
     final canVerify = provider.isTeacher && !answer.isTeacher;
 
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: answer.isTeacherVerified
-              ? Colors.green.shade300
-              : Colors.grey.shade200,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: forumCardDecoration(
+          borderColor: answer.isTeacherVerified
+              ? ForumColors.success
+              : ForumColors.border,
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Author row
+            // Auteur, horodatage et vote
             Row(
               children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: answer.isTeacher
-                      ? Colors.amber.shade100
-                      : Colors.indigo.shade50,
-                  child: Text(
-                    answer.authorName.isNotEmpty ? answer.authorName[0] : 'U',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: answer.isTeacher
-                          ? Colors.amber.shade900
-                          : Colors.indigo.shade800,
-                    ),
-                  ),
+                ForumAvatar(
+                  name: answer.authorName,
+                  isTeacher: answer.isTeacher,
+                  radius: 15,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,61 +47,65 @@ class AnswerCard extends StatelessWidget {
                           Flexible(
                             child: Text(
                               answer.authorName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: ForumColors.text,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 6),
                           RoleBadge(role: answer.authorRole),
                         ],
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         formatTimeAgo(answer.createdAt),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade500,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: ForumColors.muted,
                         ),
                       ),
                     ],
                   ),
                 ),
-                // Simple Upvote Button
+                const SizedBox(width: 8),
                 InkWell(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(8),
                   onTap: () => provider.toggleVoteAnswer(answer.id),
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                     decoration: BoxDecoration(
                       color: answer.isUpvoted
-                          ? Colors.indigo.shade50
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(16),
+                          ? ForumColors.infoBg
+                          : ForumColors.neutralBg,
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           answer.isUpvoted
-                              ? Icons.thumb_up
+                              ? Icons.thumb_up_rounded
                               : Icons.thumb_up_alt_outlined,
                           size: 14,
                           color: answer.isUpvoted
-                              ? Colors.indigo
-                              : Colors.grey.shade700,
+                              ? ForumColors.primary
+                              : ForumColors.muted,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '${answer.votesCount}',
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
                             color: answer.isUpvoted
-                                ? Colors.indigo
-                                : Colors.grey.shade700,
+                                ? ForumColors.primary
+                                : ForumColors.muted,
                           ),
                         ),
                       ],
@@ -127,13 +117,13 @@ class AnswerCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // Answer text
+            // Texte de la réponse
             Text(
               answer.body,
               style: const TextStyle(
                 fontSize: 13.5,
-                color: Color(0xFF334155),
-                height: 1.4,
+                color: ForumColors.textSecondary,
+                height: 1.5,
               ),
             ),
 
@@ -143,38 +133,22 @@ class AnswerCard extends StatelessWidget {
               Row(
                 children: [
                   if (answer.isTeacherVerified)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.verified,
-                              size: 14, color: Colors.green.shade700),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Réponse vérifiée',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.green.shade800,
-                            ),
-                          ),
-                        ],
-                      ),
+                    const ForumPill(
+                      label: 'Réponse vérifiée',
+                      color: ForumColors.success,
+                      background: ForumColors.successBg,
+                      icon: Icons.verified_rounded,
                     ),
                   const Spacer(),
                   if (canVerify)
                     TextButton.icon(
-                      onPressed: () =>
-                          provider.toggleVerifyAnswer(answer.id),
+                      onPressed: () => provider.toggleVerifyAnswer(answer.id),
+                      style: TextButton.styleFrom(
+                        foregroundColor: ForumColors.primary,
+                      ),
                       icon: Icon(
                         answer.isTeacherVerified
-                            ? Icons.remove_done_outlined
+                            ? Icons.remove_done_rounded
                             : Icons.verified_outlined,
                         size: 16,
                       ),
@@ -182,7 +156,10 @@ class AnswerCard extends StatelessWidget {
                         answer.isTeacherVerified
                             ? 'Retirer la vérification'
                             : 'Marquer comme vérifiée',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                 ],

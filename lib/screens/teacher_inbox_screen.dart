@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/forum_provider.dart';
+import '../widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
 
 /// Boîte « questions à traiter » : questions d'étudiants sans réponse
@@ -13,18 +14,12 @@ class TeacherInboxScreen extends StatelessWidget {
     final provider = context.watch<ForumProvider>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
+      backgroundColor: ForumColors.scaffold,
       appBar: AppBar(
-        elevation: 0,
         backgroundColor: Colors.white,
-        title: const Text(
-          'Questions à traiter',
-          style: TextStyle(
-            color: Color(0xFF1E293B),
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        title: const ForumPageTitle('Questions à traiter'),
       ),
       body: _buildBody(provider),
     );
@@ -32,52 +27,30 @@ class TeacherInboxScreen extends StatelessWidget {
 
   Widget _buildBody(ForumProvider provider) {
     if (!provider.isTeacher) {
-      return const _Message(
-        icon: Icons.lock_outline,
-        text: 'Cet espace est réservé aux enseignants.',
+      return const Center(
+        child: ForumEmptyState(
+          icon: Icons.lock_outline_rounded,
+          title: 'Espace réservé',
+          subtitle: 'Cet espace est réservé aux enseignants.',
+        ),
       );
     }
 
     final pending = provider.pendingPosts;
     if (pending.isEmpty) {
-      return const _Message(
-        icon: Icons.check_circle_outline,
-        text: 'Toutes les questions ont été traitées.',
+      return const Center(
+        child: ForumEmptyState(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'Tout est traité',
+          subtitle: 'Toutes les questions ont reçu une réponse enseignant.',
+        ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 24),
+      padding: const EdgeInsets.only(top: 16, bottom: 16),
       itemCount: pending.length,
       itemBuilder: (context, index) => PostCard(post: pending[index]),
-    );
-  }
-}
-
-class _Message extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _Message({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            Text(
-              text,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -1,9 +1,9 @@
-enum UserRole { student, teacher }
+enum ForumRole { student, teacher }
 
 class ForumUser {
   final String id;
   final String name;
-  final UserRole role;
+  final ForumRole role;
   final String? avatarUrl;
   final String? title;
 
@@ -15,7 +15,7 @@ class ForumUser {
     this.title,
   });
 
-  bool get isTeacher => role == UserRole.teacher;
-  bool get isStudent => role == UserRole.student;
+  bool get isTeacher => role == ForumRole.teacher;
+  bool get isStudent => role == ForumRole.student;
   String get roleString => isTeacher ? 'teacher' : 'student';
 }

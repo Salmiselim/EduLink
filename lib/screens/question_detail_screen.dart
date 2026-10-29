@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/post.dart';
 import '../providers/forum_provider.dart';
+import '../utils/time_format.dart';
 import '../widgets/answer_card.dart';
+import '../widgets/forum_ui.dart';
 import '../widgets/role_badge.dart';
 
 class QuestionDetailScreen extends StatefulWidget {
@@ -70,6 +72,24 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
     );
   }
 
+  PreferredSizeWidget _appBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      leading: IconButton(
+        tooltip: 'Retour',
+        icon: const Icon(
+          Icons.arrow_back_ios_new_rounded,
+          color: ForumColors.text,
+          size: 18,
+        ),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: const ForumPageTitle('Détail de la question'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ForumProvider>();
@@ -77,68 +97,45 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
 
     if (post == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Question')),
-        body: const Center(child: Text('Question introuvable')),
+        backgroundColor: ForumColors.scaffold,
+        appBar: _appBar(),
+        body: const Center(
+          child: ForumEmptyState(
+            icon: Icons.help_outline_rounded,
+            title: 'Question introuvable',
+            subtitle: "Cette question n'existe plus ou a été supprimée.",
+          ),
+        ),
       );
     }
 
     final answers = provider.getAnswersForPost(post.id);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: Color(0xFF1E293B), size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Détail de la question',
-          style: TextStyle(
-            color: Color(0xFF1E293B),
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-      ),
+      backgroundColor: ForumColors.scaffold,
+      appBar: _appBar(),
       body: Column(
         children: [
           Expanded(
             child: ListView(
               controller: _scrollController,
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.all(16),
               children: [
-                // Question Card
+                // Carte de la question
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
+                  decoration: forumCardDecoration(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Author Row
                       Row(
                         children: [
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Colors.indigo.shade50,
-                            child: Text(
-                              post.authorName.isNotEmpty
-                                  ? post.authorName[0]
-                                  : 'U',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.indigo.shade800,
-                              ),
-                            ),
+                          ForumAvatar(
+                            name: post.authorName,
+                            isTeacher: post.isTeacher,
+                            radius: 18,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,23 +145,26 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
                                     Flexible(
                                       child: Text(
                                         post.authorName,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
+                                        maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: ForumColors.text,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 6),
                                     RoleBadge(role: post.authorRole),
                                   ],
                                 ),
+                                const SizedBox(height: 2),
                                 Text(
-                                  post.courseName,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.indigo.shade600,
-                                    fontWeight: FontWeight.w500,
+                                  formatTimeAgo(post.createdAt),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: ForumColors.muted,
                                   ),
                                 ),
                               ],
@@ -175,130 +175,137 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
 
                       const SizedBox(height: 12),
 
-                      // Title
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ForumPill(
+                          label: post.courseName,
+                          color: ForumColors.primary,
+                          background: ForumColors.infoBg,
+                          icon: Icons.sell_outlined,
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
                       Text(
                         post.title,
                         style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: ForumColors.text,
                         ),
                       ),
 
                       const SizedBox(height: 8),
 
-                      // Body
                       Text(
                         post.body,
                         style: const TextStyle(
                           fontSize: 14,
-                          color: Color(0xFF334155),
-                          height: 1.45,
+                          color: ForumColors.textSecondary,
+                          height: 1.5,
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // Answers Section Title
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'Réponses (${answers.length})',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
+                // En-tête de section
+                Text(
+                  'Réponses (${answers.length})',
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                    color: ForumColors.text,
                   ),
                 ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
 
-                // Answers List
                 if (answers.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Center(
-                      child: Text(
-                        'Aucune réponse pour le moment.\nSoyez le premier à répondre !',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey.shade500),
-                      ),
-                    ),
+                  const ForumEmptyState(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: 'Aucune réponse pour le moment',
+                    subtitle: 'Soyez le premier à répondre !',
                   )
                 else
                   ...answers.map((ans) => AnswerCard(answer: ans)),
-
-                const SizedBox(height: 20),
               ],
             ),
           ),
 
-          // Bottom Reply Input
+          // Barre de réponse
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
+              border: Border(top: BorderSide(color: ForumColors.border)),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _answerController,
-                    maxLength: _answerMax,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    textCapitalization: TextCapitalization.sentences,
-                    onSubmitted: (_) => _submitAnswer(),
-                    onChanged: (_) {
-                      if (_answerError != null) {
-                        setState(() => _answerError = null);
-                      }
-                    },
-                    decoration: InputDecoration(
-                      counterText: '',
-                      errorText: _answerError,
-                      hintText: 'Écrire une réponse...',
-                      hintStyle:
-                          TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                      filled: true,
-                      fillColor: const Color(0xFFF1F5F9),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _answerController,
+                        maxLength: _answerMax,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        textCapitalization: TextCapitalization.sentences,
+                        onSubmitted: (_) => _submitAnswer(),
+                        onChanged: (_) {
+                          if (_answerError != null) {
+                            setState(() => _answerError = null);
+                          }
+                        },
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: ForumColors.textSecondary,
+                        ),
+                        decoration: InputDecoration(
+                          counterText: '',
+                          errorText: _answerError,
+                          hintText: 'Écrire une réponse...',
+                          hintStyle: const TextStyle(
+                            color: ForumColors.muted,
+                            fontSize: 13.5,
+                          ),
+                          filled: true,
+                          fillColor: ForumColors.neutralBg,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Colors.indigo,
-                    child: IconButton(
-                      tooltip: 'Envoyer la réponse',
-                      icon: const Icon(Icons.send_rounded,
-                          color: Colors.white, size: 16),
-                      onPressed: _submitAnswer,
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: IconButton.filled(
+                        tooltip: 'Envoyer la réponse',
+                        onPressed: _submitAnswer,
+                        style: IconButton.styleFrom(
+                          backgroundColor: ForumColors.primary,
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size(48, 48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: const Icon(Icons.send_rounded, size: 20),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],

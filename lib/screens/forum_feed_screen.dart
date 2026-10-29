@@ -1,11 +1,12 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/user.dart';
 import '../providers/forum_provider.dart';
 import '../routes/app_routes.dart';
+import '../widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
 
+/// Onglet Forum (M3) : AppBar du module + fil de questions.
 class ForumFeedScreen extends StatefulWidget {
   const ForumFeedScreen({super.key});
 
@@ -39,101 +40,132 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
     final provider = context.watch<ForumProvider>();
     final posts = provider.filteredPosts;
     final pendingCount = provider.pendingPosts.length;
+    final isTeacher = provider.isTeacher;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
+      backgroundColor: ForumColors.scaffold,
       appBar: AppBar(
-        elevation: 0,
         backgroundColor: Colors.white,
-        title: const Text(
-          'Forum d\'entraide',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-            color: Color(0xFF1E293B),
-          ),
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        title: const ForumModuleTitle(
+          icon: Icons.forum_rounded,
+          title: 'EduLink · Forum',
+          subtitle: 'Questions, réponses & réactions',
         ),
         actions: [
+          // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ActionChip(
+              tooltip:
+                  'Changer de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)',
+              onPressed: () => provider.setRole(
+                isTeacher ? ForumRole.student : ForumRole.teacher,
+              ),
+              backgroundColor:
+                  isTeacher ? ForumColors.infoBg : ForumColors.neutralBg,
+              avatar: Icon(
+                isTeacher ? Icons.verified_rounded : Icons.school_outlined,
+                size: 16,
+                color: isTeacher
+                    ? const Color(0xFF1D4ED8)
+                    : const Color(0xFF475569),
+              ),
+              label: Text(
+                isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isTeacher
+                      ? const Color(0xFF1D4ED8)
+                      : const Color(0xFF334155),
+                ),
+              ),
+            ),
+          ),
           // Boîte « questions à traiter » : réservée à l'enseignant
-          if (provider.isTeacher)
+          if (isTeacher)
             IconButton(
               tooltip: 'Questions à traiter',
               onPressed: () =>
-                  Navigator.pushNamed(context, AppRoutes.forumInbox),
+                  Navigator.pushNamed(context, ForumRoutes.forumInbox),
               icon: Badge(
                 label: Text('$pendingCount'),
                 isLabelVisible: pendingCount > 0,
-                child: const Icon(Icons.inbox_outlined,
-                    color: Color(0xFF1E293B)),
+                child: const Icon(
+                  Icons.inbox_rounded,
+                  color: ForumColors.primary,
+                ),
               ),
             ),
-          // Sélecteur de rôle : outil de test, absent en version finale
-          if (kDebugMode)
-            PopupMenuButton<UserRole>(
-              tooltip: 'Changer de rôle (mode test)',
-              icon: const Icon(Icons.swap_horiz_rounded,
-                  color: Color(0xFF1E293B)),
-              onSelected: provider.setRole,
-              itemBuilder: (context) => [
-                CheckedPopupMenuItem<UserRole>(
-                  value: UserRole.student,
-                  checked: !provider.isTeacher,
-                  child: const Text('Étudiant'),
-                ),
-                CheckedPopupMenuItem<UserRole>(
-                  value: UserRole.teacher,
-                  checked: provider.isTeacher,
-                  child: const Text('Enseignant'),
-                ),
-              ],
-            ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(
         children: [
-          // Search & Filter Header
+          // Recherche + filtres par cours
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Column(
               children: [
-                // Search Input
                 TextField(
                   controller: _searchController,
                   textInputAction: TextInputAction.search,
                   onChanged: provider.setSearchQuery,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: ForumColors.textSecondary,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Rechercher une question...',
-                    hintStyle:
-                        TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                    prefixIcon:
-                        const Icon(Icons.search, size: 20, color: Colors.grey),
+                    hintStyle: const TextStyle(
+                      color: ForumColors.muted,
+                      fontSize: 13.5,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      size: 20,
+                      color: ForumColors.muted,
+                    ),
                     suffixIcon: provider.searchQuery.isEmpty
                         ? null
                         : IconButton(
                             tooltip: 'Effacer la recherche',
-                            icon: const Icon(Icons.close,
-                                size: 18, color: Colors.grey),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: ForumColors.muted,
+                            ),
                             onPressed: () {
                               _searchController.clear();
                               provider.setSearchQuery('');
                             },
                           ),
                     filled: true,
-                    fillColor: const Color(0xFFF1F5F9),
+                    fillColor: ForumColors.scaffold,
                     contentPadding: const EdgeInsets.symmetric(vertical: 0),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: ForumColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: ForumColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                          color: ForumColors.primary, width: 1.6),
                     ),
                   ),
                 ),
 
                 const SizedBox(height: 10),
 
-                // Simple Course Horizontal Chips
                 SizedBox(
-                  height: 32,
+                  height: 34,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: provider.courses.length,
@@ -146,17 +178,23 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
                           course,
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                            fontWeight: FontWeight.w700,
                             color: isSelected
                                 ? Colors.white
-                                : Colors.blueGrey.shade800,
+                                : ForumColors.textSecondary,
                           ),
                         ),
                         selected: isSelected,
-                        selectedColor: Colors.indigo,
-                        backgroundColor: const Color(0xFFF1F5F9),
+                        selectedColor: ForumColors.primary,
+                        backgroundColor: Colors.white,
+                        side: BorderSide(
+                          color: isSelected
+                              ? ForumColors.primary
+                              : ForumColors.border,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         showCheckmark: false,
                         onSelected: (_) => provider.setSelectedCourse(course),
                       );
@@ -167,76 +205,60 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
             ),
           ),
 
-          const SizedBox(height: 6),
-
-          // Questions List (tirer vers le bas pour rafraîchir)
+          // Liste des questions (tirer vers le bas pour rafraîchir)
           Expanded(
             child: RefreshIndicator(
+              color: ForumColors.primary,
               onRefresh: provider.refresh,
               child: posts.isEmpty
-                  ? _EmptyState(
-                      hasFilters: provider.hasActiveFilters,
-                      onReset: _resetFilters,
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        ForumEmptyState(
+                          icon: Icons.search_off_rounded,
+                          title: provider.hasActiveFilters
+                              ? 'Aucune question trouvée'
+                              : 'Aucune question pour le moment',
+                          subtitle: provider.hasActiveFilters
+                              ? 'Aucune question ne correspond à votre recherche.'
+                              : 'Soyez le premier à poser une question !',
+                          action: provider.hasActiveFilters
+                              ? TextButton.icon(
+                                  onPressed: _resetFilters,
+                                  icon: const Icon(
+                                    Icons.filter_alt_off_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text(
+                                    'Réinitialiser les filtres',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ],
                     )
                   : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.only(top: 4, bottom: 80),
+                      padding: const EdgeInsets.only(top: 12, bottom: 88),
                       itemCount: posts.length,
-                      itemBuilder: (context, index) {
-                        return PostCard(post: posts[index]);
-                      },
+                      itemBuilder: (context, index) =>
+                          PostCard(post: posts[index]),
                     ),
             ),
           ),
         ],
       ),
 
-      // FAB: Poser une question
+      // FAB : Poser une question
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Colors.indigo,
+        onPressed: () => Navigator.pushNamed(context, ForumRoutes.forumAsk),
+        backgroundColor: ForumColors.primary,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
+        icon: const Icon(Icons.add_rounded),
         label: const Text('Poser une question'),
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.forumAsk),
       ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  final bool hasFilters;
-  final VoidCallback onReset;
-
-  const _EmptyState({required this.hasFilters, required this.onReset});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        const SizedBox(height: 80),
-        Icon(Icons.search_off_rounded, size: 56, color: Colors.grey.shade400),
-        const SizedBox(height: 12),
-        Center(
-          child: Text(
-            hasFilters
-                ? 'Aucune question ne correspond à votre recherche'
-                : 'Aucune question pour le moment',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-        ),
-        if (hasFilters) ...[
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton.icon(
-              onPressed: onReset,
-              icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
-              label: const Text('Réinitialiser les filtres'),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }
