@@ -290,7 +290,7 @@ class Offer {
   final String sellerName;
   final String sellerAvatar;
   final String sellerSubtitle; // Université / Filière (étudiant) ou Titre (enseignant)
-  final List<String> sellerBadges; // Badges M5 : Vendeur, Mentor, Bien noté (Liaison L9)
+  final List<String> sellerBadges; // Badges du vendeur : Vendeur, Mentor, Bien noté
   final SellerRole sellerRole; // student | teacher
   final OfferType type; // resource_digital | resource_physical | private_lesson
   final String title;
@@ -305,7 +305,7 @@ class Offer {
   final int? quantity; // Stock disponible (pour resource_physical)
   final DeliveryMode? mode; // online (Jitsi) | onsite (présentiel)
   final OfferLocation? location; // Adresse et coordonnées OpenStreetMap Nominatim
-  final String? courseId; // Liaison L6 : identifiant du cours rattaché (nullable)
+  final String? courseId; // Identifiant du cours rattaché (nullable)
   final String? courseTitle; // Titre du cours rattaché (affiché sur la carte et le détail)
   final OfferStatus status; // draft | published | sold_out | hidden
   final int viewsCount; // Incrémenté à chaque lecture GET /offers/:id
@@ -314,7 +314,7 @@ class Offer {
   final int ratingCount; // Nombre total d'avis reçus
   final int reportsCount; // Compteur de signalements (masquée auto à 3)
   final DateTime createdAt;
-  final bool isRecommendedByCourse; // Indique si l'offre est recommandée via Liaison L6
+  final bool isRecommendedByCourse; // Indique si l'offre est recommandée via un cours suivi
 
   const Offer({
     required this.id,

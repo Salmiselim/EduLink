@@ -271,7 +271,7 @@ class ChapterEditSheet {
               height: 46,
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // Liaison L10 — upload Cloudinary via MediaService (M2)
+                  // Upload Cloudinary via le service média partagé
                   setSheetState(() {
                     controller.text =
                         'cloudinary://edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -280,8 +280,8 @@ class ChapterEditSheet {
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
-                        'Liaison L10 — fichier simulé (upload Cloudinary '
-                        'via MediaService à brancher en semaine 2).',
+                        'Fichier simulé — upload via le service média '
+                        '(Cloudinary) — intégration à venir.',
                       ),
                     ),
                   );

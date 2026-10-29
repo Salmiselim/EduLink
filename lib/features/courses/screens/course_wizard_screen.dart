@@ -461,13 +461,13 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
               height: 46,
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // Liaison L10 — upload Cloudinary via MediaService (M2)
+                  // Upload Cloudinary via le service média partagé
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
-                        'Liaison L10 — image de couverture via MediaService '
-                        '(Cloudinary) : branchement semaine 2.',
+                        'Image de couverture via le service média '
+                        '(Cloudinary) — intégration à venir.',
                       ),
                     ),
                   );

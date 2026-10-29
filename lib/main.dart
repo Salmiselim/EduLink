@@ -66,10 +66,10 @@ class EduLinkRoutes {
 /// Shell intégré de l'application : une seule barre de navigation inférieure
 /// à 5 onglets (Page 2 du Plan d'équipe) et un [IndexedStack] qui conserve
 /// l'état de chaque module quand on change d'onglet.
-/// - Onglet 0 : M2 · Cours (live)
-/// - Onglet 2 : M4 · Évaluations (live)
-/// - Onglet 3 : M5 · Marketplace (live)
-/// - Onglets 1, 4 : placeholders (M3 · Forum, M1 · Profil)
+/// - Onglet 0 : Cours (live)
+/// - Onglet 2 : Évaluations (live)
+/// - Onglet 3 : Marketplace (live)
+/// - Onglets 1, 4 : placeholders (Forum, Profil)
 class EduLinkShell extends StatefulWidget {
   const EduLinkShell({super.key});
 
@@ -90,19 +90,19 @@ class _EduLinkShellState extends State<EduLinkShell> {
           CoursesRoot(),
           _ModulePlaceholderTab(
             icon: Icons.forum_rounded,
-            title: 'M3 · Forum (Selim)',
+            title: 'Forum',
             subtitle: 'Questions, réponses & réactions',
-            ownerLabel: 'Responsable : Selim',
-            branchLabel: 'Branche : QA',
+            ownerLabel: 'Intégration à venir',
+            branchLabel: 'Forum',
           ),
           EvaluationsRoot(),
           MarketplaceRoot(),
           _ModulePlaceholderTab(
             icon: Icons.person_rounded,
-            title: 'M1 · Profil & Badges',
+            title: 'Profil & Badges',
             subtitle: 'Comptes, rôles, profils & badges',
-            ownerLabel: 'Responsable : M1',
-            branchLabel: 'Branche : feat/m1-user',
+            ownerLabel: 'Intégration à venir',
+            branchLabel: 'Auth & Profils',
           ),
         ],
       ),
@@ -146,7 +146,7 @@ class _EduLinkShellState extends State<EduLinkShell> {
 }
 
 /// Racine de l'onglet Cours (M2) : AppBar du module + écran principal.
-/// Intégré dans le shell unifié (branche cours) : la barre inférieure est
+/// Intégré dans le shell unifié : la barre inférieure est
 /// désormais gérée par [EduLinkShell].
 class CoursesRoot extends StatelessWidget {
   const CoursesRoot({super.key});
@@ -165,7 +165,7 @@ class CoursesRoot extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
-            // Logo + Titre du module M2 Cours
+            // Logo + Titre du module Cours
             title: Row(
               children: [
                 Container(
@@ -262,7 +262,7 @@ class CoursesRoot extends StatelessWidget {
 }
 
 /// Racine de l'onglet Marketplace (M5) : AppBar du module + écran principal.
-/// Extrait de l'ancien `MarketplaceShell` (branche marketplace) : la barre
+/// Extrait de du `MarketplaceShell` d'origine : la barre
 /// inférieure est désormais gérée par [EduLinkShell].
 class MarketplaceRoot extends StatelessWidget {
   const MarketplaceRoot({super.key});
@@ -281,7 +281,7 @@ class MarketplaceRoot extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
-            // Logo + Titre du module M5 Marketplace
+            // Logo + Titre du module Marketplace
             title: Row(
               children: [
                 Container(
@@ -379,7 +379,7 @@ class MarketplaceRoot extends StatelessWidget {
 }
 
 /// Racine de l'onglet Évaluations (M4) : AppBar du module + écran principal.
-/// Extrait de l'ancien `EvaluationsShell` (branche evaluations) : la barre
+/// Extrait de du `EvaluationsShell` d'origine : la barre
 /// inférieure est désormais gérée par [EduLinkShell].
 class EvaluationsRoot extends StatelessWidget {
   const EvaluationsRoot({super.key});
@@ -398,7 +398,7 @@ class EvaluationsRoot extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
-            // Logo + Titre du module M4 Évaluations
+            // Logo + Titre du module Évaluations
             title: Row(
               children: [
                 Container(
@@ -549,9 +549,9 @@ class EvaluationsRoot extends StatelessWidget {
   }
 }
 
-/// Onglet placeholder d'un module pas encore intégré (M1, M2 ou M3).
-/// Reprend le style d'AppBar des autres modules et affiche la branche où le
-/// travail réel est en cours.
+/// Onglet placeholder d'un module pas encore intégré.
+/// Reprend le style d'AppBar des autres modules et indique l'intégration à venir du
+/// module.
 class _ModulePlaceholderTab extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -655,7 +655,7 @@ class _ModulePlaceholderTab extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Module à venir — géré sur la branche de son responsable.',
+              'Module à venir — intégration prévue prochainement.',
               style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
             ),
           ],
@@ -664,7 +664,7 @@ class _ModulePlaceholderTab extends StatelessWidget {
     );
   }
 
-  /// « M2 · Cours » → « Cours » (le préfixe module est déjà dans le titre AppBar)
+  /// Retire un éventuel préfixe « module · » du titre.
   String _shortTitle(String title) {
     final parts = title.split('·');
     return parts.length > 1 ? parts.last.trim() : title;

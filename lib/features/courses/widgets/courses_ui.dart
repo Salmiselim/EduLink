@@ -4,7 +4,7 @@ import '../models/courses_models.dart';
 // ============================================================================
 // KIT UI PARTAGÉ — MODULE M2 : COURS
 // Palette et primitives conformes à la charte graphique EduLink
-// (MARKETPLACE_GUIDE.md — mêmes valeurs que `EduColors` du module M4).
+// (MARKETPLACE_GUIDE.md).
 // ============================================================================
 
 /// Palette de la charte graphique EduLink

@@ -80,7 +80,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
     return list;
   }
 
-  /// Recommandations d'après les matières des cours déjà suivis (liaison L6 —
+  /// Recommandations d'après les matières des cours déjà suivis :
   /// ici les cours suggérés partagent une matière avec un cours suivi)
   List<Course> _getRecommendedCourses() {
     final followedSubjects =

@@ -863,7 +863,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         ),
         const SizedBox(height: 18),
 
-        // 3. Carrousel horizontal « Recommandées d'après vos cours suivis (Liaison L6) »
+        // 3. Carrousel horizontal « Recommandées d'après vos cours suivis »
         if (recommendedOffers.isNotEmpty &&
             _activeFiltersCount == 0 &&
             _searchController.text.isEmpty) ...[

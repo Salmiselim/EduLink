@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../models/evaluations_models.dart';
 
 /// Palette et helpers UI — charte graphique EduLink (MARKETPLACE_GUIDE.md)
 class EduColors {
