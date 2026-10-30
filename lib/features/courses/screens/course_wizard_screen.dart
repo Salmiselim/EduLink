@@ -5,14 +5,13 @@ import '../widgets/chapter_edit_sheet.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
 
-// ============================================================================
-// ASSISTANT DE CRÉATION / MODIFICATION DE COURS (CourseWizardScreen)
-// ROUTE POUSSÉE — Métier 1 : « infos -> chapitres (texte, PDF, vidéo, lien)
-// avec réordonnancement -> aperçu -> publication ».
-// Les chapitres sont écrits en direct via le contrôleur (le cours est créé
-// en brouillon dès la première étape validée, comme un PATCH incrémental).
-// ============================================================================
+// Assistant séquentiel en quatre étapes de création ou de modification de cours
+// (`CourseWizardScreen`), ouvert via `CoursesRoutes.courseWizard`.
+// Guide l'enseignant à travers : 1. saisie et validation des métadonnées,
+// 2. composition et réordonnancement des chapitres, 3. prévisualisation côté étudiant,
+// 4. enregistrement en brouillon ou publication dans le catalogue.
 
+/// Écran d'assistant multi-étapes gérant la création d'un nouveau cours ou l'édition de [existingCourse].
 class CourseWizardScreen extends StatefulWidget {
   final Course? existingCourse;
 
@@ -24,10 +23,13 @@ class CourseWizardScreen extends StatefulWidget {
 
 class _CourseWizardScreenState extends State<CourseWizardScreen> {
   final CoursesController _controller = CoursesController.instance;
+
+  /// Clé globale rattachée au widget `Form` de l'étape 1 pour déclencher les `validator` avant avancement.
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
 
+  /// Libellés ordonnés des quatre jalons affichés dans le bandeau supérieur de progression.
   static const List<(int, String)> _stepLabels = [
     (1, 'Infos'),
     (2, 'Chapitres'),
@@ -40,6 +42,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
   String? _level;
   int _step = 0;
 
+  /// Indique si l'assistant a été ouvert à partir d'un cours existant plutôt qu'en création pure.
   bool get _isEditing => widget.existingCourse != null;
 
   @override
@@ -61,11 +64,12 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     super.dispose();
   }
 
+  /// Récupère depuis `CoursesController` la liste ordonnée des chapitres du cours en cours d'édition.
   List<Chapter> get _chapters =>
       _course == null ? [] : _controller.chaptersOf(_course!.id);
 
-  /// Crée le cours en brouillon dès la validation des infos (étape 1),
-  /// puis met à jour ses informations à chaque passage d'étape.
+  /// Persiste les champs du formulaire dans `CoursesController` : crée le brouillon initial
+  /// lors du premier passage de l'étape 1, ou met à jour l'entité existante lors des passages suivants.
   void _commitCourseInfo() {
     if (_course == null) {
       _course = _controller.createCourse(
@@ -85,6 +89,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     }
   }
 
+  /// Valide le formulaire de l'étape 1 via `_formKey`, enregistre le cours puis passe à l'étape suivante.
   void _goNext() {
     if (_step == 0) {
       if (!(_formKey.currentState?.validate() ?? false)) return;
@@ -93,6 +98,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     setState(() => _step += 1);
   }
 
+  /// Finalise l'assistant à l'étape 4 : sauvegarde les métadonnées, publie éventuellement
+  /// le cours via `CoursesController.setPublished` (si au moins un chapitre existe) et referme la route.
   void _finish({required bool publish}) {
     if (!(_formKey.currentState?.validate() ?? false)) {
       setState(() => _step = 0);
@@ -149,7 +156,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
       ),
       body: Column(
         children: [
-          // Indicateur de progression de l'assistant
+          // Bandeau supérieur d'avancement : `LinearProgressIndicator` proportionnel à l'étape courante
+          // suivi des pastilles numérotées reliées par des `Divider` extensibles (`Expanded`).
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -280,6 +288,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     );
   }
 
+  /// Construit la pastille visuelle d'une étape (coche verte si validée, primaire si active, neutre sinon).
   Widget _stepChip(int index) {
     final active = index == _step;
     final done = index < _step;
@@ -323,6 +332,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     );
   }
 
+  /// Retourne le sous-arbre correspondant à l'indice d'étape courant `_step`.
   Widget _buildStep() {
     switch (_step) {
       case 0:
@@ -336,8 +346,10 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     }
   }
 
-  // --- Étape 1 : Informations ------------------------------------------------
+  // Étape 1 : formulaire de saisie des métadonnées générales du cours.
 
+  /// Construit le `Form` contrôlé par `_formKey` regroupant les `TextFormField` (titre, description)
+  /// et les `DropdownButtonFormField` (matière, niveau) munis de leurs fonctions `validator`.
   Widget _buildInfosStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -461,7 +473,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
               height: 46,
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // Upload Cloudinary via le service média partagé
+                  // Point d'entrée réservé au téléversement distant de l'image de couverture.
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       duration: Duration(seconds: 2),
@@ -492,8 +504,10 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     );
   }
 
-  // --- Étape 2 : Chapitres (texte, PDF, vidéo, lien + réordonnancement) ------
+  // Étape 2 : création, édition et réordonnancement des chapitres du cours.
 
+  /// Affiche la séquence des chapitres dans un `ReorderableListView.builder` relié à
+  /// `CoursesController.reorderChapters`, ainsi que le bouton d'ouverture de `ChapterEditSheet`.
   Widget _buildChaptersStep() {
     final chapters = _chapters;
 
@@ -626,7 +640,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     );
   }
 
-  /// Feuille d'actions sur un chapitre de l'assistant (modifier / supprimer)
+  /// Ouvre une `ModalBottomSheet` proposant la modification ou la suppression d'un chapitre.
   void _openChapterActionsSheet(Chapter chapter) {
     showModalBottomSheet<void>(
       context: context,
@@ -706,8 +720,9 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     );
   }
 
-  // --- Étape 3 : Aperçu (simulation de la page étudiant) ----------------------
+  // Étape 3 : prévisualisation fidèle du rendu de la fiche cours côté étudiant.
 
+  /// Reproduit la carte d'en-tête, les badges (`Wrap`) et le sommaire tels qu'affichés dans le catalogue.
   Widget _buildPreviewStep() {
     final course = _course!;
     final chapters = _chapters;
@@ -809,8 +824,9 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     );
   }
 
-  // --- Étape 4 : Publication (brouillon ou catalogue public) ------------------
+  // Étape 4 : récapitulatif final avant enregistrement en brouillon ou publication publique.
 
+  /// Résume les caractéristiques du cours via des lignes `InfoRow` avant le choix final de visibilité.
   Widget _buildPublishStep() {
     final course = _course!;
     final chapters = _chapters;

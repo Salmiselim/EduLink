@@ -6,7 +6,9 @@ import '../routes/app_routes.dart';
 import '../widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
 
-/// Onglet Forum (M3) : AppBar du module + fil de questions.
+/// Écran principal de l'onglet Forum affiché dans `EduLinkShell`.
+/// Regroupe l'`AppBar` avec sélecteur de rôle, la recherche textuelle, le filtrage
+/// par cours et la liste réactive des questions.
 class ForumFeedScreen extends StatefulWidget {
   const ForumFeedScreen({super.key});
 
@@ -15,11 +17,13 @@ class ForumFeedScreen extends StatefulWidget {
 }
 
 class _ForumFeedScreenState extends State<ForumFeedScreen> {
+  /// Contrôleur synchronisé avec la requête de recherche stockée dans `ForumProvider`.
   late final TextEditingController _searchController;
 
   @override
   void initState() {
     super.initState();
+    // Restaure la saisie de recherche existante via `context.read` sans déclencher d'écoute.
     _searchController =
         TextEditingController(text: context.read<ForumProvider>().searchQuery);
   }
@@ -30,6 +34,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
     super.dispose();
   }
 
+  /// Efface le champ de recherche et réinitialise les filtres dans `ForumProvider`.
   void _resetFilters() {
     _searchController.clear();
     context.read<ForumProvider>().resetFilters();
@@ -37,6 +42,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement à `ForumProvider` pour reconstruire le fil dès qu'un post, un filtre ou le rôle change.
     final provider = context.watch<ForumProvider>();
     final posts = provider.filteredPosts;
     final pendingCount = provider.pendingPosts.length;
@@ -54,7 +60,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
           subtitle: 'Questions, réponses & réactions',
         ),
         actions: [
-          // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+          // ActionChip permettant d'alterner entre la vue étudiant et la vue enseignant.
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: ActionChip(
@@ -84,7 +90,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
               ),
             ),
           ),
-          // Boîte « questions à traiter » : réservée à l'enseignant
+          // Accès à `TeacherInboxScreen` via route nommée avec badge du nombre de questions en attente.
           if (isTeacher)
             IconButton(
               tooltip: 'Questions à traiter',
@@ -104,12 +110,13 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
       ),
       body: Column(
         children: [
-          // Recherche + filtres par cours
+          // Bandeau fixe regroupant la barre de recherche et les puces de filtrage par cours.
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Column(
               children: [
+                // Champ de recherche filtrant dynamiquement les questions via `provider.setSearchQuery`.
                 TextField(
                   controller: _searchController,
                   textInputAction: TextInputAction.search,
@@ -164,6 +171,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
 
                 const SizedBox(height: 10),
 
+                // Liste horizontale de `ChoiceChip` sélectionnant le cours actif dans le provider.
                 SizedBox(
                   height: 34,
                   child: ListView.separated(
@@ -205,7 +213,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
             ),
           ),
 
-          // Liste des questions (tirer vers le bas pour rafraîchir)
+          // Zone extensible contenant le fil de questions avec rafraîchissement par glissement (`RefreshIndicator`).
           Expanded(
             child: RefreshIndicator(
               color: ForumColors.primary,
@@ -251,7 +259,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
         ],
       ),
 
-      // FAB : Poser une question
+      // Bouton flottant ouvrant l'écran de publication via la route `ForumRoutes.forumAsk`.
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(context, ForumRoutes.forumAsk),
         backgroundColor: ForumColors.primary,

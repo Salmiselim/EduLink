@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../data/evaluations_mock_data.dart';
 import '../widgets/eval_ui.dart';
 
+/// Écran de consultation des résultats d'un quiz.
+/// Affiche la note obtenue sur une tentative précise (côté étudiant), le taux de réussite
+/// global par question et, côté enseignant, la liste complète des copies remises.
 class QuizResultsScreen extends StatelessWidget {
   final String quizId;
   final String? attemptId;
@@ -10,6 +13,7 @@ class QuizResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = EvaluationsController.instance;
+    // S'abonne aux mises à jour de EvaluationsController afin de refléter toute nouvelle tentative soumise.
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -17,9 +21,11 @@ class QuizResultsScreen extends StatelessWidget {
         if (quiz == null) {
           return const Scaffold(body: Center(child: Text('Quiz introuvable')));
         }
+        // Charge la tentative ciblée lorsqu'un étudiant consulte son propre corrigé.
         final attempt = attemptId == null
             ? null
             : controller.attemptById(attemptId!);
+        // Récupère l'ensemble des tentatives validées sur ce quiz pour calculer les statistiques par question.
         final all = controller.attemptsForQuiz(quizId)
             .where((a) => a.isSubmitted)
             .toList();
@@ -41,6 +47,7 @@ class QuizResultsScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // Carte d'en-tête rappelant le quiz et mettant en évidence le score sur 20 (vert si >= 10, rouge sinon).
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: evalCardDecoration(),
@@ -79,10 +86,12 @@ class QuizResultsScreen extends StatelessWidget {
                 title: 'Statistiques par question',
                 subtitle: 'GET /quizzes/:id/results',
               ),
+              // Parcourt chaque question pour calculer le ratio de réussite et afficher le corrigé détaillé.
               ...quiz.questions.asMap().entries.map((e) {
                 final i = e.key;
                 final q = e.value;
                 final answered = all.where((a) => a.answers.length > i);
+                // Compare les réponses triées de chaque copie aux indices attendus `q.correct`.
                 final correctCount = answered.where((a) {
                   final given = [...a.answers[i]]..sort();
                   final expected = [...q.correct]..sort();
@@ -103,6 +112,7 @@ class QuizResultsScreen extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 6),
+                      // Jauge visuelle représentant la proportion d'étudiants ayant trouvé la bonne réponse.
                       LinearProgressIndicator(
                         value: ratio,
                         color: EduColors.success,
@@ -118,6 +128,7 @@ class QuizResultsScreen extends StatelessWidget {
                           color: EduColors.muted,
                         ),
                       ),
+                      // Détail individuel affiché lorsqu'une tentative spécifique a été fournie en argument.
                       if (attempt != null) ...[
                         const SizedBox(height: 6),
                         Text(
@@ -145,6 +156,7 @@ class QuizResultsScreen extends StatelessWidget {
                   ),
                 );
               }),
+              // Section réservée à l'enseignant récapitulant les notes obtenues par chaque étudiant.
               if (controller.isTeacher) ...[
                 const SizedBox(height: 8),
                 const SectionHeader(title: 'Copies des étudiants'),
@@ -174,6 +186,7 @@ class QuizResultsScreen extends StatelessWidget {
     );
   }
 
+  /// Traduit une liste d'indices d'options en chaîne lisible séparée par des virgules.
   String _labels(List<String> options, List<int> indexes) {
     if (indexes.isEmpty) return '—';
     return indexes.map((i) => options[i]).join(', ');

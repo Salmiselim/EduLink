@@ -7,6 +7,8 @@ import '../widgets/answer_card.dart';
 import '../widgets/forum_ui.dart';
 import '../widgets/role_badge.dart';
 
+/// Écran de détail d'une question identifiée par [postId], ouvert via `ForumRoutes.forumQuestion`.
+/// Présente l'énoncé complet, la liste des réponses triées et une barre d'ajout de réponse.
 class QuestionDetailScreen extends StatefulWidget {
   final String postId;
 
@@ -17,11 +19,17 @@ class QuestionDetailScreen extends StatefulWidget {
 }
 
 class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
+  /// Limites de caractères imposées à la saisie d'une réponse.
   static const int _answerMin = 3;
   static const int _answerMax = 1000;
 
+  /// Contrôleur du champ de réponse situé en bas de l'écran.
   final TextEditingController _answerController = TextEditingController();
+
+  /// Contrôleur de défilement permettant d'amener automatiquement la vue sur une réponse nouvellement publiée.
   final ScrollController _scrollController = ScrollController();
+
+  /// Message d'erreur affiché sous le champ de saisie lorsque la réponse est invalide.
   String? _answerError;
 
   @override
@@ -31,6 +39,8 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
     super.dispose();
   }
 
+  /// Vérifie la longueur de la réponse, l'enregistre via `ForumProvider.addAnswer`,
+  /// fait défiler la liste en bas et confirme l'envoi par un `SnackBar`.
   void _submitAnswer() {
     final text = _answerController.text.trim();
 
@@ -54,7 +64,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
     setState(() => _answerError = null);
     FocusScope.of(context).unfocus();
 
-    // Fait défiler la liste jusqu'à la nouvelle réponse.
+    // Défilement fluide vers le bas exécuté après la reconstruction de la liste.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       _scrollController.animateTo(
@@ -72,6 +82,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
     );
   }
 
+  /// Construit la barre d'application supérieure avec bouton de retour (`Navigator.pop`).
   PreferredSizeWidget _appBar() {
     return AppBar(
       backgroundColor: Colors.white,
@@ -92,9 +103,11 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Observation de `ForumProvider` pour répercuter immédiatement les ajouts de réponses, votes et vérifications.
     final provider = context.watch<ForumProvider>();
     final Post? post = provider.getPostById(widget.postId);
 
+    // Vue de repli si l'identifiant transmis ne correspond à aucune question connue.
     if (post == null) {
       return Scaffold(
         backgroundColor: ForumColors.scaffold,
@@ -116,12 +129,13 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
       appBar: _appBar(),
       body: Column(
         children: [
+          // Zone principale défilable occupant tout l'espace vertical au-dessus de la barre de réponse.
           Expanded(
             child: ListView(
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
               children: [
-                // Carte de la question
+                // Carte présentant les métadonnées, le cours et le contenu intégral de la question.
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: forumCardDecoration(),
@@ -212,7 +226,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
 
                 const SizedBox(height: 20),
 
-                // En-tête de section
+                // Titre de la section listant le nombre actuel de réponses.
                 Text(
                   'Réponses (${answers.length})',
                   style: const TextStyle(
@@ -236,7 +250,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
             ),
           ),
 
-          // Barre de réponse
+          // Barre de saisie ancrée en bas d'écran et protégée de la barre système inférieure via `SafeArea`.
           Container(
             decoration: const BoxDecoration(
               color: Colors.white,

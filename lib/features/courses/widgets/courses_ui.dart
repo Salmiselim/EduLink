@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/courses_models.dart';
 
-// ============================================================================
-// KIT UI PARTAGÉ — MODULE M2 : COURS
-// Palette et primitives conformes à la charte graphique EduLink
-// (MARKETPLACE_GUIDE.md).
-// ============================================================================
+// Composants visuels atomiques et constantes de thème partagés par tous les écrans
+// et feuilles modales du module Cours.
 
-/// Palette de la charte graphique EduLink
+/// Palette de couleurs centralisée assurant l'homogénéité visuelle des écrans du module.
 class CourseColors {
   static const Color primary = Color(0xFF2563EB);
   static const Color primaryDark = Color(0xFF1E3A8A);
@@ -25,7 +22,8 @@ class CourseColors {
   static const Color neutralBg = Color(0xFFF1F5F9);
 }
 
-/// Décoration standard des champs de saisie (Formulaires — critère 4)
+/// Génère un `InputDecoration` uniforme pour tous les `TextField`, `TextFormField`
+/// et `DropdownButtonFormField` du module Cours.
 InputDecoration courseInputDecoration({
   required String label,
   String? hint,
@@ -51,7 +49,7 @@ InputDecoration courseInputDecoration({
   );
 }
 
-/// Décoration standard des cartes : fond blanc, radius 16, bordure 1px
+/// Retourne la décoration standard des conteneurs de carte (fond blanc, coins arrondis 16 px et bordure fine).
 BoxDecoration courseCardDecoration() {
   return BoxDecoration(
     color: Colors.white,
@@ -60,7 +58,7 @@ BoxDecoration courseCardDecoration() {
   );
 }
 
-/// Badge matière (bleu — 10 % d'opacité, police 11/w700)
+/// Pastille bleue identifiant la matière académique d'un cours.
 class SubjectBadge extends StatelessWidget {
   final String subject;
 
@@ -77,7 +75,7 @@ class SubjectBadge extends StatelessWidget {
   }
 }
 
-/// Badge niveau académique (L1 à M2 — neutre ardoise)
+/// Pastille neutre affichant le niveau universitaire ciblé (de la Licence 1 au Master 2).
 class LevelBadge extends StatelessWidget {
   final String level;
 
@@ -94,7 +92,7 @@ class LevelBadge extends StatelessWidget {
   }
 }
 
-/// Badge de statut de publication (« Publié » vert / « Brouillon » ambre)
+/// Pastille d'état indiquant si un cours enseignant est « Publié » ou en « Brouillon ».
 class CourseStatusBadge extends StatelessWidget {
   final bool isPublished;
 
@@ -118,7 +116,7 @@ class CourseStatusBadge extends StatelessWidget {
   }
 }
 
-/// Badge du type de chapitre (Texte / PDF / Vidéo / Lien)
+/// Pastille colorée selon `ChapterTypeX` identifiant le format d'un chapitre (Texte, PDF, Vidéo, Lien).
 class ChapterTypeBadge extends StatelessWidget {
   final ChapterType type;
 
@@ -135,7 +133,7 @@ class ChapterTypeBadge extends StatelessWidget {
   }
 }
 
-/// Pastille réutilisable (badge 11/w700, radius 8, fond 10 % d'opacité)
+/// Fonction interne construisant la structure commune aux différents badges du module.
 Widget _pill(
   String label, {
   required Color color,
@@ -168,7 +166,7 @@ Widget _pill(
   );
 }
 
-/// Titre de section (15.5 / w800 — échelle typographique de la charte)
+/// En-tête de section affichant un titre, un compteur facultatif entre parenthèses et un widget d'action à droite.
 class SectionHeader extends StatelessWidget {
   final String title;
   final int? count;
@@ -198,8 +196,8 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// État vide conçu (icône, titre, message et action facultative) — chaque vue
-/// du module doit fournir un état vide, jamais un écran blanc.
+/// Vue générique d'état vide affichant une icône illustrée, un message explicatif
+/// et un bouton d'action facultatif lorsqu'une liste ou une recherche ne renvoie aucun élément.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -282,7 +280,7 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// Carte de statistique du tableau de bord (valeur + libellé + icône)
+/// Tuile synthétique affichant un indicateur chiffré avec son icône dans les vues enseignant.
 class StatCard extends StatelessWidget {
   final IconData icon;
   final String value;
@@ -339,7 +337,7 @@ class StatCard extends StatelessWidget {
   }
 }
 
-/// Barre de progression linéaire (hauteur 6, radius plein)
+/// Barre d'avancement linéaire arrondie encapsulant un `LinearProgressIndicator` borné entre `0.0` et `1.0`.
 class ProgressBar extends StatelessWidget {
   final double value;
   final Color color;
@@ -366,7 +364,7 @@ class ProgressBar extends StatelessWidget {
   }
 }
 
-/// Anneau de progression avec pourcentage centré
+/// Indicateur circulaire d'avancement (`CircularProgressIndicator`) superposant le pourcentage entier au centre.
 class ProgressRing extends StatelessWidget {
   final double value;
   final double size;
@@ -414,7 +412,7 @@ class ProgressRing extends StatelessWidget {
   }
 }
 
-/// Ligne « icône + libellé + valeur » des récapitulatifs (wizard, feuilles)
+/// Ligne clé-valeur avec icône utilisée dans les encarts récapitulatifs d'inscription et de publication.
 class InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;

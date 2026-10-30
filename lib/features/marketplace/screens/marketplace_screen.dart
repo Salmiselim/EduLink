@@ -5,14 +5,12 @@ import '../routes/marketplace_routes.dart';
 import '../widgets/offer_card.dart';
 import '../widgets/review_dialog.dart';
 
-// ============================================================================
-// ÉCRAN PRINCIPAL DE L'ONGLET MARKETPLACE (MarketplaceScreen)
-// Page 8 — Section Flutter :
-// « Onglet Marketplace avec bascule "Explorer | Mes offres | Mes commandes"
-// en haut ; détail d'une offre, assistant d'offre, écran de commande ou de
-// réservation et chat en routes poussées. »
-// ============================================================================
-
+/// Écran racine de l'onglet Marketplace.
+/// S'abonne au singleton [MarketplaceController] via [ListenableBuilder] et organise
+/// l'interface autour d'un [SegmentedButton] supérieur pilotant un [IndexedStack] à 3 vues :
+/// - « Explorer » : catalogue filtrable, recherche, favoris et carrousel de recommandations
+/// - « Mes offres » : statistiques vendeur et gestion CRUD des offres et créneaux horaires
+/// - « Mes commandes » : suivi des achats et des demandes reçues côté vendeur
 class MarketplaceScreen extends StatefulWidget {
   const MarketplaceScreen({super.key});
 
@@ -23,16 +21,14 @@ class MarketplaceScreen extends StatefulWidget {
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final MarketplaceController _controller = MarketplaceController.instance;
 
-  /// Expression régulière validant le format horaire 24h `HH:mm`
+  /// Expression régulière contrôlant la saisie d'un horaire sur 24 heures au format `HH:mm`.
   static final RegExp _timeRegex = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
 
-  /// Bascule principale en haut de l'écran :
-  /// - 0 : « Explorer » (Catalogue public, recherche, filtres, favoris, recommandations L6)
-  /// - 1 : « Mes offres » (Tableau de bord vendeur `GET /seller/stats`, CRUD offres & créneaux)
-  /// - 2 : « Mes commandes » (Parcours d'une commande : Mes achats & Demandes reçues)
+  /// Index actif du [SegmentedButton] supérieur :
+  /// `0` = Explorer, `1` = Mes offres, `2` = Mes commandes.
   int _topSectionIndex = 0;
 
-  // --- État des filtres et du tri de la vue « Explorer » (Métier 1) ---
+  // État local des critères de filtrage et de tri appliqués au catalogue public
   final TextEditingController _searchController = TextEditingController();
   OfferType? _filterType;
   String? _filterSubject;
@@ -45,21 +41,22 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   bool _onlyFavorites = false;
   String _sortBy = 'relevance'; // relevance | price_asc | price_desc | rating
 
-  // --- État du filtre de la vue « Mes offres » (Métier 2) ---
+  // Filtre de statut actif dans l'onglet vendeur « Mes offres »
   OfferStatus? _myOffersStatusFilter;
 
-  // --- État de la sous-bascule de la vue « Mes commandes » (Métier 3) ---
-  // false = Mes achats (`GET /orders/me?as=buyer`), true = Demandes reçues (`GET /orders/me?as=seller`)
+  // Sous-bascule de l'onglet « Mes commandes » :
+  // `false` = achats effectués (`as=buyer`), `true` = demandes reçues (`as=seller`).
   bool _viewAsSellerOrders = false;
   OrderStatus? _orderStatusFilter;
 
   @override
   void dispose() {
+    // Libération du contrôleur du champ de recherche à la destruction de l'état.
     _searchController.dispose();
     super.dispose();
   }
 
-  /// Calcule le nombre de filtres actifs pour l'afficher sur le badge du bouton « Filtres »
+  /// Décompte les critères de filtrage actifs afin d'alimenter le [Badge] du bouton d'options avancées.
   int get _activeFiltersCount {
     int c = 0;
     if (_filterType != null) c++;
@@ -140,7 +137,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     return list;
   }
 
-  /// Ouvre la feuille modale contenant tous les filtres avancés et options de tri (Métier 1)
+  /// Affiche une feuille modale redimensionnable ([DraggableScrollableSheet]) combinée à un
+  /// [StatefulBuilder] pour synchroniser immédiatement l'état local des [ChoiceChip] et du [Slider]
+  /// avec la liste filtrée en arrière-plan.
   void _openAdvancedFiltersSheet() {
     showModalBottomSheet(
       context: context,
@@ -426,8 +425,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     );
   }
 
-  /// Ouvre la feuille modale permettant au vendeur de gérer les créneaux horaires
-  /// d'un cours particulier (`availabilities` CRUD, Page 8) avec contrôles de saisie (`HH:mm`).
+  /// Ouvre la feuille modale de gestion des créneaux horaires (`availabilities`) d'un cours particulier.
+  /// S'appuie sur [ListenableBuilder] pour rafraîchir la liste en direct, compense le clavier via
+  /// `MediaQuery.of(ctx).viewInsets.bottom`, bloque la suppression des créneaux déjà réservés (`isBooked`)
+  /// et valide le formulaire d'ajout ([Form] + [GlobalKey<FormState>] + `_timeRegex`).
   void _openManageSlotsModal(Offer offer) {
     final slotFormKey = GlobalKey<FormState>();
     final dateCtrl = TextEditingController(text: 'Sam 31 Oct 2026');
@@ -651,6 +652,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
+        // Nombre de demandes en attente côté vendeur signalé par un Badge sur le segment « Mes commandes »
         final pendingSellerRequestsCount = _controller.receivedOrders
             .where((o) => o.status == OrderStatus.requested)
             .length;
@@ -659,7 +661,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           backgroundColor: const Color(0xFFF8FAFC),
           body: Column(
             children: [
-              // Barre supérieure contenant la bascule « Explorer | Mes offres | Mes commandes » (Page 8)
+              // Barre supérieure hébergeant le SegmentedButton de navigation entre les 3 sections
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -708,7 +710,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               ),
               const Divider(height: 1),
 
-              // Affichage de la vue sélectionnée
+              // IndexedStack conservant l'état et la position de défilement de chaque vue lors du changement d'onglet
               Expanded(
                 child: IndexedStack(
                   index: _topSectionIndex,
@@ -721,7 +723,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               ),
             ],
           ),
-          // Bouton flottant « + Nouvelle offre » visible sur la vue « Mes offres »
+          // Bouton d'action flottant étendu affiché uniquement sur « Mes offres » pour pousser l'assistant de création
           floatingActionButton: _topSectionIndex == 1
               ? FloatingActionButton.extended(
                   onPressed: () {
@@ -744,7 +746,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     );
   }
 
-  /// VUE 1 : « Explorer » — Catalogue et recherche, favoris, offres recommandées (L6)
+  /// Construit la vue « Explorer » : barre de recherche, puces [FilterChip] rapides,
+  /// carrousel horizontal des offres rattachées aux cours suivis et liste principale de [OfferCard].
   Widget _buildExplorerView() {
     final catalogOffers = _getFilteredCatalogOffers();
     final recommendedOffers = _controller.allOffers
@@ -863,7 +866,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         ),
         const SizedBox(height: 18),
 
-        // 3. Carrousel horizontal « Recommandées d'après vos cours suivis »
+        // 3. Carrousel horizontal des offres recommandées (affiché hors recherche/filtrage actif)
         if (recommendedOffers.isNotEmpty &&
             _activeFiltersCount == 0 &&
             _searchController.text.isEmpty) ...[
@@ -1010,7 +1013,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     );
   }
 
-  /// VUE 2 : « Mes offres » — Tableau de bord vendeur (`GET /seller/stats`) et gestion CRUD
+  /// Construit la vue « Mes offres » : indicateurs agrégés du vendeur (`GET /seller/stats`),
+  /// filtrage par [OfferStatus] via [ChoiceChip] et actions CRUD par offre (publier/masquer, modifier, créneaux, supprimer).
   Widget _buildMyOffersView() {
     final myOffers = _controller.myOffers;
     final filteredMyOffers = _myOffersStatusFilter == null
@@ -1033,7 +1037,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
       children: [
-        // 1. Tableau de bord vendeur (`GET /seller/stats`, Page 8 Métier 2)
+        // 1. Carte récapitulative des statistiques vendeur (vues cumulées, ventes, séances et moyenne)
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1116,7 +1120,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              // Badges attribués par l'activité dans M5 (Page 5 : Vendeur, Mentor, Bien noté)
+              // Récapitulatif des paliers de badges liés à l'activité vendeur (première vente, séances données, note moyenne)
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -1286,7 +1290,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         icon: const Icon(Icons.publish_rounded, size: 16),
                         label: const Text('Publier'),
                       ),
-                    // Bouton d'édition d'offre (`PATCH /offers/:id`)
+                    // Ouvre OfferWizardScreen en mode édition en transmettant OfferWizardArgs
                     OutlinedButton.icon(
                       onPressed: () {
                         Navigator.pushNamed(
@@ -1344,7 +1348,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     );
   }
 
-  /// VUE 3 : « Mes commandes » — Gestion Acheteur (`as=buyer`) & Vendeur (`as=seller`)
+  /// Construit la vue « Mes commandes » : bascule acheteur/vendeur, filtre par [OrderStatus]
+  /// et cartes de suivi donnant accès au chat, aux transitions de statut et au dépôt d'avis.
   Widget _buildMyOrdersView() {
     final buyerOrders = _controller.myPurchases;
     final sellerOrders = _controller.receivedOrders;
@@ -1699,13 +1704,13 @@ class _OrderCard extends StatelessWidget {
           ],
           const Divider(height: 20),
 
-          // Boutons d'action selon le rôle (Acheteur vs Vendeur) et le statut de la commande
+          // Barre d'actions adaptative (Wrap) selon le point de vue acheteur/vendeur et l'état de la commande
           Wrap(
             spacing: 8,
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              // Accès à la messagerie de la commande avec badge de messages non-lus
+              // Bouton d'accès à OrderChatScreen surmonté d'un Badge indiquant les messages non lus
               Badge(
                 isLabelVisible: order.unreadCount > 0,
                 label: Text('${order.unreadCount}'),

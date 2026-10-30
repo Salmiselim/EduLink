@@ -5,6 +5,8 @@ import '../utils/time_format.dart';
 import 'forum_ui.dart';
 import 'role_badge.dart';
 
+/// Carte synthétique représentant une question (`Post`) dans `ForumFeedScreen`
+/// et `TeacherInboxScreen`. Un appui ouvre `QuestionDetailScreen` via route nommée.
 class PostCard extends StatelessWidget {
   final Post post;
 
@@ -19,6 +21,7 @@ class PostCard extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(16),
+          // Zone cliquable naviguant vers `ForumRoutes.forumQuestion` avec l'identifiant du post.
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () => Navigator.pushNamed(
@@ -31,7 +34,7 @@ class PostCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Auteur + horodatage
+                  // Ligne d'en-tête : avatar, nom de l'auteur, badge de rôle et date relative.
                   Row(
                     children: [
                       ForumAvatar(name: post.authorName, isTeacher: post.isTeacher),
@@ -75,7 +78,7 @@ class PostCard extends StatelessWidget {
 
                   const SizedBox(height: 10),
 
-                  // Cours concerné
+                  // Puce indiquant le cours auquel la question est rattachée.
                   Align(
                     alignment: Alignment.centerLeft,
                     child: ForumPill(
@@ -88,7 +91,7 @@ class PostCard extends StatelessWidget {
 
                   const SizedBox(height: 10),
 
-                  // Titre
+                  // Titre principal de la question.
                   Text(
                     post.title,
                     style: const TextStyle(
@@ -100,7 +103,7 @@ class PostCard extends StatelessWidget {
 
                   const SizedBox(height: 4),
 
-                  // Aperçu du corps
+                  // Extrait du corps limité à deux lignes avec points de suspension.
                   Text(
                     post.body,
                     maxLines: 2,
@@ -114,7 +117,7 @@ class PostCard extends StatelessWidget {
 
                   const SizedBox(height: 10),
 
-                  // Nombre de réponses
+                  // Pied de carte affichant le compteur de réponses accordé en nombre.
                   Row(
                     children: [
                       const Icon(

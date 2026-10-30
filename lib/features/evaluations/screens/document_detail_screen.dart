@@ -3,6 +3,8 @@ import '../data/evaluations_mock_data.dart';
 import '../routes/evaluations_routes.dart';
 import '../widgets/eval_ui.dart';
 
+/// Écran de consultation détaillée d'un support pédagogique ([CourseDocument]).
+/// Permet le téléchargement avec incrémentation du compteur et, pour l'enseignant, l'accès à l'édition.
 class DocumentDetailScreen extends StatelessWidget {
   final String documentId;
   const DocumentDetailScreen({super.key, required this.documentId});
@@ -10,6 +12,8 @@ class DocumentDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = EvaluationsController.instance;
+    // Écoute le contrôleur via ListenableBuilder pour rafraîchir immédiatement la fiche
+    // après un téléchargement (`downloadsCount + 1`) ou une modification dans DocumentWizardScreen.
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -33,6 +37,7 @@ class DocumentDetailScreen extends StatelessWidget {
               ),
             ),
             actions: [
+              // Action d'édition visible uniquement lorsque le rôle actif est enseignant.
               if (controller.isTeacher)
                 IconButton(
                   tooltip: 'Modifier',
@@ -50,6 +55,7 @@ class DocumentDetailScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // Carte présentant le dossier thématique, le titre, la description et les statistiques du fichier.
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: evalCardDecoration(),
@@ -97,6 +103,7 @@ class DocumentDetailScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              // Bouton d'action incrémentant le compteur du document dans le contrôleur et affichant un SnackBar.
               PrimaryCta(
                 label: 'Télécharger (simulé)',
                 icon: Icons.download_rounded,

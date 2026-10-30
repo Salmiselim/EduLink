@@ -3,18 +3,11 @@ import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../widgets/review_dialog.dart';
 
-// ============================================================================
-// ROUTE POUSSÉE : CHAT LIÉ À UNE COMMANDE (OrderChatScreen)
-// Page 8 — Étape 3 du parcours d'une commande :
-// « Un chat lié à la commande s'ouvre entre l'acheteur et le vendeur
-// (écouteurs Firestore, compteur de non-lus). »
-// Permet aussi :
-// - De suivre et modifier le statut de la commande (Accepter, Refuser, Terminer, Annuler)
-// - D'accéder directement à la salle de visio Jitsi Meet générée à l'acceptation
-// - De télécharger le fichier PDF privé une fois la commande acceptée
-// - De laisser un avis (1 à 5 ★) une fois la commande terminée
-// ============================================================================
-
+/// Écran de messagerie et de suivi dédié à une commande ([MarketplaceRoutes.orderChat]).
+/// Écoute les mises à jour de [MarketplaceController] via [ListenableBuilder], remet à zéro
+/// le compteur de non-lus à l'ouverture, affiche en tête un bandeau d'actions contextuelles
+/// (acceptation/refus/clôture/annulation, salle Jitsi Meet, téléchargement PDF privé, avis)
+/// et fait défiler les messages automatiquement grâce à un [ScrollController].
 class OrderChatScreen extends StatefulWidget {
   final String orderId;
 
@@ -35,7 +28,7 @@ class _OrderChatScreenState extends State<OrderChatScreen> {
   @override
   void initState() {
     super.initState();
-    // Dès l'ouverture du chat, on remet à zéro le compteur de messages non-lus (`unread{}`)
+    // Planifie l'acquittement des messages non lus après le montage initial pour éviter une notification pendant `build`.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.markConversationRead(widget.orderId);
     });
@@ -43,12 +36,14 @@ class _OrderChatScreenState extends State<OrderChatScreen> {
 
   @override
   void dispose() {
+    // Libération conjointe du contrôleur de texte et du ScrollController de la liste de messages.
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Envoie un message texte ou une pièce jointe Cloudinary (`POST /messages`)
+  /// Enregistre un nouveau message (texte ou pièce jointe Cloudinary) dans le contrôleur,
+  /// vide le champ de saisie puis anime le [ScrollController] jusqu'au bas de la conversation.
   void _sendMessage({String? attachmentLabel}) {
     final text = _msgController.text.trim();
     if (text.isEmpty && attachmentLabel == null) return;
@@ -72,6 +67,7 @@ class _OrderChatScreenState extends State<OrderChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Abonnement réactif au contrôleur pour refléter en direct les nouveaux messages et changements de statut
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
@@ -212,7 +208,7 @@ class _OrderChatScreenState extends State<OrderChatScreen> {
                 ),
               ),
 
-              // 3. Barre inférieure de saisie de message + envoi de pièce jointe Cloudinary (L10)
+              // 3. Barre inférieure de composition : bouton de pièce jointe, TextField étendu et envoi
               Container(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
                 decoration: BoxDecoration(
@@ -282,8 +278,8 @@ class _OrderChatScreenState extends State<OrderChatScreen> {
   }
 }
 
-/// Bandeau d'en-tête épinglé en haut du Chat récapitulant les infos de la commande
-/// et exposant les actions rapides (Accepter, Refuser, Terminer, Annuler, Rejoindre Jitsi, Télécharger PDF).
+/// Bandeau supérieur fixe résumant l'état courant de la commande et exposant
+/// les actions métier autorisées selon le rôle (`isSeller`) et le statut [OrderStatus].
 class _OrderSummaryHeader extends StatelessWidget {
   final MarketplaceOrder order;
   final bool isSeller;
@@ -553,7 +549,8 @@ class _OrderSummaryHeader extends StatelessWidget {
   }
 }
 
-/// Bulle de message système (ex. verrouillage de créneau, génération de salle Jitsi, changement de statut)
+/// Bandeau centré signalant un événement automatique du cycle de commande
+/// (verrouillage de créneau, création du lien Jitsi Meet, déblocage de fichier ou clôture).
 class _SystemMessageBubble extends StatelessWidget {
   final ChatMessage message;
 
@@ -592,7 +589,8 @@ class _SystemMessageBubble extends StatelessWidget {
   }
 }
 
-/// Bulle de message utilisateur (Acheteur ou Vendeur) avec pièce jointe et accusé de lecture (`readAt`)
+/// Bulle de message alignée à droite pour l'émetteur courant et à gauche pour l'interlocuteur,
+/// affichant l'éventuelle pièce jointe, l'horodatage `HH:mm` et la double coche de lecture (`readAt`).
 class _ChatBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;

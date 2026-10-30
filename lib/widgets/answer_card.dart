@@ -6,6 +6,9 @@ import '../utils/time_format.dart';
 import 'forum_ui.dart';
 import 'role_badge.dart';
 
+/// Carte représentant une réponse (`Answer`) au sein de `QuestionDetailScreen`.
+/// Permet à tout utilisateur de voter positivement et à un enseignant de marquer
+/// la réponse d'un étudiant comme vérifiée.
 class AnswerCard extends StatelessWidget {
   final Answer answer;
 
@@ -13,14 +16,16 @@ class AnswerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Écoute `ForumProvider` pour refléter l'état du rôle courant et des votes.
     final provider = context.watch<ForumProvider>();
-    // Seul un enseignant peut vérifier la réponse d'un autre utilisateur.
+    // L'action de vérification est réservée aux enseignants sur les réponses rédigées par des étudiants.
     final canVerify = provider.isTeacher && !answer.isTeacher;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.all(14),
+        // Met en valeur la bordure en vert lorsque la réponse porte la mention vérifiée.
         decoration: forumCardDecoration(
           borderColor: answer.isTeacherVerified
               ? ForumColors.success
@@ -29,7 +34,7 @@ class AnswerCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Auteur, horodatage et vote
+            // En-tête : avatar, identité de l'auteur avec badge de rôle et bouton de vote positif.
             Row(
               children: [
                 ForumAvatar(
@@ -73,6 +78,7 @@ class AnswerCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // Bouton interactif incrémentant ou retirant le vote positif via `ForumProvider`.
                 InkWell(
                   borderRadius: BorderRadius.circular(8),
                   onTap: () => provider.toggleVoteAnswer(answer.id),
@@ -117,7 +123,7 @@ class AnswerCard extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // Texte de la réponse
+            // Contenu textuel de la réponse.
             Text(
               answer.body,
               style: const TextStyle(
@@ -127,7 +133,7 @@ class AnswerCard extends StatelessWidget {
               ),
             ),
 
-            // Réponse vérifiée + action enseignant
+            // Pied de carte conditionnel affichant le badge de validation et le bouton enseignant.
             if (answer.isTeacherVerified || canVerify) ...[
               const SizedBox(height: 8),
               Row(

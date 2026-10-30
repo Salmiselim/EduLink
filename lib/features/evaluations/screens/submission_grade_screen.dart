@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../data/evaluations_mock_data.dart';
 import '../widgets/eval_ui.dart';
 
+/// Écran enseignant de correction et de notation d'une copie étudiante ([Submission]).
+/// Accessible depuis l'onglet « Copies » via la route nommée `EvaluationsRoutes.submissionGrade`.
 class SubmissionGradeScreen extends StatefulWidget {
   final String submissionId;
   const SubmissionGradeScreen({super.key, required this.submissionId});
@@ -12,6 +14,8 @@ class SubmissionGradeScreen extends StatefulWidget {
 
 class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
   final _controller = EvaluationsController.instance;
+
+  /// Clé globale pilotant la validation de la note et du commentaire de retour.
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _grade;
   late final TextEditingController _feedback;
@@ -19,6 +23,7 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
   @override
   void initState() {
     super.initState();
+    // Préremplit la note et le feedback si la copie a déjà fait l'objet d'une évaluation.
     final sub = _controller.submissionById(widget.submissionId)!;
     _grade = TextEditingController(
       text: sub.grade?.toStringAsFixed(0) ?? '',
@@ -58,6 +63,7 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Récapitulatif de la copie : identité étudiant, indicateur de retard (`sub.isLate`), commentaire et fichiers.
             Container(
               padding: const EdgeInsets.all(16),
               decoration: evalCardDecoration(),
@@ -73,6 +79,7 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
                   ),
                   Text('${assignment.title} · ${assignment.courseTitle}'),
                   const SizedBox(height: 8),
+                  // Puce signalant visuellement si la copie a été déposée avant ou après l'échéance.
                   StatusChip(
                     label: sub.isLate ? 'Rendu en retard' : 'Rendu à temps',
                     color: sub.isLate ? EduColors.danger : EduColors.success,
@@ -94,6 +101,7 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            // Saisie décimale de la note bornée entre 0 et `assignment.maxGrade` (virgule ou point accepté).
             TextFormField(
               controller: _grade,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -111,6 +119,7 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
               },
             ),
             const SizedBox(height: 12),
+            // Champ d'appréciation détaillée obligatoire destiné à l'étudiant.
             TextFormField(
               controller: _feedback,
               maxLines: 5,
@@ -126,6 +135,7 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
               },
             ),
             const SizedBox(height: 16),
+            // Enregistre la note dans le contrôleur, met à jour le carnet de notes et confirme via SnackBar.
             PrimaryCta(
               label: 'Publier la note',
               icon: Icons.check_circle_rounded,

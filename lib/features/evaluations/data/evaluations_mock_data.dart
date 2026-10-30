@@ -1,23 +1,37 @@
 import '../models/evaluations_models.dart';
 import 'package:flutter/foundation.dart';
 
-/// Contrôleur mock M4 (ChangeNotifier) — simule quizzes, attempts, assignments,
-/// submissions, documents, carnet de notes et NotificationsService (L8).
+/// Contrôleur d'état réactif ([ChangeNotifier]) gérant l'ensemble des données
+/// en mémoire du module Évaluations : cours liés, quiz, tentatives, devoirs,
+/// copies déposées, supports documentaires, carnet de notes et notifications.
+///
+/// Exposé sous forme de singleton ([EvaluationsController.instance]) afin que
+/// tous les écrans observent la même instance via `ListenableBuilder` et soient
+/// rafraîchis automatiquement à chaque appel de [notifyListeners].
 class EvaluationsController extends ChangeNotifier {
+  /// Constructeur privé initialisant immédiatement le jeu de données initial.
   EvaluationsController._() {
     _seed();
   }
 
+  /// Instance singleton partagée par tous les écrans de la fonctionnalité.
   static final EvaluationsController instance = EvaluationsController._();
 
+  /// Identifiant de l'étudiant connecté par défaut en session locale.
   static const String studentId = 'stu_amine';
+
+  /// Identifiant de l'enseignante utilisée lors du basculement de rôle.
   static const String teacherId = 'tch_leila';
 
+  /// Rôle actif courant déterminant l'interface affichée (étudiant ou enseignant).
   UserRole currentUserRole = UserRole.student;
   String currentUserId = studentId;
   String currentUserName = 'Amine Ben Ali';
 
+  /// Historique des notifications déclenchées par les actions métier (du plus récent au plus ancien).
   final List<EvalNotification> notifications = [];
+
+  /// Liste des badges débloqués automatiquement selon les seuils de réussite ou de ponctualité.
   final List<String> grantedBadges = [];
 
   late List<LinkedCourse> courses;
@@ -29,6 +43,8 @@ class EvaluationsController extends ChangeNotifier {
   late List<CourseDocument> documents;
   late List<Map<String, String>> roster;
 
+  /// Initialise les listes en mémoire avec des cours, inscriptions, quiz publiés/brouillon,
+  /// tentatives existantes, devoirs avec ou sans retard autorisé, copies et documents PDF.
   void _seed() {
     courses = const [
       LinkedCourse(
@@ -320,13 +336,16 @@ class EvaluationsController extends ChangeNotifier {
     ];
   }
 
+  /// Indique si le profil actuellement actif dispose des privilèges enseignant.
   bool get isTeacher => currentUserRole == UserRole.teacher;
 
+  /// Retourne tous les cours pour un enseignant, ou uniquement les cours inscrits pour un étudiant.
   List<LinkedCourse> get accessibleCourses {
     if (isTeacher) return courses;
     return courses.where((c) => enrolledCourseIds.contains(c.id)).toList();
   }
 
+  /// Bascule entre le compte étudiant et le compte enseignant puis notifie les écouteurs UI.
   void toggleCurrentUserRole() {
     if (isTeacher) {
       currentUserRole = UserRole.student;
@@ -340,6 +359,7 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Insère une nouvelle notification en tête de pile avec l'horodatage courant.
   void _notify(String title, String body) {
     notifications.insert(
       0,
@@ -347,12 +367,14 @@ class EvaluationsController extends ChangeNotifier {
     );
   }
 
+  /// Ajoute un badge de progression sans doublon s'il n'a pas encore été attribué.
   void _maybeGrantBadge(String badge) {
     if (!grantedBadges.contains(badge)) {
       grantedBadges.add(badge);
     }
   }
 
+  /// Recherche un [Quiz] par identifiant, ou renvoie `null` s'il a été supprimé.
   Quiz? quizById(String id) {
     for (final q in quizzes) {
       if (q.id == id) return q;
@@ -360,6 +382,7 @@ class EvaluationsController extends ChangeNotifier {
     return null;
   }
 
+  /// Recherche un [Assignment] par identifiant, ou renvoie `null` s'il est introuvable.
   Assignment? assignmentById(String id) {
     for (final a in assignments) {
       if (a.id == id) return a;
@@ -367,6 +390,7 @@ class EvaluationsController extends ChangeNotifier {
     return null;
   }
 
+  /// Recherche un [CourseDocument] par identifiant dans la liste des supports.
   CourseDocument? documentById(String id) {
     for (final d in documents) {
       if (d.id == id) return d;
@@ -374,6 +398,7 @@ class EvaluationsController extends ChangeNotifier {
     return null;
   }
 
+  /// Recherche une [QuizAttempt] précise par son identifiant unique.
   QuizAttempt? attemptById(String id) {
     for (final a in attempts) {
       if (a.id == id) return a;
@@ -381,6 +406,7 @@ class EvaluationsController extends ChangeNotifier {
     return null;
   }
 
+  /// Recherche une copie [Submission] par son identifiant unique.
   Submission? submissionById(String id) {
     for (final s in submissions) {
       if (s.id == id) return s;
@@ -388,6 +414,8 @@ class EvaluationsController extends ChangeNotifier {
     return null;
   }
 
+  /// Récupère les tentatives d'un quiz (filtrées optionnellement par étudiant),
+  /// triées de la tentative la plus récente à la plus ancienne.
   List<QuizAttempt> attemptsForQuiz(String quizId, {String? student}) {
     return attempts
         .where(
@@ -398,12 +426,14 @@ class EvaluationsController extends ChangeNotifier {
       ..sort((a, b) => b.attemptNo.compareTo(a.attemptNo));
   }
 
+  /// Compte le nombre de tentatives déjà engagées par un étudiant sur un quiz donné.
   int attemptCountFor(String quizId, String student) {
     return attempts
         .where((a) => a.quizId == quizId && a.studentId == student)
         .length;
   }
 
+  /// Retourne le dépôt existant d'un étudiant pour un devoir donné, ou `null` s'il n'a rien remis.
   Submission? submissionFor(String assignmentId, String student) {
     for (final s in submissions) {
       if (s.assignmentId == assignmentId && s.studentId == student) return s;
@@ -411,6 +441,8 @@ class EvaluationsController extends ChangeNotifier {
     return null;
   }
 
+  /// Vérifie qu'un étudiant est autorisé à démarrer un quiz : publication active,
+  /// date courante comprise entre `availableFrom` et `dueDate`, et quota de tentatives non atteint.
   bool canTakeQuiz(Quiz quiz) {
     if (!quiz.isPublished) return false;
     final now = DateTime.now();
@@ -420,12 +452,16 @@ class EvaluationsController extends ChangeNotifier {
     return attemptCountFor(quiz.id, currentUserId) < quiz.attemptsAllowed;
   }
 
+  /// Détermine si le dépôt d'un devoir reste ouvert en tenant compte de l'échéance
+  /// et de l'option `allowLate` autorisant ou bloquant les remises hors délai.
   bool canSubmitAssignment(Assignment assignment) {
     final now = DateTime.now();
     if (now.isAfter(assignment.dueDate) && !assignment.allowLate) return false;
     return true;
   }
 
+  /// Liste les quiz publiés appartenant aux cours auxquels l'étudiant est inscrit,
+  /// ordonnés par échéance croissante.
   List<Quiz> publishedQuizzesForStudent() {
     return quizzes
         .where(
@@ -436,6 +472,7 @@ class EvaluationsController extends ChangeNotifier {
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
   }
 
+  /// Liste les devoirs rattachés aux cours suivis par l'étudiant, triés par date limite.
   List<Assignment> assignmentsForStudent() {
     return assignments
         .where((a) => enrolledCourseIds.contains(a.courseId))
@@ -443,6 +480,8 @@ class EvaluationsController extends ChangeNotifier {
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
   }
 
+  /// Filtre les documents accessibles selon le cours, le dossier thématique, l'inscription
+  /// de l'étudiant et la date de visibilité (`visibleFrom`), puis les trie par `order`.
   List<CourseDocument> visibleDocuments({String? courseId, DocumentFolder? folder}) {
     final now = DateTime.now();
     return documents.where((d) {
@@ -455,6 +494,8 @@ class EvaluationsController extends ChangeNotifier {
       ..sort((a, b) => a.order.compareTo(b.order));
   }
 
+  /// Retourne la file des copies en attente de correction (`SubmissionStatus.submitted`),
+  /// triées par ordre chronologique d'arrivée (FIFO).
   List<Submission> copiesToGrade() {
     return submissions
         .where((s) => s.status == SubmissionStatus.submitted)
@@ -462,6 +503,8 @@ class EvaluationsController extends ChangeNotifier {
       ..sort((a, b) => a.submittedAt.compareTo(b.submittedAt));
   }
 
+  /// Initialise une nouvelle tentative ([QuizAttempt]) à l'ouverture de `QuizTakeScreen`,
+  /// prépare un tableau de réponses vides par question et notifie les vues abonnées.
   String startAttempt(String quizId) {
     final quiz = quizById(quizId)!;
     final no = attemptCountFor(quizId, currentUserId) + 1;
@@ -481,6 +524,8 @@ class EvaluationsController extends ChangeNotifier {
     return id;
   }
 
+  /// Sauvegarde à chaud les choix cochés par l'étudiant pendant le passage du quiz
+  /// et propage la mise à jour via [notifyListeners].
   void saveAttemptAnswers(String attemptId, List<List<int>> answers) {
     final i = attempts.indexWhere((a) => a.id == attemptId);
     if (i < 0) return;
@@ -488,6 +533,10 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clôture une tentative de quiz et exécute la correction automatique :
+  /// compare les indices cochés triés à `question.correct` via `listEquals`,
+  /// ramène le total des points obtenus sur 20, attribue éventuellement le badge `Studieux`,
+  /// enregistre une notification et déclenche [notifyListeners].
   double submitAttempt(String attemptId) {
     final i = attempts.indexWhere((a) => a.id == attemptId);
     final attempt = attempts[i];
@@ -495,10 +544,12 @@ class EvaluationsController extends ChangeNotifier {
     double earned = 0;
     for (var q = 0; q < quiz.questions.length; q++) {
       final question = quiz.questions[q];
+      // Tri des deux listes d'indices pour comparer les ensembles de réponses indépendamment de l'ordre de clic.
       final given = [...attempt.answers[q]]..sort();
       final expected = [...question.correct]..sort();
       if (listEquals(given, expected)) earned += question.points;
     }
+    // Normalisation proportionnelle du score sur 20 à partir du barème total du quiz.
     final scoreSur20 = quiz.totalPoints == 0
         ? 0.0
         : (earned / quiz.totalPoints) * 20;
@@ -525,6 +576,8 @@ class EvaluationsController extends ChangeNotifier {
     return scoreSur20;
   }
 
+  /// Crée ou met à jour un [Quiz] (en brouillon ou publié), émet une notification
+  /// en cas de publication et rafraîchit les observateurs via [notifyListeners].
   void upsertQuiz(Quiz quiz, {required bool publish}) {
     final saved = quiz.copyWith(isPublished: publish);
     final i = quizzes.indexWhere((q) => q.id == saved.id);
@@ -542,6 +595,7 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bascule l'état de publication (`isPublished`) d'un quiz existant depuis le tableau enseignant.
   void publishQuiz(String id, bool published) {
     final i = quizzes.indexWhere((q) => q.id == id);
     if (i < 0) return;
@@ -555,12 +609,14 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Supprime un quiz ainsi que toutes les tentatives associées en cascade, puis notifie l'UI.
   void deleteQuiz(String id) {
     quizzes.removeWhere((q) => q.id == id);
     attempts.removeWhere((a) => a.quizId == id);
     notifyListeners();
   }
 
+  /// Ajoute un nouveau devoir (avec notification) ou remplace un devoir existant lors d'une modification.
   void upsertAssignment(Assignment assignment) {
     final i = assignments.indexWhere((a) => a.id == assignment.id);
     if (i >= 0) {
@@ -575,18 +631,24 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Supprime un devoir et purge en cascade les copies rattachées avant d'appeler [notifyListeners].
   void deleteAssignment(String id) {
     assignments.removeWhere((a) => a.id == id);
     submissions.removeWhere((s) => s.assignmentId == id);
     notifyListeners();
   }
 
+  /// Enregistre ou remplace le dépôt d'un étudiant sur un devoir.
+  /// Détecte automatiquement le retard (`DateTime.now().isAfter(assignment.dueDate)`),
+  /// réinitialise le statut à `SubmissionStatus.submitted`, vérifie le badge `Ponctuel`
+  /// et déclenche [notifyListeners].
   void submitAssignment({
     required String assignmentId,
     required List<String> files,
     required String comment,
   }) {
     final assignment = assignmentById(assignmentId)!;
+    // Détection automatique de remise hors délai par comparaison avec la date limite du devoir.
     final late = DateTime.now().isAfter(assignment.dueDate);
     final existing = submissionFor(assignmentId, currentUserId);
     final sub = Submission(
@@ -619,6 +681,8 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Attribue une note et un commentaire de correction à une copie étudiante,
+  /// passe son statut à `SubmissionStatus.graded`, publie une notification et appelle [notifyListeners].
   void gradeSubmission({
     required String submissionId,
     required double grade,
@@ -644,6 +708,7 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ajoute un support de cours ou met à jour ses métadonnées puis rafraîchit les vues abonnées.
   void upsertDocument(CourseDocument doc) {
     final i = documents.indexWhere((d) => d.id == doc.id);
     if (i >= 0) {
@@ -654,11 +719,13 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Supprime un document pédagogique par identifiant et notifie les écouteurs.
   void deleteDocument(String id) {
     documents.removeWhere((d) => d.id == id);
     notifyListeners();
   }
 
+  /// Incrémente le compteur de téléchargements d'un document et met à jour l'affichage en temps réel.
   void incrementDownload(String id) {
     final i = documents.indexWhere((d) => d.id == id);
     if (i < 0) return;
@@ -668,6 +735,9 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Construit dynamiquement les lignes du carnet de notes ([GradebookRow]) en croisant
+  /// la liste des étudiants (`roster`) avec les quiz publiés (dernière tentative soumise)
+  /// et les devoirs (état du dépôt et note obtenue), filtrables par cours ou par étudiant.
   List<GradebookRow> gradebook({String? courseId, String? student}) {
     final rows = <GradebookRow>[];
     for (final quiz in quizzes.where((q) => q.isPublished)) {
@@ -729,7 +799,8 @@ class EvaluationsController extends ChangeNotifier {
     return rows;
   }
 
-  /// GET /courses/:id/gradebook — export CSV (carnet de notes)
+  /// Sérialise le carnet de notes filtré au format CSV (séparateur point-virgule compatible tableurs)
+  /// avec échappement des guillemets doubles.
   String exportGradebookCsv({String? courseId, String? student}) {
     final rows = gradebook(courseId: courseId, student: student);
     final buf = StringBuffer(
@@ -745,15 +816,18 @@ class EvaluationsController extends ChangeNotifier {
     return buf.toString();
   }
 
+  /// Encadre une valeur texte de guillemets et double les guillemets internes conformément à RFC 4180.
   String _csv(String v) => '"${v.replaceAll('"', '""')}"';
 
+  /// Formate un score numérique sans décimale s'il est entier, ou avec un chiffre après la virgule sinon.
   static String formatScore(double score) {
     return score == score.roundToDouble()
         ? score.toInt().toString()
         : score.toStringAsFixed(1);
   }
 
-  /// POST /quizzes/generate — brouillon Gemini simulé
+  /// Génère localement trois questions préremplies (QCM et Vrai/Faux) à partir d'un thème
+  /// de chapitre afin d'alimenter le brouillon assisté dans `QuizWizardScreen`.
   List<QuizQuestion> generateGeminiQuestions(String chapterHint) {
     final hint = chapterHint.trim().isEmpty ? 'le chapitre' : chapterHint.trim();
     return [

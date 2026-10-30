@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'forum_ui.dart';
 
-/// Badge de rôle : « Enseignant vérifié » (bleu) / « Étudiant » (neutre).
+/// Badge distinctif indiquant le rôle de l'auteur d'une publication (`'teacher'` ou `'student'`).
+/// S'appuie sur `ForumPill` et est affiché dans `PostCard`, `AnswerCard` et `QuestionDetailScreen`.
 class RoleBadge extends StatelessWidget {
-  final String role; // 'student' | 'teacher'
+  /// Chaîne représentant le rôle de l'auteur (`'student'` ou `'teacher'`).
+  final String role;
 
   const RoleBadge({super.key, required this.role});
 

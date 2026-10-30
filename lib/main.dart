@@ -27,7 +27,7 @@ void main() {
 }
 
 /// Widget racine de l'application qui configure :
-/// - Le thème Material 3 (charte graphique EduLink — MARKETPLACE_GUIDE.md)
+/// - Le thème Material 3 (charte graphique EduLink)
 /// - Le générateur de routes combiné (`EduLinkRoutes.onGenerateRoute`)
 /// - Le shell intégré [EduLinkShell] avec la barre de navigation à 5 onglets
 class EduLinkApp extends StatelessWidget {

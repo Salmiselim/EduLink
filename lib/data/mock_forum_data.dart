@@ -1,7 +1,11 @@
 import '../models/answer.dart';
 import '../models/post.dart';
 
+/// Fournit les données initiales en mémoire utilisées par `ForumProvider`
+/// au démarrage de l'application (cours disponibles, questions et réponses d'exemple).
 class MockForumData {
+  /// Liste des cours proposés dans les filtres du fil (`ForumFeedScreen`) et lors
+  /// de la création d'une question (`AskQuestionScreen`).
   static final List<String> coursesList = [
     'Tous les cours',
     'Développement Mobile (Flutter)',
@@ -10,6 +14,7 @@ class MockForumData {
     'Architecture Logicielle',
   ];
 
+  /// Génère la collection initiale de questions (`Post`) avec des horodatages relatifs.
   static List<Post> getInitialPosts() {
     return [
       Post(
@@ -48,6 +53,7 @@ class MockForumData {
     ];
   }
 
+  /// Génère les réponses initiales (`Answer`) rattachées aux questions via `postId`.
   static List<Answer> getInitialAnswers() {
     return [
       Answer(

@@ -8,13 +8,12 @@ import '../routes/courses_routes.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
 
-// ============================================================================
-// PAGE D'UN COURS (CourseDetailScreen) — ROUTE POUSSÉE
-// Métier 2 : « recherche et filtres, inscription, lecture des chapitres,
-// reprise là où l'on s'est arrêté ; boutons Poser une question (forum du
-// cours, L3), Évaluations (L5) et Ressources liées (L6) ».
-// ============================================================================
+// Fiche détaillée d'un cours (`CourseDetailScreen`), ouverte via `CoursesRoutes.courseDetail`.
+// Présente la bannière du cours, le profil de l'enseignant, les métadonnées académiques,
+// la carte d'avancement de l'étudiant inscrit, le sommaire des chapitres et les passerelles
+// vers le forum, les évaluations et les offres Marketplace rattachées.
 
+/// Écran de consultation d'un cours gérant l'inscription, l'accès au lecteur et les ressources liées.
 class CourseDetailScreen extends StatefulWidget {
   final String courseId;
 
@@ -28,14 +27,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   final CoursesController _controller = CoursesController.instance;
   final MarketplaceController _marketplace = MarketplaceController.instance;
 
+  /// Indique si l'utilisateur actif est l'enseignant auteur du cours consulté.
   bool get _isOwner =>
       _controller.courseById(widget.courseId)?.teacherId ==
       _controller.currentUserId;
 
-  /// Feuille coulissante « Ressources liées » : offres de la
-  /// Marketplace rattachées à ce cours via `offers.courseId`. En attendant le
-  /// backend NestJS, la lecture se fait directement sur le contrôleur Marketplace
-  /// (équivalent de `OffersService.listByCourse(courseId)`).
+  /// Ouvre une `ModalBottomSheet` listant les offres publiées sur la Marketplace
+  /// rattachées à ce cours (`offer.courseId == course.id`), avec navigation directe
+  /// vers `MarketplaceRoutes.offerDetail`.
   void _openLinkedResourcesSheet(Course course) {
     final offers = _marketplace.allOffers
         .where(
@@ -185,7 +184,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
-  /// Couleurs des types d'offre — palette de la charte M5
+  /// Associe chaque catégorie d'offre Marketplace à sa couleur distinctive dans la feuille modale.
   Color _offerColor(OfferType type) {
     switch (type) {
       case OfferType.resourceDigital:
@@ -197,6 +196,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
+  /// Retourne l'icône représentative du format d'offre Marketplace.
   IconData _offerIcon(OfferType type) {
     switch (type) {
       case OfferType.resourceDigital:
@@ -208,7 +208,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  /// Feuille de confirmation d'inscription (`POST /enrollments`)
+  /// Affiche une `ModalBottomSheet` de confirmation avant d'inscrire l'étudiant via `CoursesController.enroll`.
   void _openEnrollSheet(Course course) {
     showModalBottomSheet<void>(
       context: context,
@@ -318,6 +318,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
+  /// Ouvre `ChapterReaderScreen` sur le chapitre sélectionné via `CoursesRoutes.chapterReader`.
   void _openReader(Course course, String chapterId) {
     Navigator.pushNamed(
       context,
@@ -328,6 +329,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Fusionne l'écoute de `CoursesController` et `MarketplaceController` via `Listenable.merge`
+    // pour refléter immédiatement les inscriptions, la progression et les offres liées.
     return ListenableBuilder(
       listenable: Listenable.merge([_controller, _marketplace]),
       builder: (context, _) {
@@ -387,7 +390,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // --- Bannière de couverture (dégradé EduLink) ---
+              // Bannière d'en-tête avec dégradé et badges superposés (matière et niveau).
               _heroBanner(course),
               const SizedBox(height: 16),
               Text(
@@ -400,7 +403,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              // Enseignant (profil public)
+              // Zone interactive (`InkWell`) présentant l'identité et le badge de vérification de l'enseignant.
               InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () {
@@ -488,6 +491,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
               ),
               const SizedBox(height: 10),
+              // Disposition fluide (`Wrap`) passant automatiquement à la ligne sur petits écrans.
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -518,7 +522,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                   color: CourseColors.textSecondary,
                 ),
               ),
-              // --- Carte de progression (étudiant inscrit) ---
+              // Carte récapitulative d'avancement réservée aux étudiants inscrits.
               if (isEnrolled && !_isOwner) ...[
                 const SizedBox(height: 18),
                 _progressCard(course, enrollment),
@@ -601,7 +605,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               const SizedBox(height: 24),
             ],
           ),
-          // --- CTA principal collé en bas (zone du pouce) ---
+          // Barre inférieure fixe exposant l'action contextuelle principale selon le statut de l'utilisateur.
           bottomNavigationBar: _bottomCta(
             course,
             chapters,
@@ -612,6 +616,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
+  /// Construit le bouton d'action principal en bas d'écran : gestion du cours pour l'auteur,
+  /// reprise sur le prochain chapitre pour un inscrit, ou inscription gratuite pour un visiteur.
   Widget? _bottomCta(Course course, List<Chapter> chapters, bool isEnrolled) {
     final bool isStudent = !_controller.isTeacher;
 
@@ -668,6 +674,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
+  /// Construit la bannière visuelle du cours superposant le niveau et la matière dans un `Stack`.
   Widget _heroBanner(Course course) {
     return Container(
       height: 150,
@@ -742,6 +749,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
+  /// Affiche l'anneau (`ProgressRing`), la barre linéaire (`ProgressBar`) et le prochain chapitre à lire.
   Widget _progressCard(Course course, Enrollment enrollment) {
     final progress = _controller.progressOf(enrollment);
     final chapters = _controller.chaptersOf(course.id);
@@ -788,6 +796,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
+  /// Pastille compacte associant une icône et une métadonnée chiffrée (chapitres, durée, inscrits).
   Widget _metaPill(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -813,6 +822,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
+  /// Bouton secondaire pleine largeur reliant le cours aux fonctionnalités transverses (forum, évaluations, Marketplace).
   Widget _actionButton({
     required IconData icon,
     required String label,

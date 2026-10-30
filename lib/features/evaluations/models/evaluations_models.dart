@@ -1,35 +1,38 @@
 import 'package:flutter/material.dart';
 
-// ============================================================================
-// MODÈLES DE DONNÉES — MODULE M4 : ÉVALUATIONS (Pages 6-7 du Plan d'équipe)
-// Collections Firestore :
-// - quizzes · quiz_attempts · assignments · submissions · documents
-// ============================================================================
+/// Modèles de données immuables de la fonctionnalité Évaluations.
+/// Représente les entités métier correspondant aux collections Firestore
+/// (`quizzes`, `quiz_attempts`, `assignments`, `submissions`, `documents`)
+/// ainsi que les structures dédiées au carnet de notes et aux notifications.
 
-/// Rôle simulé (RoleAware) — `users.role` : student | teacher
+/// Rôle de l'utilisateur courant déterminant les droits d'affichage et d'édition.
 enum UserRole {
   student,
   teacher;
 
+  /// Libellé lisible affiché dans l'interface selon le rôle actif.
   String get label => this == UserRole.teacher ? 'Enseignant' : 'Étudiant';
 }
 
-/// Type de question de quiz (`quizzes.questions[].type` : qcm | vrai_faux)
+/// Format de question pris en charge dans un quiz (`qcm` ou `vrai_faux`).
 enum QuestionType {
   qcm,
   vraiFaux;
 
+  /// Identifiant technique stocké dans le schéma de données (`qcm` | `vrai_faux`).
   String get code => this == QuestionType.qcm ? 'qcm' : 'vrai_faux';
 
+  /// Intitulé affiché sur les puces et dans l'assistant de création de quiz.
   String get label => this == QuestionType.qcm ? 'QCM' : 'Vrai / Faux';
 }
 
-/// Dossier d'un document de cours (espace façon Blackboard)
+/// Répertoire thématique de classement d'un support de cours.
 enum DocumentFolder {
   polycopies,
   corriges,
   annales;
 
+  /// Nom du dossier affiché dans les filtres `ChoiceChip` et les cartes de documents.
   String get label {
     switch (this) {
       case DocumentFolder.polycopies:
@@ -41,6 +44,7 @@ enum DocumentFolder {
     }
   }
 
+  /// Icône Material associée visuellement à chaque type de ressource pédagogique.
   IconData get icon {
     switch (this) {
       case DocumentFolder.polycopies:
@@ -52,6 +56,7 @@ enum DocumentFolder {
     }
   }
 
+  /// Couleur distinctive utilisée pour l'icône et le badge de catégorie du document.
   Color get color {
     switch (this) {
       case DocumentFolder.polycopies:
@@ -64,20 +69,23 @@ enum DocumentFolder {
   }
 }
 
-/// Statut d'une copie (`submissions.status` : submitted | graded)
+/// État d'avancement d'une copie déposée par un étudiant (`submitted` ou `graded`).
 enum SubmissionStatus {
   submitted,
   graded;
 
+  /// Texte de statut affiché dans la file de correction et le détail des copies.
   String get label =>
       this == SubmissionStatus.graded ? 'Corrigée' : 'À corriger';
 
+  /// Couleur sémantique associée à l'état de correction (vert si notée, ambre sinon).
   Color get color => this == SubmissionStatus.graded
       ? const Color(0xFF16A34A)
       : const Color(0xFFD97706);
 }
 
-/// Cours mock (contrat L4 / L5 avec M2 — jamais d'accès direct aux collections M2)
+/// Projection légère d'un cours rattaché aux évaluations, permettant de lier
+/// quiz, devoirs et documents sans dépendre directement des modèles complets de cours.
 class LinkedCourse {
   final String id;
   final String title;
@@ -96,6 +104,8 @@ class LinkedCourse {
   });
 }
 
+/// Question individuelle composant un [Quiz], contenant l'énoncé, les options de réponse,
+/// les indices des réponses exactes, le barème en points et l'explication de correction.
 class QuizQuestion {
   final String id;
   final QuestionType type;
@@ -115,8 +125,10 @@ class QuizQuestion {
     required this.explanation,
   });
 
+  /// Indique si la question attend plusieurs réponses exactes simultanément.
   bool get isMultiple => correct.length > 1;
 
+  /// Retourne une copie immuable mise à jour lors de l'édition dans `QuizWizardScreen`.
   QuizQuestion copyWith({
     QuestionType? type,
     String? text,
@@ -137,7 +149,8 @@ class QuizQuestion {
   }
 }
 
-/// Collection `quizzes`
+/// Entité représentant un quiz chronométré rattaché à un cours (`quizzes`),
+/// avec fenêtre de disponibilité, limite de tentatives et statut de publication.
 class Quiz {
   final String id;
   final String courseId;
@@ -167,9 +180,11 @@ class Quiz {
     required this.questions,
   });
 
+  /// Somme totale des points des questions, utilisée pour normaliser le score sur 20.
   double get totalPoints =>
       questions.fold(0, (sum, q) => sum + q.points);
 
+  /// Produit une nouvelle instance de [Quiz] avec les champs modifiés.
   Quiz copyWith({
     String? title,
     String? courseId,
@@ -198,7 +213,8 @@ class Quiz {
   }
 }
 
-/// Collection `quiz_attempts`
+/// Tentative de passage d'un quiz par un étudiant (`quiz_attempts`), enregistrant
+/// les choix cochés par question, l'horodatage de début/fin et la note calculée sur 20.
 class QuizAttempt {
   final String id;
   final String quizId;
@@ -222,8 +238,10 @@ class QuizAttempt {
     this.submittedAt,
   });
 
+  /// Vrai lorsque la tentative a été soumise et corrigée automatiquement.
   bool get isSubmitted => submittedAt != null;
 
+  /// Génère une copie mise à jour lors de la sauvegarde intermédiaire ou de la soumission finale.
   QuizAttempt copyWith({
     List<List<int>>? answers,
     double? score,
@@ -243,7 +261,8 @@ class QuizAttempt {
   }
 }
 
-/// Collection `assignments` (dépôts)
+/// Devoir ou travail pratique créé par un enseignant (`assignments`), définissant
+/// les consignes, les pièces jointes, la date limite, la note maximale et l'autorisation de retard.
 class Assignment {
   final String id;
   final String courseId;
@@ -271,6 +290,7 @@ class Assignment {
     required this.allowLate,
   });
 
+  /// Retourne une copie modifiée du devoir lors d'une mise à jour par l'enseignant.
   Assignment copyWith({
     String? title,
     String? courseId,
@@ -297,7 +317,8 @@ class Assignment {
   }
 }
 
-/// Collection `submissions`
+/// Dépôt remis par un étudiant pour un [Assignment] (`submissions`), conservant
+/// les fichiers joints, le drapeau `isLate` de détection de retard et la correction éventuelle.
 class Submission {
   final String id;
   final String assignmentId;
@@ -327,6 +348,7 @@ class Submission {
     this.gradedAt,
   });
 
+  /// Produit une nouvelle instance lors d'un redépôt étudiant ou de la notation enseignant.
   Submission copyWith({
     List<String>? fileUrls,
     String? comment,
@@ -354,7 +376,8 @@ class Submission {
   }
 }
 
-/// Collection `documents`
+/// Ressource documentaire associée à un cours (`documents`), classée dans un [DocumentFolder]
+/// avec date de visibilité et suivi du nombre de téléchargements.
 class CourseDocument {
   final String id;
   final String courseId;
@@ -384,6 +407,7 @@ class CourseDocument {
     this.downloadsCount = 0,
   });
 
+  /// Crée une copie modifiée du document (édition des champs ou incrément de `downloadsCount`).
   CourseDocument copyWith({
     String? title,
     String? description,
@@ -410,7 +434,8 @@ class CourseDocument {
   }
 }
 
-/// Ligne du carnet de notes (`GET /courses/:id/gradebook`)
+/// Ligne consolidée du carnet de notes regroupant quiz et devoirs pour un couple
+/// étudiant / cours, exploitée par la vue carnet et par le générateur d'export CSV.
 class GradebookRow {
   final String studentId;
   final String studentName;
@@ -435,7 +460,8 @@ class GradebookRow {
   });
 }
 
-/// Notification mock (contrat L8 — NotificationsService.send)
+/// Notification interne enregistrée par le contrôleur lors des événements clés
+/// (publication d'un quiz ou devoir, remise d'une copie, publication d'une note).
 class EvalNotification {
   final String title;
   final String body;

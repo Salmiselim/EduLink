@@ -3,16 +3,11 @@ import '../../../main.dart';
 import '../widgets/auth_ui.dart';
 import 'sign_in_screen.dart';
 
-// ============================================================================
-// ÉCRAN D'INSCRIPTION (SignUpScreen) — interface de démonstration.
-// Choix du rôle (étudiant / enseignant avec code d'établissement), validation
-// complète des champs. La création réelle du compte (Firebase Authentication
-// + profil) sera branchée par le module Comptes & Profils.
-// ============================================================================
-
-/// Rôle choisi à l'inscription (stocké une fois pour toutes dans le compte)
+/// Rôle de compte sélectionné lors de l'inscription.
 enum _AccountRole { student, teacher }
 
+/// Écran de création de compte avec sélection du profil (étudiant ou enseignant)
+/// et validation complète des champs avant ouverture du shell `EduLinkShell`.
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -21,13 +16,17 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
+  /// Clé globale pilotant l'état et la validation du formulaire d'inscription.
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  /// Contrôleurs associés aux champs texte du formulaire.
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
   final TextEditingController _codeController = TextEditingController();
 
+  /// Rôle actif déterminant l'affichage conditionnel du champ code établissement.
   _AccountRole _role = _AccountRole.student;
   bool _obscure = true;
   bool _obscureConfirm = true;
@@ -35,6 +34,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   void dispose() {
+    // Nettoyage de tous les contrôleurs de texte lors du démontage du widget.
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -43,6 +43,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
+  /// Valide le formulaire et l'acceptation des conditions générales, affiche un
+  /// retour par `SnackBar` puis remplace toute la pile de navigation vers `EduLinkShell`.
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (!_acceptTerms) {
@@ -71,6 +73,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     final isTeacher = _role == _AccountRole.teacher;
 
+    // Scaffold structurant la barre supérieure et le corps du formulaire d'inscription.
     return Scaffold(
       backgroundColor: AuthColors.scaffold,
       appBar: AppBar(
@@ -86,6 +89,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           ),
         ),
       ),
+      // SafeArea + SingleChildScrollView pour garantir un défilement fluide avec le clavier.
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -97,6 +101,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               children: [
                 const AuthHeader(subtitle: 'Rejoignez la communauté EduLink'),
                 const SizedBox(height: 26),
+                // Champ du nom complet avec contrôle de longueur minimale et maximale.
                 TextFormField(
                   controller: _nameController,
                   textInputAction: TextInputAction.next,
@@ -115,6 +120,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
+                // Champ d'adresse e-mail validant la présence des séparateurs de domaine.
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -135,6 +141,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
+                // Champ du mot de passe principal avec bascule d'affichage et seuil à 6 caractères.
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscure,
@@ -161,6 +168,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
+                // Champ de confirmation vérifiant la correspondance exacte avec `_passwordController`.
                 TextFormField(
                   controller: _confirmController,
                   obscureText: _obscureConfirm,
@@ -198,6 +206,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                // Sélecteur de profil partagé en deux colonnes égales grâce à `Expanded`.
                 Row(
                   children: [
                     Expanded(
@@ -223,6 +232,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ),
                   ],
                 ),
+                // Champ supplémentaire requis uniquement lorsque le rôle enseignant est sélectionné.
                 if (isTeacher) ...[
                   const SizedBox(height: 14),
                   TextFormField(
@@ -246,6 +256,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
+                // Case d'acceptation des conditions accompagnée d'un libellé flexible (`Expanded`).
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -281,6 +292,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 const SizedBox(height: 20),
                 AuthPrimaryButton(label: 'Créer un compte', onPressed: _submit),
                 const SizedBox(height: 22),
+                // Bascule vers `SignInScreen` via `Navigator.pushReplacement`.
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -322,7 +334,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 }
 
-/// Carte de sélection du rôle (étudiant / enseignant)
+/// Carte cliquable représentant un rôle utilisateur (étudiant ou enseignant)
+/// avec mise en évidence visuelle de la sélection active.
 class _RoleCard extends StatelessWidget {
   final bool selected;
   final IconData icon;

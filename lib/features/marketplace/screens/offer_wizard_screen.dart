@@ -2,21 +2,10 @@ import 'package:flutter/material.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 
-// ============================================================================
-// ROUTE POUSSÉE : ASSISTANT DE CRÉATION / ÉDITION D'OFFRE EN 6 ÉTAPES (OfferWizardScreen)
-// Page 8 — Métier 2 :
-// « Assistant de création d'offre (route poussée, étudiant ou enseignant) :
-//   1. Choix du type
-//   2. Informations, photos ou fichier
-//   3. Prix (en TND ou Gratuit)
-//   4. Lieu ou mode et disponibilités
-//   5. Cours lié (optionnel)
-//   6. Aperçu -> Publication (ou Brouillon) »
-//
-// Répond au critère d'évaluation : « Contrôles de saisie et validations »
-// via des clés [GlobalKey<FormState>] et des [TextFormField] sur chaque étape.
-// ============================================================================
-
+/// Assistant multi-étapes de création et d'édition d'une offre poussé via [MarketplaceRoutes.offerWizard].
+/// Découpe la saisie en 6 étapes séquentielles (type, informations/médias, tarification TND,
+/// modalité/adresse/créneaux, cours rattaché optionnel et aperçu final avant brouillon ou publication)
+/// sécurisées par des clés [GlobalKey<FormState>] dédiées à chaque formulaire intermédiaire.
 class OfferWizardScreen extends StatefulWidget {
   /// Si non nul, l'assistant s'ouvre en mode « Modification d'une offre existante » (`PATCH /offers/:id`)
   final Offer? existingOffer;
@@ -85,11 +74,13 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     '6. Aperçu & Publication',
   ];
 
+  /// Indique si le formulaire édite une offre existante (`true`) ou en crée une nouvelle (`false`).
   bool get _isEditing => widget.existingOffer != null;
 
   @override
   void initState() {
     super.initState();
+    // Préremplit l'ensemble des contrôleurs et sélections si une offre existante est passée en argument.
     final existing = widget.existingOffer;
     if (existing != null) {
       _selectedType = existing.type;
@@ -136,6 +127,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
   @override
   void dispose() {
+    // Nettoyage des TextEditingController pour éviter toute fuite mémoire.
     _titleController.dispose();
     _descController.dispose();
     _priceController.dispose();
@@ -143,7 +135,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     super.dispose();
   }
 
-  /// Vérifie la validité des contrôles de saisie de l'étape active avant d'autoriser le passage à la suivante
+  /// Exécute les règles de validation propres à l'étape [step] (formulaires [GlobalKey<FormState>],
+  /// présence des médias obligatoires, bornes tarifaires en TND et existence d'au moins un créneau libre).
   bool _validateStep(int step) {
     if (step == 1) {
       final formValid = _step2FormKey.currentState?.validate() ?? false;
@@ -230,7 +223,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     }
   }
 
-  /// Ouvre une boîte de dialogue avec contrôles de saisie (`HH:mm` et `fin > début`) pour ajouter un créneau
+  /// Affiche une boîte de dialogue dotée de son propre [Form] pour ajouter un créneau horaire,
+  /// en contrôlant le format 24h via [_timeRegex] et la cohérence chronologique (`fin > début`).
   void _showAddDraftSlotDialog() {
     final slotFormKey = GlobalKey<FormState>();
     final dateCtrl = TextEditingController(text: 'Ven 30 Oct 2026');
@@ -338,7 +332,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// Construit l'objet `Offer` et ses `AvailabilitySlot` puis les enregistre (`POST /offers` ou `PATCH /offers/:id`)
+  /// Revalide les étapes de saisie, assemble l'instance immuable [Offer] ainsi que sa liste
+  /// d'[AvailabilitySlot], puis délègue la création (`addOffer`) ou la mise à jour (`updateOffer`) au contrôleur.
   void _submitOffer({required OfferStatus status}) {
     // Vérification finale de toutes les étapes avant publication
     for (int s = 1; s <= 3; s++) {
@@ -482,7 +477,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       ),
       body: Column(
         children: [
-          // Barre de progression interactive des 6 étapes
+          // Barre de progression segmentée (6 étapes) : retour arrière libre, avancement soumis à `_validateStep`
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
@@ -625,7 +620,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 1 : Sélection du type d'offre parmi les 3 types définis en Page 7
+  /// Étape 1 : cartes de sélection exclusives permettant de choisir la catégorie [OfferType].
   Widget _buildStep1Type() {
     final options = [
       (
@@ -759,7 +754,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 2 : Saisie validée du titre, matière, niveau, description, fichier PDF ou état/stock
+  /// Étape 2 : formulaire ([_step2FormKey]) regroupant les [TextFormField] du titre et de la description,
+  /// les [DropdownButtonFormField] matière/niveau et les contrôles médias spécifiques au type choisi.
   Widget _buildStep2InfoAndMedia() {
     return Form(
       key: _step2FormKey,
@@ -813,6 +809,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            // Listes déroulantes matière et niveau réparties proportionnellement via Expanded (flex 2:1)
             Row(
               children: [
                 Expanded(
@@ -1025,7 +1022,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 3 : Définition validée du prix en TND ou activation de la gratuité (`0 TND`)
+  /// Étape 3 : formulaire ([_step3FormKey]) combinant un [SwitchListTile] de gratuité
+  /// et un [TextFormField] numérique décimal borné entre 1 et 500 TND.
   Widget _buildStep3Price() {
     return Form(
       key: _step3FormKey,
@@ -1049,6 +1047,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // Interrupteur basculant l'offre en gratuité totale et désactivant la saisie numérique du tarif
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text(
@@ -1127,7 +1126,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 4 : Mode (En ligne Jitsi / Présentiel), Adresse OpenStreetMap Nominatim et Créneaux horaires validés
+  /// Étape 4 : configuration de la modalité ([SegmentedButton] Jitsi / présentiel), de la localisation
+  /// OpenStreetMap Nominatim ([_step4FormKey]) et de la liste des créneaux de disponibilité.
   Widget _buildStep4LocationAndSlots() {
     if (_selectedType == OfferType.resourceDigital) {
       return Container(
@@ -1385,7 +1385,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 5 : Rattachement optionnel de l'offre à un cours
+  /// Étape 5 : sélection optionnelle d'un cours académique via [RadioGroup] et [RadioListTile]
+  /// afin de faire remonter l'offre dans les recommandations ciblées.
   Widget _buildStep5LinkedCourse() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1411,6 +1412,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 14),
+          // Groupe radio rattachant optionnellement l'offre à un cours existant (ou `null` pour une offre libre)
           RadioGroup<String?>(
             groupValue: _selectedCourseId,
             onChanged: (val) => setState(() => _selectedCourseId = val),
@@ -1445,7 +1447,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     );
   }
 
-  /// ÉTAPE 6 : Aperçu récapitulatif complet avant enregistrement en brouillon ou publication
+  /// Étape 6 : récapitulatif complet en lecture seule avant sauvegarde en brouillon ou publication immédiate.
   Widget _buildStep6Preview() {
     final parsedPrice =
         _isFree ? 0.0 : (double.tryParse(_priceController.text.trim()) ?? 15.0);

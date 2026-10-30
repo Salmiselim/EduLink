@@ -5,25 +5,25 @@ import '../screens/offer_wizard_screen.dart';
 import '../screens/order_chat_screen.dart';
 import '../screens/order_checkout_screen.dart';
 
-// ============================================================================
-// GESTION CENTRALISÉE DES ROUTES — MODULE M5 : MARKETPLACE
-// Répond au critère d'évaluation : « Navigation et gestion des routes ».
-// Définit toutes les routes nommées et leurs arguments typés via [onGenerateRoute].
-// ============================================================================
+// Gestion centralisée des routes nommées du module Marketplace.
+// Regroupe les classes d'arguments fortement typés (*Args) et la fabrique
+// [MarketplaceRoutes.onGenerateRoute] enregistrée sur `MaterialApp.onGenerateRoute`.
 
-/// Arguments typés pour la route de détail d'une offre (`OfferDetailScreen`)
+/// Arguments transmis lors de la navigation vers [OfferDetailScreen].
 class OfferDetailArgs {
   final String offerId;
   const OfferDetailArgs({required this.offerId});
 }
 
-/// Arguments typés pour l'assistant de création / modification d'offre (`OfferWizardScreen`)
+/// Arguments optionnels transmis à [OfferWizardScreen].
+/// Si [existingOffer] est non nul, l'assistant préremplit les champs en mode édition.
 class OfferWizardArgs {
   final Offer? existingOffer;
   const OfferWizardArgs({this.existingOffer});
 }
 
-/// Arguments typés pour l'écran de commande / réservation (`OrderCheckoutScreen`)
+/// Arguments requis pour ouvrir [OrderCheckoutScreen] avec l'offre ciblée
+/// et un éventuel créneau horaire [preselectedSlot] retenu sur l'écran précédent.
 class OrderCheckoutArgs {
   final Offer offer;
   final AvailabilitySlot? preselectedSlot;
@@ -33,14 +33,15 @@ class OrderCheckoutArgs {
   });
 }
 
-/// Arguments typés pour l'écran de chat lié à une commande (`OrderChatScreen`)
+/// Arguments transmis à [OrderChatScreen] pour charger la conversation liée à [orderId].
 class OrderChatArgs {
   final String orderId;
   const OrderChatArgs({required this.orderId});
 }
 
-/// Table centralisée des routes nommées de la Marketplace (M5)
+/// Registre des constantes de chemins et générateur de routes de la Marketplace.
 class MarketplaceRoutes {
+  // Constructeur privé empêchant toute instanciation directe.
   MarketplaceRoutes._();
 
   static const String home = '/';
@@ -49,7 +50,8 @@ class MarketplaceRoutes {
   static const String orderCheckout = '/marketplace/order-checkout';
   static const String orderChat = '/marketplace/order-chat';
 
-  /// Générateur de routes centralisé branché sur `MaterialApp.onGenerateRoute`
+  /// Intercepte les appels `Navigator.pushNamed` / `pushReplacementNamed` et instancie
+  /// la [MaterialPageRoute] correspondante en castant `settings.arguments` vers sa classe `*Args`.
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case offerDetail:

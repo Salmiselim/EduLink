@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/auth_ui.dart';
 
-// ============================================================================
-// ÉCRAN « MOT DE PASSE OUBLIÉ » (ForgotPasswordScreen) — interface de
-// démonstration : la demande affiche un état de confirmation, l'envoi réel
-// de l'e-mail (Firebase Authentication) sera branché par le module Comptes.
-// ============================================================================
-
+/// Écran de récupération de mot de passe accessible depuis `SignInScreen`.
+/// Bascule vers un écran de confirmation une fois l'adresse e-mail validée.
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -15,9 +11,13 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  /// Clé globale associée au `Form` pour valider le champ e-mail avant envoi.
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  /// Contrôleur du champ d'adresse e-mail, utilisé aussi dans l'écran de confirmation.
   final TextEditingController _emailController = TextEditingController();
 
+  /// Indique si la demande de réinitialisation a été soumise.
   bool _sent = false;
 
   @override
@@ -26,6 +26,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
+  /// Vérifie la validité du formulaire puis affiche la vue de confirmation.
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _sent = true);
@@ -33,6 +34,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Structure `Scaffold` + `SafeArea` alternant entre saisie et confirmation selon `_sent`.
     return Scaffold(
       backgroundColor: AuthColors.scaffold,
       appBar: AppBar(
@@ -54,6 +56,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     );
   }
 
+  /// Construit la vue contenant le formulaire de saisie de l'adresse e-mail.
   Widget _buildFormView() {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -100,6 +103,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            // Champ e-mail avec validation automatique dès la première modification.
             TextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
@@ -131,6 +135,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     );
   }
 
+  /// Construit la vue récapitulative affichée après validation de l'adresse e-mail.
   Widget _buildSentView() {
     final email = _emailController.text.trim();
 
@@ -177,6 +182,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          // Dépile `ForgotPasswordScreen` pour revenir à `SignInScreen`.
           AuthPrimaryButton(
             label: 'Retour à la connexion',
             onPressed: () => Navigator.pop(context),

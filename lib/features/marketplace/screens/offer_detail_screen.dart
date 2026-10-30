@@ -3,20 +3,10 @@ import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
 
-// ============================================================================
-// ROUTE POUSSÉE : DÉTAIL D'UNE OFFRE (OfferDetailScreen)
-// Page 8 — Endpoint associé : `GET /offers/:id` (incrémente `viewsCount`).
-// Affiche :
-// - Le type d'offre et l'origine du vendeur (« Enseignant vérifié » / « Offre étudiant », Règle 5)
-// - Le cours rattaché
-// - Les caractéristiques détaillées, l'adresse OpenStreetMap ou les infos PDF
-// - Les créneaux horaires libres/réservés (`availabilities`) si cours particulier
-// - Le profil public du vendeur et ses badges
-// - Les avis vérifiés des acheteurs (`GET /reviews`)
-// - Le bouton de signalement (`POST /reports`, masquage auto à 3 signalements) avec validation
-// - Le bouton d'achat / réservation (bloqué si c'est sa propre offre — Règle 5)
-// ============================================================================
-
+/// Écran de consultation détaillée d'une offre poussé via [MarketplaceRoutes.offerDetail].
+/// Incrémente automatiquement le compteur de vues à l'ouverture, affiche les métadonnées
+/// spécifiques au type d'offre, permet de présélectionner un créneau libre (`availabilities`),
+/// gère le signalement modéré (`POST /reports`) et bloque l'auto-achat de sa propre offre.
 class OfferDetailScreen extends StatefulWidget {
   final String offerId;
 
@@ -32,20 +22,21 @@ class OfferDetailScreen extends StatefulWidget {
 class _OfferDetailScreenState extends State<OfferDetailScreen> {
   final MarketplaceController _controller = MarketplaceController.instance;
 
-  /// Créneau éventuellement présélectionné par l'utilisateur avant d'appuyer sur « Réserver »
+  /// Créneau horaire libre optionnellement sélectionné via [ChoiceChip] avant de passer à la réservation.
   AvailabilitySlot? _highlightedSlot;
 
   @override
   void initState() {
     super.initState();
-    // Incrémente automatiquement le compteur de vues (`viewsCount`) à l'ouverture
+    // Diffère l'incrémentation de `viewsCount` après le premier rendu afin d'éviter un `notifyListeners()` pendant `build`.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.incrementViewCount(widget.offerId);
     });
   }
 
-  /// Affiche la boîte de dialogue de signalement d'une offre (`POST /reports`, Page 8 Métier 1)
-  /// Inclut un contrôle de saisie si l'utilisateur sélectionne « Autre motif ».
+  /// Ouvre une boîte de dialogue de signalement (`POST /reports`) encapsulée dans un [StatefulBuilder]
+  /// et un [Form] : combine un [RadioGroup] de motifs prédéfinis avec un [TextFormField] conditionnel
+  /// validé lorsque « Autre motif » est coché. Masque automatiquement l'offre au 3e signalement.
   void _showReportDialog(Offer offer) {
     String selectedReason = 'Contenu inapproprié ou trompeur';
     final reasons = [
@@ -88,6 +79,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                         TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
                   ),
                   const SizedBox(height: 12),
+                  // Sélection exclusive du motif de signalement via RadioGroup et RadioListTile
                   RadioGroup<String>(
                     groupValue: selectedReason,
                     onChanged: (val) {
@@ -111,6 +103,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                           .toList(),
                     ),
                   ),
+                  // Champ complémentaire affiché et validé uniquement lorsque « Autre motif » est sélectionné
                   if (selectedReason == 'Autre motif (préciser)') ...[
                     const SizedBox(height: 8),
                     TextFormField(
@@ -176,6 +169,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Reconstruit la fiche détail dès qu'un favori, un compteur de vues ou un statut change dans le contrôleur.
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
@@ -503,7 +497,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 4. Créneaux horaires disponibles (`availabilities`) pour un cours particulier
+              // 4. Grille Wrap de ChoiceChip affichant les créneaux horaires (désactivés lorsque `slot.isBooked` vaut true)
               if (offer.type == OfferType.privateLesson) ...[
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -737,8 +731,8 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
             ],
           ),
 
-          // Barre d'action inférieure : affiche le prix et pousse la route nommée `MarketplaceRoutes.orderCheckout`
-          // Règle 5 (Page 2) : Désactivée si `isOwnOffer` (on ne peut ni acheter ni réserver sa propre offre)
+          // Barre inférieure fixe : affiche le tarif et pousse la route nommée `MarketplaceRoutes.orderCheckout`
+          // en transmettant `OrderCheckoutArgs`. Le bouton est désactivé si l'offre appartient à l'utilisateur courant ou est épuisée.
           bottomNavigationBar: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
             decoration: BoxDecoration(

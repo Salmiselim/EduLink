@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
 
-// ============================================================================
-// KIT UI PARTAGÉ — MODULE M3 : FORUM (Q&A)
-// Palette et primitives conformes à la charte graphique EduLink
-// (MARKETPLACE_GUIDE.md) : mêmes valeurs que `CourseColors` (M2) et
-// `EduColors` (M4).
-// ============================================================================
-
-/// Palette de la charte graphique EduLink
+/// Palette de couleurs partagée par l'ensemble des écrans et widgets du Forum,
+/// cohérente avec la charte graphique globale d'EduLink.
 class ForumColors {
   static const Color primary = Color(0xFF2563EB);
   static const Color primaryDark = Color(0xFF1E3A8A);
@@ -25,7 +19,8 @@ class ForumColors {
   static const Color neutralBg = Color(0xFFF1F5F9);
 }
 
-/// Décoration standard des champs de saisie (rayon 14, bordure E2E8F0)
+/// Construit une `InputDecoration` standardisée (coins arrondis de rayon 14 et
+/// bordure `ForumColors.border`) pour les champs de formulaire du Forum.
 InputDecoration forumInputDecoration({
   required String label,
   String? hint,
@@ -51,7 +46,7 @@ InputDecoration forumInputDecoration({
   );
 }
 
-/// Décoration standard des cartes : fond blanc, rayon 16, bordure 1px
+/// Décoration commune des conteneurs de cartes (`PostCard`, `AnswerCard`, énoncé détaillé).
 BoxDecoration forumCardDecoration({Color borderColor = ForumColors.border}) {
   return BoxDecoration(
     color: Colors.white,
@@ -60,7 +55,8 @@ BoxDecoration forumCardDecoration({Color borderColor = ForumColors.border}) {
   );
 }
 
-/// Badge / puce (11 / w700, rayon 8, fond 10 % d'opacité par défaut)
+/// Puce compacte réutilisée pour afficher le cours associé, le rôle d'un auteur
+/// (`RoleBadge`) ou la mention « Réponse vérifiée ».
 class ForumPill extends StatelessWidget {
   final String label;
   final Color color;
@@ -90,6 +86,7 @@ class ForumPill extends StatelessWidget {
             Icon(icon, size: 13, color: color),
             const SizedBox(width: 4),
           ],
+          // `Flexible` évite tout dépassement horizontal si l'intitulé du cours est long.
           Flexible(
             child: Text(
               label,
@@ -108,7 +105,8 @@ class ForumPill extends StatelessWidget {
   }
 }
 
-/// Avatar à initiale : bleu pour un enseignant, neutre pour un étudiant
+/// Avatar circulaire générant l'initiale de l'utilisateur avec une teinte bleue
+/// pour les enseignants et grise neutre pour les étudiants.
 class ForumAvatar extends StatelessWidget {
   final String name;
   final bool isTeacher;
@@ -139,7 +137,7 @@ class ForumAvatar extends StatelessWidget {
   }
 }
 
-/// Logo + titre de l'AppBar d'un module (« EduLink · Forum »)
+/// En-tête d'`AppBar` principal combinant un pictogramme encadré, un titre et un sous-titre.
 class ForumModuleTitle extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -196,7 +194,7 @@ class ForumModuleTitle extends StatelessWidget {
   }
 }
 
-/// Titre d'AppBar d'un écran poussé (17 / w800)
+/// Titre typographique standard utilisé dans l'`AppBar` des écrans secondaires du Forum.
 class ForumPageTitle extends StatelessWidget {
   final String text;
 
@@ -215,7 +213,8 @@ class ForumPageTitle extends StatelessWidget {
   }
 }
 
-/// État vide : icône 42, titre 16 / w800, sous-titre 13.5
+/// Composant d'état vide générique affichant une icône, un titre, un message explicatif
+/// et un widget d'action optionnel (réinitialisation de filtres ou retour arrière).
 class ForumEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -264,7 +263,7 @@ class ForumEmptyState extends StatelessWidget {
   }
 }
 
-/// CTA principal : hauteur 50, rayon 14, texte w800
+/// Bouton d'action principal pleine largeur (`FilledButton.icon`) utilisé pour la validation.
 class ForumPrimaryCta extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;

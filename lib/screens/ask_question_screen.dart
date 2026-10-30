@@ -4,6 +4,8 @@ import '../providers/forum_provider.dart';
 import '../routes/app_routes.dart';
 import '../widgets/forum_ui.dart';
 
+/// Écran de saisie permettant de publier une nouvelle question sur le Forum.
+/// Accessible depuis le bouton flottant de `ForumFeedScreen` via `ForumRoutes.forumAsk`.
 class AskQuestionScreen extends StatefulWidget {
   const AskQuestionScreen({super.key});
 
@@ -12,24 +14,29 @@ class AskQuestionScreen extends StatefulWidget {
 }
 
 class _AskQuestionScreenState extends State<AskQuestionScreen> {
+  /// Bornes de longueur appliquées lors de la validation du titre et de la description.
   static const int _titleMin = 5;
   static const int _titleMax = 120;
   static const int _bodyMin = 10;
   static const int _bodyMax = 2000;
 
+  /// Clé globale pilotant la validation simultanée des champs du `Form`.
   final _formKey = GlobalKey<FormState>();
+
+  /// Contrôleurs de saisie pour l'intitulé et le détail de la question.
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _bodyController = TextEditingController();
 
+  /// Cours rattaché à la question en cours de rédaction.
   late String _selectedCourse;
 
   @override
   void initState() {
     super.initState();
+    // Lecture ponctuelle (`context.read`) du provider pour pré-sélectionner le cours actif du fil.
     final provider = context.read<ForumProvider>();
     final courses =
         provider.courses.where((c) => c != ForumProvider.allCourses).toList();
-    // Pré-sélectionne le cours filtré dans le fil, sinon le premier de la liste.
     _selectedCourse = courses.contains(provider.selectedCourse)
         ? provider.selectedCourse
         : courses.first;
@@ -42,6 +49,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
     super.dispose();
   }
 
+  /// Vérifie que le titre est renseigné et respecte la longueur minimale `_titleMin`.
   String? _validateTitle(String? val) {
     final text = val?.trim() ?? '';
     if (text.isEmpty) return 'Veuillez saisir un titre';
@@ -51,6 +59,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
     return null;
   }
 
+  /// Vérifie que le corps de la question est renseigné et atteint au moins `_bodyMin` caractères.
   String? _validateBody(String? val) {
     final text = val?.trim() ?? '';
     if (text.isEmpty) return 'Veuillez décrire votre question';
@@ -60,6 +69,8 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
     return null;
   }
 
+  /// Valide le formulaire, enregistre la question dans `ForumProvider`, affiche un `SnackBar`
+  /// puis ouvre son écran de détail en remplaçant la page de création dans la pile.
   void _submitQuestion() {
     if (!_formKey.currentState!.validate()) return;
 
@@ -76,7 +87,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
       ),
     );
 
-    // Ouvre directement la question publiée (remplace l'écran de saisie).
+    // Remplace l'écran de rédaction par `QuestionDetailScreen` via la route nommée.
     Navigator.pushReplacementNamed(
       context,
       ForumRoutes.forumQuestion,
@@ -86,6 +97,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Écoute réactive de `ForumProvider` pour disposer de la liste à jour des cours.
     final provider = context.watch<ForumProvider>();
     final courses = provider.courses
         .where((c) => c != ForumProvider.allCourses)
@@ -104,6 +116,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
         ),
         title: const ForumPageTitle('Poser une question'),
       ),
+      // Formulaire validé au fil de la saisie grâce à `AutovalidateMode.onUserInteraction`.
       body: Form(
         key: _formKey,
         autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -121,6 +134,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Liste déroulante de sélection du cours concerné par la question.
             DropdownButtonFormField<String>(
               initialValue: _selectedCourse,
               isExpanded: true,
@@ -150,6 +164,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
 
             const SizedBox(height: 16),
 
+            // Champ du titre limité à `_titleMax` caractères et validé par `_validateTitle`.
             TextFormField(
               controller: _titleController,
               maxLength: _titleMax,
@@ -165,6 +180,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
 
             const SizedBox(height: 8),
 
+            // Champ multiligne de description détaillée validé par `_validateBody`.
             TextFormField(
               controller: _bodyController,
               maxLines: 6,
@@ -179,6 +195,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
 
             const SizedBox(height: 16),
 
+            // Bouton d'action principal soumettant le formulaire.
             ForumPrimaryCta(
               label: 'Publier ma question',
               icon: Icons.send_rounded,

@@ -4,13 +4,14 @@ import '../providers/forum_provider.dart';
 import '../widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
 
-/// Boîte « questions à traiter » : questions d'étudiants sans réponse
-/// de l'enseignant. Réservée au rôle enseignant.
+/// Boîte de réception enseignant accessible via la route `ForumRoutes.forumInbox`.
+/// Regroupe les questions d'étudiants n'ayant encore reçu ni réponse enseignant ni réponse vérifiée.
 class TeacherInboxScreen extends StatelessWidget {
   const TeacherInboxScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Observation de `ForumProvider` afin de retirer automatiquement une question dès qu'elle est traitée.
     final provider = context.watch<ForumProvider>();
 
     return Scaffold(
@@ -25,7 +26,9 @@ class TeacherInboxScreen extends StatelessWidget {
     );
   }
 
+  /// Construit le contenu selon le rôle courant et le nombre de questions en attente.
   Widget _buildBody(ForumProvider provider) {
+    // Garde-fou empêchant l'affichage de la liste si le profil actif n'est pas enseignant.
     if (!provider.isTeacher) {
       return const Center(
         child: ForumEmptyState(
@@ -47,6 +50,7 @@ class TeacherInboxScreen extends StatelessWidget {
       );
     }
 
+    // Réutilise `PostCard` pour permettre d'ouvrir directement le détail de chaque question à traiter.
     return ListView.builder(
       padding: const EdgeInsets.only(top: 16, bottom: 16),
       itemCount: pending.length,
