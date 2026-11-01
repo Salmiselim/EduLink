@@ -1,6 +1,7 @@
 // Bibliothèque officielle Material Design de Flutter : fournit MaterialApp, Scaffold,
 // AppBar, NavigationBar, ActionChip, IconButton, SnackBar, ThemeData et ColorScheme.
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import 'package:provider/provider.dart';
 
@@ -17,6 +18,7 @@ import 'features/evaluations/widgets/eval_ui.dart';
 import 'features/marketplace/data/marketplace_mock_data.dart';
 import 'features/marketplace/models/marketplace_models.dart';
 import 'features/marketplace/routes/marketplace_routes.dart';
+import 'features/marketplace/services/marketplace_firestore_service.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
 import 'providers/forum_provider.dart';
 import 'routes/app_routes.dart';
@@ -25,8 +27,23 @@ import 'screens/forum_feed_screen.dart';
 /// Point d'entrée principal de l'application EduLink.
 /// Le shell intégré [EduLinkShell] est ouvert après la connexion (ou via le
 /// bouton « Passer » de l'écran de démonstration).
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _initFirebase();
   runApp(const EduLinkApp());
+}
+
+/// Initialise Firebase puis branche la Marketplace sur Cloud Firestore.
+/// Si Firebase n'est pas encore configuré (pas de google-services.json), l'appli
+/// reste utilisable avec les données en mémoire.
+Future<void> _initFirebase() async {
+  try {
+    await Firebase.initializeApp();
+    MarketplaceFirestoreService.enableOfflinePersistence();
+    await MarketplaceController.instance.connectFirestore();
+  } catch (e) {
+    debugPrint('Firebase non configuré, mode hors Firestore : $e');
+  }
 }
 
 /// Widget racine de l'application qui configure :

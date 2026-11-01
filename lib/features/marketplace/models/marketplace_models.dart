@@ -240,6 +240,18 @@ class OfferLocation {
     required this.lat,
     required this.lng,
   });
+
+  /// Conversion vers un document Firestore (sous-map `location` de l'offre).
+  Map<String, dynamic> toMap() =>
+      {'address': address, 'city': city, 'lat': lat, 'lng': lng};
+
+  /// Reconstruit le lieu depuis la map Firestore.
+  factory OfferLocation.fromMap(Map<String, dynamic> m) => OfferLocation(
+        address: m['address'] as String? ?? '',
+        city: m['city'] as String? ?? '',
+        lat: (m['lat'] as num? ?? 0).toDouble(),
+        lng: (m['lng'] as num? ?? 0).toDouble(),
+      );
 }
 
 /// Créneau horaire d'une heure rattaché à une offre de cours particulier (`availabilities`).
@@ -265,10 +277,33 @@ class AvailabilitySlot {
     this.orderId,
   });
 
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'offerId': offerId,
+        'sellerId': sellerId,
+        'date': date,
+        'startTime': startTime,
+        'endTime': endTime,
+        'isBooked': isBooked,
+        'orderId': orderId,
+      };
+
+  factory AvailabilitySlot.fromMap(Map<String, dynamic> m) => AvailabilitySlot(
+        id: m['id'] as String,
+        offerId: m['offerId'] as String,
+        sellerId: m['sellerId'] as String,
+        date: m['date'] as String,
+        startTime: m['startTime'] as String,
+        endTime: m['endTime'] as String,
+        isBooked: m['isBooked'] as bool? ?? false,
+        orderId: m['orderId'] as String?,
+      );
+
   /// Retourne une copie modifiée du créneau (ex. lors du verrouillage/déverrouillage)
   AvailabilitySlot copyWith({
     bool? isBooked,
     String? orderId,
+    bool clearOrderId = false,
   }) {
     return AvailabilitySlot(
       id: id,
@@ -278,7 +313,7 @@ class AvailabilitySlot {
       startTime: startTime,
       endTime: endTime,
       isBooked: isBooked ?? this.isBooked,
-      orderId: orderId ?? this.orderId,
+      orderId: clearOrderId ? null : (orderId ?? this.orderId),
     );
   }
 }
@@ -348,6 +383,80 @@ class Offer {
     required this.createdAt,
     this.isRecommendedByCourse = false,
   });
+
+  /// Conversion vers un document Firestore ; les dates sont stockées en ISO-8601.
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'sellerId': sellerId,
+        'sellerName': sellerName,
+        'sellerAvatar': sellerAvatar,
+        'sellerSubtitle': sellerSubtitle,
+        'sellerBadges': sellerBadges,
+        'sellerRole': sellerRole.name,
+        'type': type.name,
+        'title': title,
+        'subject': subject,
+        'level': level,
+        'description': description,
+        'images': images,
+        'price': price,
+        'fileUrl': fileUrl,
+        'fileSizeLabel': fileSizeLabel,
+        'condition': condition?.name,
+        'quantity': quantity,
+        'mode': mode?.name,
+        'location': location?.toMap(),
+        'courseId': courseId,
+        'courseTitle': courseTitle,
+        'status': status.name,
+        'viewsCount': viewsCount,
+        'salesCount': salesCount,
+        'ratingAvg': ratingAvg,
+        'ratingCount': ratingCount,
+        'reportsCount': reportsCount,
+        'createdAt': createdAt.toIso8601String(),
+        'isRecommendedByCourse': isRecommendedByCourse,
+      };
+
+  /// Reconstruit une offre depuis un document Firestore.
+  factory Offer.fromMap(Map<String, dynamic> m) => Offer(
+        id: m['id'] as String,
+        sellerId: m['sellerId'] as String,
+        sellerName: m['sellerName'] as String? ?? '',
+        sellerAvatar: m['sellerAvatar'] as String? ?? '',
+        sellerSubtitle: m['sellerSubtitle'] as String? ?? '',
+        sellerBadges: List<String>.from(m['sellerBadges'] ?? const []),
+        sellerRole: SellerRole.values.byName(m['sellerRole'] as String),
+        type: OfferType.values.byName(m['type'] as String),
+        title: m['title'] as String? ?? '',
+        subject: m['subject'] as String? ?? '',
+        level: m['level'] as String? ?? '',
+        description: m['description'] as String? ?? '',
+        images: List<String>.from(m['images'] ?? const []),
+        price: (m['price'] as num? ?? 0).toDouble(),
+        fileUrl: m['fileUrl'] as String?,
+        fileSizeLabel: m['fileSizeLabel'] as String?,
+        condition: m['condition'] == null
+            ? null
+            : OfferCondition.values.byName(m['condition'] as String),
+        quantity: (m['quantity'] as num?)?.toInt(),
+        mode: m['mode'] == null
+            ? null
+            : DeliveryMode.values.byName(m['mode'] as String),
+        location: m['location'] == null
+            ? null
+            : OfferLocation.fromMap(Map<String, dynamic>.from(m['location'])),
+        courseId: m['courseId'] as String?,
+        courseTitle: m['courseTitle'] as String?,
+        status: OfferStatus.values.byName(m['status'] as String),
+        viewsCount: (m['viewsCount'] as num? ?? 0).toInt(),
+        salesCount: (m['salesCount'] as num? ?? 0).toInt(),
+        ratingAvg: (m['ratingAvg'] as num? ?? 0).toDouble(),
+        ratingCount: (m['ratingCount'] as num? ?? 0).toInt(),
+        reportsCount: (m['reportsCount'] as num? ?? 0).toInt(),
+        createdAt: DateTime.parse(m['createdAt'] as String),
+        isRecommendedByCourse: m['isRecommendedByCourse'] as bool? ?? false,
+      );
 
   /// Indique si l'offre est gratuite (`price == 0`)
   bool get isFree => price <= 0;
@@ -468,6 +577,58 @@ class MarketplaceOrder {
     this.hasReview = false,
   });
 
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'offerId': offerId,
+        'offerTitle': offerTitle,
+        'offerType': offerType.name,
+        'offerSubject': offerSubject,
+        'buyerId': buyerId,
+        'buyerName': buyerName,
+        'sellerId': sellerId,
+        'sellerName': sellerName,
+        'sellerRole': sellerRole.name,
+        'quantity': quantity,
+        'amount': amount,
+        'slotId': slotId,
+        'slotLabel': slotLabel,
+        'meetingLink': meetingLink,
+        'pickupAddress': pickupAddress,
+        'fileUrl': fileUrl,
+        'status': status.name,
+        'note': note,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+        'unreadCount': unreadCount,
+        'hasReview': hasReview,
+      };
+
+  factory MarketplaceOrder.fromMap(Map<String, dynamic> m) => MarketplaceOrder(
+        id: m['id'] as String,
+        offerId: m['offerId'] as String,
+        offerTitle: m['offerTitle'] as String? ?? '',
+        offerType: OfferType.values.byName(m['offerType'] as String),
+        offerSubject: m['offerSubject'] as String? ?? '',
+        buyerId: m['buyerId'] as String,
+        buyerName: m['buyerName'] as String? ?? '',
+        sellerId: m['sellerId'] as String,
+        sellerName: m['sellerName'] as String? ?? '',
+        sellerRole: SellerRole.values.byName(m['sellerRole'] as String),
+        quantity: (m['quantity'] as num? ?? 1).toInt(),
+        amount: (m['amount'] as num? ?? 0).toDouble(),
+        slotId: m['slotId'] as String?,
+        slotLabel: m['slotLabel'] as String?,
+        meetingLink: m['meetingLink'] as String?,
+        pickupAddress: m['pickupAddress'] as String?,
+        fileUrl: m['fileUrl'] as String?,
+        status: OrderStatus.values.byName(m['status'] as String),
+        note: m['note'] as String? ?? '',
+        createdAt: DateTime.parse(m['createdAt'] as String),
+        updatedAt: DateTime.parse(m['updatedAt'] as String),
+        unreadCount: (m['unreadCount'] as num? ?? 0).toInt(),
+        hasReview: m['hasReview'] as bool? ?? false,
+      );
+
   /// Retourne une nouvelle instance de [MarketplaceOrder] avec les propriétés modifiées.
   MarketplaceOrder copyWith({
     OrderStatus? status,
@@ -528,6 +689,30 @@ class OfferReview {
     required this.comment,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'buyerId': buyerId,
+        'buyerName': buyerName,
+        'buyerRoleLabel': buyerRoleLabel,
+        'sellerId': sellerId,
+        'offerId': offerId,
+        'rating': rating,
+        'comment': comment,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory OfferReview.fromMap(Map<String, dynamic> m) => OfferReview(
+        id: m['id'] as String,
+        buyerId: m['buyerId'] as String,
+        buyerName: m['buyerName'] as String? ?? '',
+        buyerRoleLabel: m['buyerRoleLabel'] as String? ?? '',
+        sellerId: m['sellerId'] as String,
+        offerId: m['offerId'] as String,
+        rating: (m['rating'] as num).toInt(),
+        comment: m['comment'] as String? ?? '',
+        createdAt: DateTime.parse(m['createdAt'] as String),
+      );
 }
 
 /// Message échangé dans le fil de discussion associé à une commande (`conversations/{orderId}/messages`).
@@ -556,4 +741,30 @@ class ChatMessage {
     required this.createdAt,
     this.isSystemMessage = false,
   });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'orderId': orderId,
+        'senderId': senderId,
+        'senderName': senderName,
+        'text': text,
+        'attachmentUrl': attachmentUrl,
+        'attachmentLabel': attachmentLabel,
+        'readAt': readAt?.toIso8601String(),
+        'createdAt': createdAt.toIso8601String(),
+        'isSystemMessage': isSystemMessage,
+      };
+
+  factory ChatMessage.fromMap(Map<String, dynamic> m) => ChatMessage(
+        id: m['id'] as String,
+        orderId: m['orderId'] as String,
+        senderId: m['senderId'] as String,
+        senderName: m['senderName'] as String? ?? '',
+        text: m['text'] as String? ?? '',
+        attachmentUrl: m['attachmentUrl'] as String?,
+        attachmentLabel: m['attachmentLabel'] as String?,
+        readAt: m['readAt'] == null ? null : DateTime.parse(m['readAt'] as String),
+        createdAt: DateTime.parse(m['createdAt'] as String),
+        isSystemMessage: m['isSystemMessage'] as bool? ?? false,
+      );
 }

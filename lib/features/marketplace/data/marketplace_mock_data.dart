@@ -1,10 +1,13 @@
 // `package:flutter/foundation.dart` est la bibliothèque légère de base de Flutter :
 // elle fournit la classe `ChangeNotifier` (patron de conception Observateur / Observer Pattern)
 // sans importer toute la couche graphique UI dans la couche de gestion des données.
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 // Liaison vers la couche Modèles (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`, `OfferReview`, `ChatMessage`)
 import '../models/marketplace_models.dart';
+import '../services/marketplace_firestore_service.dart';
 
 /// Contrôleur central de la Marketplace basé sur [ChangeNotifier].
 /// Expose un singleton partagé ([instance]) observé par les différents écrans
@@ -46,6 +49,121 @@ class MarketplaceController extends ChangeNotifier {
   final List<OfferReview> _reviews = [];
   final Map<String, List<ChatMessage>> _messagesByOrder = {};
 
+  // ------------------------------------------------------------------ Firestore
+  // Tant que `connectFirestore()` n'est pas appelé (ou si Firebase n'est pas configuré),
+  // `_remote` reste nul et le contrôleur fonctionne uniquement en mémoire.
+  MarketplaceFirestoreService? _remote;
+  final List<StreamSubscription<dynamic>> _subs = [];
+
+  /// Vrai quand les données proviennent de Cloud Firestore.
+  bool get isOnline => _remote != null;
+
+  /// Branche le contrôleur sur Firestore :
+  /// 1. si la base est vide, on y injecte le jeu de données de démonstration ;
+  /// 2. sinon on remplace la mémoire par le contenu distant ;
+  /// 3. on écoute ensuite chaque collection en temps réel (les mises à jour des autres
+  ///    utilisateurs et le cache hors-ligne passent par ces flux).
+  Future<void> connectFirestore([MarketplaceFirestoreService? service]) async {
+    final remote = service ?? MarketplaceFirestoreService();
+    try {
+      if (await remote.isOffersEmpty()) {
+        await remote.seed(
+          offers: _offers,
+          slots: _slotsByOffer.values.expand((l) => l),
+          orders: _orders,
+          reviews: _reviews,
+          messages: _messagesByOrder.values.expand((l) => l),
+        );
+      }
+    } catch (e) {
+      debugPrint('Firestore indisponible, mode mémoire conservé : $e');
+      return;
+    }
+
+    _remote = remote;
+    _offers.clear();
+    _slotsByOffer.clear();
+    _orders.clear();
+    _reviews.clear();
+    _messagesByOrder.clear();
+    _favoriteOfferIds.clear();
+
+    void listen<T>(Stream<T> s, void Function(T) onData) {
+      _subs.add(s.listen((v) {
+        onData(v);
+        notifyListeners();
+      }, onError: (Object e) => debugPrint('Flux Firestore : $e')));
+    }
+
+    listen<List<Offer>>(remote.watchOffers(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _offers
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<AvailabilitySlot>>(remote.watchSlots(), (list) {
+      _slotsByOffer.clear();
+      for (final s in list) {
+        _slotsByOffer.putIfAbsent(s.offerId, () => []).add(s);
+      }
+      for (final l in _slotsByOffer.values) {
+        l.sort((a, b) => a.id.compareTo(b.id));
+      }
+    });
+    listen<List<MarketplaceOrder>>(remote.watchOrders(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _orders
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<OfferReview>>(remote.watchReviews(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _reviews
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<ChatMessage>>(remote.watchMessages(), (list) {
+      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _messagesByOrder.clear();
+      for (final m in list) {
+        _messagesByOrder.putIfAbsent(m.orderId, () => []).add(m);
+      }
+    });
+    listen<Set<String>>(remote.watchFavorites(currentUserId), (ids) {
+      _favoriteOfferIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    super.dispose();
+  }
+
+  /// Une erreur réseau ne doit jamais faire planter l'interface.
+  void _guard(Future<void>? f) {
+    f?.catchError((Object e) => debugPrint('Écriture Firestore échouée : $e'));
+  }
+
+  void _pushOffer(String offerId) {
+    final i = _offers.indexWhere((o) => o.id == offerId);
+    if (i != -1) _guard(_remote?.saveOffer(_offers[i]));
+  }
+
+  void _pushOrder(String orderId) {
+    final i = _orders.indexWhere((o) => o.id == orderId);
+    if (i != -1) _guard(_remote?.saveOrder(_orders[i]));
+  }
+
+  void _pushSlots(String offerId) {
+    for (final s in _slotsByOffer[offerId] ?? const <AvailabilitySlot>[]) {
+      _guard(_remote?.saveSlot(s));
+    }
+  }
   // Accesseurs exposant des vues non modifiables (`unmodifiable`) pour préserver l'encapsulation.
   List<Offer> get allOffers => List.unmodifiable(_offers);
   Set<String> get favoriteOfferIds => Set.unmodifiable(_favoriteOfferIds);
@@ -116,6 +234,7 @@ class MarketplaceController extends ChangeNotifier {
     } else {
       _favoriteOfferIds.add(offerId);
     }
+    _guard(_remote?.setFavorite(currentUserId, offerId, _favoriteOfferIds.contains(offerId)));
     notifyListeners();
   }
 
@@ -153,6 +272,7 @@ class MarketplaceController extends ChangeNotifier {
       _offers[idx] = _offers[idx].copyWith(
         viewsCount: _offers[idx].viewsCount + 1,
       );
+      _pushOffer(offerId);
       notifyListeners();
     }
   }
@@ -163,6 +283,8 @@ class MarketplaceController extends ChangeNotifier {
     if (slots.isNotEmpty) {
       _slotsByOffer[offer.id] = List.from(slots);
     }
+    _pushOffer(offer.id);
+    _pushSlots(offer.id);
     notifyListeners();
   }
 
@@ -172,8 +294,14 @@ class MarketplaceController extends ChangeNotifier {
     if (idx != -1) {
       _offers[idx] = updatedOffer;
       if (slots != null) {
+        final keptIds = slots.map((s) => s.id).toSet();
+        for (final old in _slotsByOffer[updatedOffer.id] ?? const <AvailabilitySlot>[]) {
+          if (!keptIds.contains(old.id)) _guard(_remote?.deleteSlot(old.id));
+        }
         _slotsByOffer[updatedOffer.id] = List.from(slots);
+        _pushSlots(updatedOffer.id);
       }
+      _pushOffer(updatedOffer.id);
       notifyListeners();
     }
   }
@@ -183,6 +311,7 @@ class MarketplaceController extends ChangeNotifier {
     final idx = _offers.indexWhere((o) => o.id == offerId);
     if (idx != -1) {
       _offers[idx] = _offers[idx].copyWith(status: newStatus);
+      _pushOffer(offerId);
       notifyListeners();
     }
   }
@@ -191,6 +320,7 @@ class MarketplaceController extends ChangeNotifier {
   void deleteOffer(String offerId) {
     _offers.removeWhere((o) => o.id == offerId);
     _slotsByOffer.remove(offerId);
+    _guard(_remote?.deleteOffer(offerId));
     notifyListeners();
   }
 
@@ -207,12 +337,17 @@ class MarketplaceController extends ChangeNotifier {
         endTime: endTime,
       ),
     );
+    _pushSlots(offerId);
     notifyListeners();
   }
 
   /// Supprime un créneau horaire uniquement s'il n'est pas déjà verrouillé par une réservation (`!s.isBooked`).
   void removeAvailabilitySlot(String offerId, String slotId) {
+    final before = _slotsByOffer[offerId]?.length ?? 0;
     _slotsByOffer[offerId]?.removeWhere((s) => s.id == slotId && !s.isBooked);
+    if ((_slotsByOffer[offerId]?.length ?? 0) < before) {
+      _guard(_remote?.deleteSlot(slotId));
+    }
     notifyListeners();
   }
 
@@ -228,6 +363,7 @@ class MarketplaceController extends ChangeNotifier {
       reportsCount: newReportsCount,
       status: autoHidden ? OfferStatus.hidden : _offers[idx].status,
     );
+    _pushOffer(offerId);
     notifyListeners();
     return autoHidden;
   }
@@ -321,6 +457,11 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ];
 
+    _pushOrder(orderId);
+    _pushSlots(offer.id);
+    for (final m in _messagesByOrder[orderId]!) {
+      _guard(_remote?.saveMessage(m));
+    }
     notifyListeners();
     return newOrder;
   }
@@ -367,7 +508,7 @@ class MarketplaceController extends ChangeNotifier {
       if (slots != null) {
         final sIdx = slots.indexWhere((s) => s.id == order.slotId);
         if (sIdx != -1) {
-          slots[sIdx] = slots[sIdx].copyWith(isBooked: false, orderId: null);
+          slots[sIdx] = slots[sIdx].copyWith(isBooked: false, clearOrderId: true);
         }
       }
     }
@@ -423,6 +564,10 @@ class MarketplaceController extends ChangeNotifier {
       ),
     );
 
+    _pushOrder(orderId);
+    _pushOffer(order.offerId);
+    _pushSlots(order.offerId);
+    _guard(_remote?.saveMessage(msgs.last));
     notifyListeners();
   }
 
@@ -452,6 +597,8 @@ class MarketplaceController extends ChangeNotifier {
         unreadCount: 0,
       );
     }
+    _guard(_remote?.saveMessage(list.last));
+    _pushOrder(orderId);
     notifyListeners();
   }
 
@@ -460,6 +607,7 @@ class MarketplaceController extends ChangeNotifier {
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx != -1 && _orders[idx].unreadCount > 0) {
       _orders[idx] = _orders[idx].copyWith(unreadCount: 0);
+      _pushOrder(orderId);
       notifyListeners();
     }
   }
@@ -504,8 +652,11 @@ class MarketplaceController extends ChangeNotifier {
         ratingAvg: totalScore / newCount,
         ratingCount: newCount,
       );
+      _pushOffer(order.offerId);
     }
 
+    _pushOrder(order.id);
+    _guard(_remote?.saveReview(_reviews.first));
     notifyListeners();
   }
 
