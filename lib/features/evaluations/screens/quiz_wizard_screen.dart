@@ -4,6 +4,8 @@ import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
 import '../widgets/eval_ui.dart';
 
+/// Assistant enseignant en trois étapes pour créer ou modifier un [Quiz] :
+/// 0. Paramètres généraux et dates · 1. Éditeur de questions et génération de brouillon · 2. Aperçu et publication.
 class QuizWizardScreen extends StatefulWidget {
   final Quiz? existing;
   const QuizWizardScreen({super.key, this.existing});
@@ -14,7 +16,11 @@ class QuizWizardScreen extends StatefulWidget {
 
 class _QuizWizardScreenState extends State<QuizWizardScreen> {
   final _controller = EvaluationsController.instance;
+
+  /// Clé globale de validation rattachée au [Form] de la première étape (`_infoStep`).
   final _infoKey = GlobalKey<FormState>();
+
+  /// Indice de l'étape active (`0`, `1` ou `2`).
   int _step = 0;
 
   late final TextEditingController _title;
@@ -26,22 +32,19 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
   late DateTime _dueDate;
   late List<QuizQuestion> _questions;
   String? _questionsError;
-  bool _isGeneratingDraft = false;
 
   bool get _isEditing => widget.existing != null;
 
   @override
   void initState() {
     super.initState();
+    // Sécurité d'accès : renvoie immédiatement en arrière si l'utilisateur actif n'est pas enseignant.
     if (!_controller.isTeacher) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Accès réservé aux enseignants (Règle 2).')),
-        );
       });
     }
+    // Préremplit les champs et clone la liste de questions lorsqu'un quiz existant est modifié.
     final existing = widget.existing;
     final firstCourse = _controller.accessibleCourses.first;
     _title = TextEditingController(text: existing?.title ?? '');
@@ -51,7 +54,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     _attempts = TextEditingController(
       text: '${existing?.attemptsAllowed ?? 1}',
     );
-    _geminiHint = TextEditingController(text: 'Chapitre 2 — Structures de données');
+    _geminiHint = TextEditingController(text: 'Chapitre listes et piles');
     _courseId = existing?.courseId ?? firstCourse.id;
     _availableFrom = existing?.availableFrom ?? DateTime.now();
     _dueDate = existing?.dueDate ?? DateTime.now().add(const Duration(days: 7));
@@ -67,41 +70,45 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     super.dispose();
   }
 
+  /// Valide les contraintes métier propres à l'étape courante avant d'autoriser le passage à la suivante
+  /// ou la sauvegarde finale du quiz.
   bool _validate() {
     if (_step == 0) {
       final ok = _infoKey.currentState?.validate() ?? false;
       if (!ok) {
-        _snack('Veuillez renseigner correctement tous les champs requis.');
+        _snack('Vérifiez le titre, la durée, les tentatives et les dates.');
+      }
+      // Vérifie la cohérence chronologique entre la date d'ouverture et l'échéance de fermeture.
+      if (_dueDate.isBefore(_availableFrom)) {
+        _snack('L\'échéance doit être postérieure à la date d\'ouverture.');
         return false;
       }
-      if (!_dueDate.isAfter(_availableFrom)) {
-        _snack('La date d\'échéance doit être strictement postérieure à la date d\'ouverture.');
-        return false;
-      }
-      return true;
+      return ok;
     }
     if (_step == 1) {
       if (_questions.isEmpty) {
-        setState(() => _questionsError = 'Ajoutez au moins une question au quiz.');
+        setState(() => _questionsError = 'Ajoutez au moins une question.');
         _snack('Un quiz doit contenir au moins une question.');
         return false;
       }
-      for (var i = 0; i < _questions.length; i++) {
-        final q = _questions[i];
-        if (q.text.trim().length < 5) {
-          setState(() => _questionsError = 'Question ${i + 1} : énoncé trop court (min. 5 car.).');
+      // Contrôle individuel de chaque question : longueur d'énoncé, options non vides, réponse cochée et barème valide.
+      for (final q in _questions) {
+        if (q.text.trim().length < 10) {
+          setState(
+            () => _questionsError = 'Chaque énoncé doit faire au moins 10 caractères.',
+          );
           return false;
         }
         if (q.options.any((o) => o.trim().isEmpty)) {
-          setState(() => _questionsError = 'Question ${i + 1} : toutes les options doivent être remplies.');
+          setState(() => _questionsError = 'Toutes les options doivent être renseignées.');
           return false;
         }
         if (q.correct.isEmpty) {
-          setState(() => _questionsError = 'Question ${i + 1} : cochez au moins une bonne réponse.');
+          setState(() => _questionsError = 'Cochez au moins une bonne réponse.');
           return false;
         }
         if (q.points <= 0 || q.points > 20) {
-          setState(() => _questionsError = 'Question ${i + 1} : les points doivent être entre 0.5 et 20.');
+          setState(() => _questionsError = 'Les points doivent être entre 0.5 et 20.');
           return false;
         }
       }
@@ -111,13 +118,17 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     return true;
   }
 
-  void _snack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  /// Affiche un message d'information ou d'erreur dans un [SnackBar] en bas de l'écran.
+  void _snack(String m) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  /// Résout l'objet [LinkedCourse] correspondant à l'identifiant sélectionné `_courseId`.
   LinkedCourse get _course =>
       _controller.courses.firstWhere((c) => c.id == _courseId);
 
+  /// Construit l'instance finale de [Quiz] et l'enregistre dans [EvaluationsController.upsertQuiz]
+  /// soit en brouillon (`publish: false`), soit directement publiée (`publish: true`).
   void _save({required bool publish}) {
     if (!_validate()) return;
     final quiz = Quiz(
@@ -138,11 +149,13 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     Navigator.pop(context);
     _snack(
       publish
-          ? 'Quiz publié avec succès (PATCH /quizzes/:id/publish). Les inscrits sont notifiés (L8).'
-          : 'Quiz enregistré en brouillon avec succès.',
+          ? 'Quiz publié (PATCH /quizzes/:id/publish). Les inscrits seront notifiés (L8).'
+          : 'Quiz enregistré en brouillon.',
     );
   }
 
+  /// Enchaîne un sélecteur de date (`showDatePicker`) et d'heure (`showTimePicker`)
+  /// pour définir précisément la fenêtre d'ouverture ou l'échéance du quiz.
   Future<void> _pickDate({required bool opening}) async {
     final initial = opening ? _availableFrom : _dueDate;
     final date = await showDatePicker(
@@ -175,7 +188,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const steps = ['1. Paramètres', '2. Questions & Barème', '3. Aperçu & Publication'];
+    const steps = ['1. Infos', '2. Questions', '3. Aperçu'];
     return Scaffold(
       backgroundColor: EduColors.scaffold,
       appBar: AppBar(
@@ -193,7 +206,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
               ),
             ),
             const Text(
-              'Enseignant · POST /quizzes · Brouillon Gemini (L4/L8)',
+              'Enseignant uniquement · POST /quizzes · Gemini (brouillon)',
               style: TextStyle(fontSize: 11.5, color: EduColors.muted),
             ),
           ],
@@ -201,15 +214,16 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
       ),
       body: Column(
         children: [
+          // Indicateur visuel en 3 segments horizontaux (`Expanded`) illustrant l'étape active.
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
             child: Row(
               children: List.generate(steps.length, (i) {
                 final active = i <= _step;
                 return Expanded(
                   child: Container(
-                    height: 5,
+                    height: 6,
                     margin: EdgeInsets.only(right: i == steps.length - 1 ? 0 : 6),
                     decoration: BoxDecoration(
                       color: active ? EduColors.primary : EduColors.border,
@@ -220,6 +234,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
               }),
             ),
           ),
+          // Contenu déroulant affichant le sous-formulaire correspondant à `_step`.
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
@@ -245,46 +260,50 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Étape 0 : formulaire des métadonnées générales du quiz (cours, titre, durée, tentatives et dates).
   Widget _infoStep() {
     return Form(
       key: _infoKey,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       child: Column(
         children: [
+          // Choix du cours auquel rattacher l'évaluation parmi les cours gérés par l'enseignant.
           DropdownButtonFormField<String>(
             initialValue: _courseId,
             decoration: evalInputDecoration(
-              label: 'Cours associé (Liaison L4)',
+              label: 'Cours lié (L4)',
               icon: Icons.menu_book_rounded,
             ),
             items: _controller.accessibleCourses
                 .map(
                   (c) => DropdownMenuItem(
                     value: c.id,
-                    child: Text('${c.title} (${c.level})'),
+                    child: Text('${c.title} · ${c.level}'),
                   ),
                 )
                 .toList(),
             onChanged: (v) => setState(() => _courseId = v!),
           ),
           const SizedBox(height: 12),
+          // Saisie du titre rejetant les chaînes trop courtes ou purement numériques.
           TextFormField(
             controller: _title,
             maxLength: 80,
             decoration: evalInputDecoration(
               label: 'Titre du quiz',
-              hint: 'Ex. Évaluation rapide — Algorithmes de tri',
+              hint: 'Ex. Structures linéaires',
             ),
             validator: (v) {
               final t = v?.trim() ?? '';
-              if (t.length < 5) return 'Titre requis (au moins 5 caractères).';
+              if (t.length < 5) return 'Titre obligatoire (5 à 80 caractères).';
               if (RegExp(r'^\d+$').hasMatch(t)) {
-                return 'Le titre ne peut pas comporter que des chiffres.';
+                return 'Le titre ne peut pas être uniquement numérique.';
               }
               return null;
             },
           ),
           const SizedBox(height: 12),
+          // Deux champs numériques côte à côte (`Expanded`) pour la durée en minutes et le plafond de tentatives.
           Row(
             children: [
               Expanded(
@@ -293,7 +312,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: evalInputDecoration(
-                    label: 'Durée (minutes)',
+                    label: 'Durée (min)',
                     icon: Icons.timer_outlined,
                   ),
                   validator: (v) {
@@ -312,12 +331,12 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: evalInputDecoration(
-                    label: 'Tentatives permises',
+                    label: 'Tentatives',
                     icon: Icons.replay_rounded,
                   ),
                   validator: (v) {
                     final n = int.tryParse(v ?? '');
-                    if (n == null || n < 1 || n > 5) return 'Entre 1 et 5 tentatives.';
+                    if (n == null || n < 1 || n > 5) return 'Entre 1 et 5.';
                     return null;
                   },
                 ),
@@ -326,21 +345,18 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           ),
           const SizedBox(height: 12),
           _dateTile(
-            'Date et heure d\'ouverture',
+            'Ouverture',
             _availableFrom,
             () => _pickDate(opening: true),
           ),
           const SizedBox(height: 8),
-          _dateTile(
-            'Date et heure d\'échéance',
-            _dueDate,
-            () => _pickDate(opening: false),
-          ),
+          _dateTile('Échéance', _dueDate, () => _pickDate(opening: false)),
         ],
       ),
     );
   }
 
+  /// Tuile cliquable affichant une date formatée et déclenchant le sélecteur date/heure associé.
   Widget _dateTile(String label, DateTime value, VoidCallback onTap) {
     return ListTile(
       onTap: onTap,
@@ -350,157 +366,98 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
       ),
       tileColor: Colors.white,
       leading: const Icon(Icons.event_rounded, color: EduColors.primary),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-      subtitle: Text(formatDate(value), style: const TextStyle(fontSize: 12.5)),
-      trailing: const Icon(Icons.edit_calendar_outlined, size: 20),
+      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(formatDate(value)),
+      trailing: const Icon(Icons.edit_calendar_outlined),
     );
   }
 
+  /// Étape 1 : génération assistée de questions de départ et ajout/édition manuelle de QCM ou Vrai/Faux.
   Widget _questionsStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Encart de préremplissage automatique ajoutant 3 questions via `generateGeminiQuestions`.
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           decoration: evalCardDecoration(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF7C3AED), size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Brouillon Gemini API (Gratuit, simulé)',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
-                  ),
-                ],
+              const Text(
+                'Brouillon Gemini (API simulée)',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Générez automatiquement des questions à partir d\'un chapitre de cours avant de les peaufiner.',
-                style: TextStyle(fontSize: 12.5, color: EduColors.muted),
-              ),
-              const SizedBox(height: 10),
               TextFormField(
                 controller: _geminiHint,
                 decoration: evalInputDecoration(
-                  label: 'Chapitre ou thème source',
-                  hint: 'Ex. Arbres binaires et parcours',
-                  icon: Icons.lightbulb_outline_rounded,
+                  label: 'Chapitre source',
+                  hint: 'Ex. Chapitre 2 — Récursivité',
                 ),
               ),
               const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _isGeneratingDraft ? null : _generateGeminiDraft,
-                  icon: _isGeneratingDraft
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_awesome_rounded),
-                  label: Text(_isGeneratingDraft ? 'Génération en cours…' : 'Générer un brouillon avec Gemini'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF7C3AED),
-                    side: const BorderSide(color: Color(0xFF7C3AED)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _questions.addAll(
+                      _controller.generateGeminiQuestions(_geminiHint.text),
+                    );
+                    _questionsError = null;
+                  });
+                  _snack('3 questions générées. Relisez-les avant publication.');
+                },
+                icon: const Icon(Icons.auto_awesome_rounded),
+                label: const Text('Générer un brouillon'),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        Row(
+        const SizedBox(height: 12),
+        // Barre de puces d'action (`Wrap` + `ActionChip`) permettant d'insérer un QCM ou un Vrai/Faux vierge.
+        Wrap(
+          spacing: 8,
           children: [
-            Expanded(
-              child: FilledButton.tonalIcon(
-                onPressed: () => _addQuestion(QuestionType.qcm),
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Ajouter un QCM'),
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
+            ActionChip(
+              avatar: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('Ajouter un QCM'),
+              onPressed: () => _addQuestion(QuestionType.qcm),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: FilledButton.tonalIcon(
-                onPressed: () => _addQuestion(QuestionType.vraiFaux),
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Ajouter Vrai/Faux'),
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
+            ActionChip(
+              avatar: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('Ajouter Vrai/Faux'),
+              onPressed: () => _addQuestion(QuestionType.vraiFaux),
             ),
           ],
         ),
         if (_questionsError != null)
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: EduColors.dangerBg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: EduColors.danger.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline_rounded, color: EduColors.danger, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _questionsError!,
-                    style: const TextStyle(
-                      color: EduColors.danger,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ),
-              ],
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _questionsError!,
+              style: const TextStyle(
+                color: EduColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         ..._questions.asMap().entries.map(_questionCard),
       ],
     );
   }
 
-  Future<void> _generateGeminiDraft() async {
-    setState(() => _isGeneratingDraft = true);
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    final generated = _controller.generateGeminiQuestions(_geminiHint.text);
-    setState(() {
-      _questions.addAll(generated);
-      _questionsError = null;
-      _isGeneratingDraft = false;
-    });
-    _snack('3 questions générées par Gemini. Vérifiez-les avant de publier.');
-  }
-
+  /// Ajoute une nouvelle question vierge à `_questions` avec options préconfigurées selon [type].
   void _addQuestion(QuestionType type) {
     setState(() {
       _questions.add(
         QuizQuestion(
-          id: 'q_${DateTime.now().millisecondsSinceEpoch}_${_questions.length}',
+          id: 'q_${DateTime.now().millisecondsSinceEpoch}',
           type: type,
           text: '',
           options: type == QuestionType.vraiFaux
               ? ['Vrai', 'Faux']
-              : ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
+              : ['', '', '', ''],
           correct: const [],
           points: 5,
           explanation: '',
@@ -509,13 +466,15 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     });
   }
 
+  /// Construit la carte d'édition d'une question identifiée par `ValueKey(q.id)` :
+  /// énoncé, propositions cochables via `CheckboxListTile`, barème en points et explication de corrigé.
   Widget _questionCard(MapEntry<int, QuizQuestion> entry) {
     final i = entry.key;
     final q = entry.value;
     return Container(
       key: ValueKey(q.id),
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: evalCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -523,127 +482,81 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           Row(
             children: [
               StatusChip(
-                label: 'Question ${i + 1} · ${q.type.label}',
+                label: 'Q${i + 1} · ${q.type.label}',
                 color: EduColors.primary,
-              ),
-              const SizedBox(width: 8),
-              StatusChip(
-                label: '${q.points.toStringAsFixed(0)} pt(s)',
-                color: EduColors.success,
               ),
               const Spacer(),
               IconButton(
-                tooltip: 'Supprimer la question',
+                tooltip: 'Supprimer',
                 onPressed: () => setState(() => _questions.removeAt(i)),
                 icon: const Icon(Icons.delete_outline_rounded, color: EduColors.danger),
               ),
             ],
           ),
-          const SizedBox(height: 10),
           TextFormField(
             initialValue: q.text,
             maxLines: 2,
-            decoration: evalInputDecoration(
-              label: 'Énoncé de la question',
-              hint: 'Saisissez la question…',
-            ),
+            decoration: evalInputDecoration(label: 'Énoncé'),
             onChanged: (v) => _questions[i] = q.copyWith(text: v),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Options et réponses attendues (cochez les bonnes réponses) :',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: EduColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+          // Chaque option combine un champ d'intitulé (verrouillé sur Vrai/Faux) et une case à cocher marquant les réponses exactes.
           ...List.generate(q.options.length, (oi) {
-            final isCorrect = q.correct.contains(oi);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              decoration: BoxDecoration(
-                color: isCorrect ? EduColors.successBg.withValues(alpha: 0.5) : EduColors.neutralBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isCorrect ? EduColors.success : EduColors.border,
-                ),
-              ),
-              child: CheckboxListTile(
-                value: isCorrect,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                activeColor: EduColors.success,
-                title: TextFormField(
-                  initialValue: q.options[oi],
-                  enabled: q.type != QuestionType.vraiFaux,
-                  style: const TextStyle(fontSize: 13.5),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 8),
-                  ),
-                  onChanged: (v) {
-                    final opts = [...q.options];
-                    opts[oi] = v;
-                    _questions[i] = q.copyWith(options: opts);
-                  },
+            final selected = q.correct.contains(oi);
+            return CheckboxListTile(
+              value: selected,
+              contentPadding: EdgeInsets.zero,
+              title: TextFormField(
+                initialValue: q.options[oi],
+                enabled: q.type != QuestionType.vraiFaux,
+                decoration: InputDecoration(
+                  hintText: 'Option ${oi + 1}',
+                  border: const UnderlineInputBorder(),
                 ),
                 onChanged: (v) {
-                  final next = [...q.correct];
-                  if (v == true) {
-                    if (q.type == QuestionType.vraiFaux) {
-                      next.clear();
-                      next.add(oi);
-                    } else {
-                      next.add(oi);
-                    }
-                  } else {
-                    next.remove(oi);
-                  }
-                  setState(() => _questions[i] = q.copyWith(correct: next));
+                  final opts = [...q.options];
+                  opts[oi] = v;
+                  _questions[i] = q.copyWith(options: opts);
                 },
               ),
+              onChanged: (v) {
+                final next = [...q.correct];
+                if (v == true) {
+                  // Un Vrai/Faux n'admet qu'une seule réponse exacte à la fois.
+                  if (q.type == QuestionType.vraiFaux) {
+                    next
+                      ..clear()
+                      ..add(oi);
+                  } else {
+                    next.add(oi);
+                  }
+                } else {
+                  next.remove(oi);
+                }
+                setState(() => _questions[i] = q.copyWith(correct: next));
+              },
             );
           }),
-          if (q.type == QuestionType.qcm && q.options.length < 5)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    final opts = [...q.options, 'Nouvelle option'];
-                    _questions[i] = q.copyWith(options: opts);
-                  });
-                },
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('Ajouter une option'),
-              ),
-            ),
-          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: TextFormField(
                   initialValue: q.points.toStringAsFixed(0),
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: evalInputDecoration(label: 'Points'),
                   onChanged: (v) {
-                    _questions[i] = q.copyWith(points: double.tryParse(v) ?? 1);
+                    _questions[i] = q.copyWith(points: double.tryParse(v) ?? 0);
                   },
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 flex: 2,
                 child: TextFormField(
                   initialValue: q.explanation,
-                  decoration: evalInputDecoration(
-                    label: 'Explication (correction)',
-                    hint: 'Justification pour l\'étudiant…',
-                  ),
-                  onChanged: (v) => _questions[i] = q.copyWith(explanation: v),
+                  decoration: evalInputDecoration(label: 'Explication'),
+                  onChanged: (v) =>
+                      _questions[i] = q.copyWith(explanation: v),
                 ),
               ),
             ],
@@ -653,158 +566,85 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Étape 2 : récapitulatif en lecture seule des paramètres et des questions avant enregistrement.
   Widget _previewStep() {
-    final totalPts = _questions.fold<double>(0, (sum, q) => sum + q.points);
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: evalCardDecoration(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  StatusChip(
-                    label: _course.title,
-                    color: EduColors.primary,
-                  ),
-                  const Spacer(),
-                  StatusChip(
-                    label: 'Total : ${totalPts.toStringAsFixed(0)} pts',
-                    color: EduColors.success,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _title.text.trim().isEmpty ? 'Sans titre' : _title.text.trim(),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  color: EduColors.text,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Durée : ${_time.text} min · Tentatives : ${_attempts.text} · ${_questions.length} questions',
-                style: const TextStyle(color: EduColors.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Ouverture : ${formatDate(_availableFrom)}',
-                style: const TextStyle(fontSize: 12.5, color: EduColors.muted),
-              ),
-              Text(
-                'Échéance : ${formatDate(_dueDate)}',
-                style: const TextStyle(fontSize: 12.5, color: EduColors.muted),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        const SectionHeader(title: 'Aperçu des questions rédigées'),
-        ..._questions.asMap().entries.map(
-          (e) => Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: evalCardDecoration(),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: EduColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Q${e.key + 1}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: EduColors.primary),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        e.value.text,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${e.value.options.length} options · Bonne(s) réponse(s) : ${e.value.correct.map((c) => e.value.options[c]).join(", ")}',
-                        style: const TextStyle(fontSize: 12, color: EduColors.success, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  '${e.value.points.toStringAsFixed(0)} pt(s)',
-                  style: const TextStyle(fontWeight: FontWeight.w800, color: EduColors.muted, fontSize: 12.5),
-                ),
-              ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: evalCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _title.text.trim().isEmpty ? 'Sans titre' : _title.text.trim(),
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: EduColors.text,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Text(
+            '${_course.title} · ${_time.text} min · ${_attempts.text} tentative(s) · ${_questions.length} question(s)',
+            style: const TextStyle(color: EduColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          Text('Ouverture : ${formatDate(_availableFrom)}'),
+          Text('Échéance : ${formatDate(_dueDate)}'),
+          const Divider(height: 24),
+          ..._questions.asMap().entries.map(
+            (e) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Q${e.key + 1}. ${e.value.text} (${e.value.points.toStringAsFixed(0)} pts)',
+                style: const TextStyle(fontSize: 13.5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
+  /// Barre d'actions inférieure gérant la navigation entre étapes et le choix final Brouillon / Publier.
   Widget _bottomBar() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            if (_step > 0)
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => setState(() => _step--),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    minimumSize: const Size(0, 48),
-                  ),
-                  child: const Text('Retour'),
-                ),
-              ),
-            if (_step > 0) const SizedBox(width: 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      child: Row(
+        children: [
+          if (_step > 0)
             Expanded(
-              child: FilledButton(
-                onPressed: () {
-                  if (_step < 2) {
-                    if (_validate()) setState(() => _step++);
-                  } else {
-                    _save(publish: false);
-                  }
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: EduColors.primary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  minimumSize: const Size(0, 48),
-                ),
-                child: Text(_step < 2 ? 'Continuer' : 'Enregistrer brouillon'),
+              child: OutlinedButton(
+                onPressed: () => setState(() => _step--),
+                child: const Text('Retour'),
               ),
             ),
-            if (_step == 2) ...[
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: EduColors.success,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    minimumSize: const Size(0, 48),
-                  ),
-                  onPressed: () => _save(publish: true),
-                  child: const Text('Publier le quiz'),
+          if (_step > 0) const SizedBox(width: 10),
+          Expanded(
+            child: FilledButton(
+              onPressed: () {
+                if (_step < 2) {
+                  if (_validate()) setState(() => _step++);
+                } else {
+                  _save(publish: false);
+                }
+              },
+              child: Text(_step < 2 ? 'Continuer' : 'Brouillon'),
+            ),
+          ),
+          if (_step == 2) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: EduColors.success,
                 ),
+                onPressed: () => _save(publish: true),
+                child: const Text('Publier'),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

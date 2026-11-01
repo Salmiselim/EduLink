@@ -5,6 +5,9 @@ import '../models/evaluations_models.dart';
 import '../routes/evaluations_routes.dart';
 import '../widgets/eval_ui.dart';
 
+/// Écran étudiant de passage chronométré d'un quiz.
+/// Démarre immédiatement une [QuizAttempt], décrémente un compte à rebours seconde par seconde
+/// via [Timer.periodic] et déclenche la correction automatique à la soumission ou à l'expiration du temps.
 class QuizTakeScreen extends StatefulWidget {
   final String quizId;
   const QuizTakeScreen({super.key, required this.quizId});
@@ -17,8 +20,14 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   final _controller = EvaluationsController.instance;
   late final Quiz _quiz;
   late final String _attemptId;
+
+  /// Matrice des indices d'options sélectionnés pour chaque question du quiz.
   late List<List<int>> _answers;
+
+  /// Temps restant en secondes avant soumission forcée de la tentative.
   late int _remainingSeconds;
+
+  /// Chronomètre périodique cadencé à 1 seconde pilotant le compte à rebours et la barre de progression.
   Timer? _timer;
   bool _submitting = false;
   String? _error;
@@ -26,19 +35,12 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   @override
   void initState() {
     super.initState();
-    final q = _controller.quizById(widget.quizId);
-    if (q == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => Navigator.pop(context));
-      return;
-    }
-    _quiz = q;
+    _quiz = _controller.quizById(widget.quizId)!;
+    // Crée l'enregistrement de tentative dans le contrôleur dès l'entrée sur l'écran.
     _attemptId = _controller.startAttempt(widget.quizId);
     _answers = List.generate(_quiz.questions.length, (_) => <int>[]);
     _remainingSeconds = _quiz.timeLimitMin * 60;
-    _startTimer();
-  }
-
-  void _startTimer() {
+    // Décrémente le compteur chaque seconde et déclenche l'envoi automatique dès que le délai atteint zéro.
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       if (_remainingSeconds <= 1) {
@@ -51,11 +53,15 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
 
   @override
   void dispose() {
+    // Annule impérativement le Timer périodique à la destruction du widget pour éviter toute fuite mémoire.
     _timer?.cancel();
     super.dispose();
   }
 
-  void _toggleOption(int qi, int oi) {
+  /// Met à jour la sélection d'une option `oi` pour la question `qi` :
+  /// sélection unique sur un Vrai/Faux ou un QCM simple, bascule multi-choix lorsque `q.isMultiple` est vrai,
+  /// puis synchronise immédiatement les réponses en cours dans [EvaluationsController].
+  void _toggle(int qi, int oi) {
     final q = _quiz.questions[qi];
     setState(() {
       final current = [..._answers[qi]];
@@ -68,62 +74,47 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
         current.add(oi);
         _answers[qi] = current;
       }
-      _error = null;
     });
     _controller.saveAttemptAnswers(_attemptId, _answers);
   }
 
-  int get _answeredCount => _answers.where((a) => a.isNotEmpty).length;
-
+  /// Valide la tentative (manuellement ou automatiquement en fin de chronomètre),
+  /// arrête le [Timer], invoque [EvaluationsController.submitAttempt] pour calculer la note sur 20
+  /// et redirige vers `QuizResultsScreen` via `pushReplacementNamed`.
   Future<void> _submit({bool auto = false}) async {
     if (_submitting) return;
-
-    if (!auto && _answeredCount < _quiz.questions.length) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Questions non répondues'),
-          content: Text(
-            'Vous avez répondu à $_answeredCount sur ${_quiz.questions.length} questions. '
-            'Voulez-vous tout de même soumettre votre copie ?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Continuer le quiz'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Soumettre'),
-            ),
-          ],
-        ),
-      );
-      if (confirm != true) return;
+    // En soumission manuelle, vérifie qu'aucune question n'a été laissée sans réponse.
+    if (!auto) {
+      for (var i = 0; i < _answers.length; i++) {
+        if (_answers[i].isEmpty) {
+          setState(
+            () => _error = 'Répondez à toutes les questions avant de soumettre.',
+          );
+          return;
+        }
+      }
     }
-
     setState(() {
       _submitting = true;
       _error = null;
     });
     _timer?.cancel();
     _controller.saveAttemptAnswers(_attemptId, _answers);
+    // Correction automatique et calcul du score ramené sur 20 dans le contrôleur.
     final score = _controller.submitAttempt(_attemptId);
-
     if (!mounted) return;
+    // Remplace l'écran de passage dans la pile de navigation pour empêcher un retour arrière sur la copie close.
     Navigator.pushReplacementNamed(
       context,
       EvaluationsRoutes.quizResults,
       arguments: QuizResultsArgs(quizId: _quiz.id, attemptId: _attemptId),
     );
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: score >= 10 ? EduColors.success : EduColors.danger,
         content: Text(
           auto
-              ? 'Temps écoulé — copie soumise automatiquement. Note : ${EvaluationsController.formatScore(score)} / 20'
-              : 'Correction automatique terminée : ${EvaluationsController.formatScore(score)} / 20',
+              ? 'Temps écoulé — quiz soumis automatiquement. Note : ${EvaluationsController.formatScore(score)} / 20'
+              : 'Correction automatique : ${EvaluationsController.formatScore(score)} / 20',
         ),
       ),
     );
@@ -131,12 +122,14 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final totalSeconds = _quiz.timeLimitMin * 60;
-    final progress = totalSeconds > 0 ? 1 - (_remainingSeconds / totalSeconds) : 0.0;
+    // Fraction du temps écoulé (entre 0 et 1) alimentant le LinearProgressIndicator supérieur.
+    final progress = 1 - (_remainingSeconds / (_quiz.timeLimitMin * 60));
     final mm = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
     final ss = (_remainingSeconds % 60).toString().padLeft(2, '0');
+    // Passe l'affichage du compte à rebours et de la jauge en rouge sous la barre des 60 dernières secondes.
     final urgent = _remainingSeconds < 60;
 
+    // Intercepte le geste ou bouton retour via PopScope pour demander confirmation dans un AlertDialog.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -146,8 +139,7 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('Quitter le quiz ?'),
             content: const Text(
-              'Le chronomètre continue de tourner en arrière-plan. '
-              'Pour valider votre note, vous devez soumettre vos réponses.',
+              'Le chronomètre continue côté serveur mock. Soumettez plutôt vos réponses.',
             ),
             actions: [
               TextButton(
@@ -155,67 +147,38 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
                 child: const Text('Rester'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: EduColors.danger),
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Abandonner'),
+                child: const Text('Quitter'),
               ),
             ],
           ),
         );
-        if (leave == true && mounted) Navigator.pop(context);
+        if (leave == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
       },
       child: Scaffold(
         backgroundColor: EduColors.scaffold,
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
-          automaticallyImplyLeading: false,
-          title: Row(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _quiz.title,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                        color: EduColors.text,
-                      ),
-                    ),
-                    Text(
-                      '${_quiz.courseTitle} · $_answeredCount/${_quiz.questions.length} répondue(s)',
-                      style: const TextStyle(fontSize: 11.5, color: EduColors.muted),
-                    ),
-                  ],
+              Text(
+                _quiz.title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                  color: EduColors.text,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: urgent ? EduColors.dangerBg : EduColors.infoBg,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      urgent ? Icons.alarm_on_rounded : Icons.timer_outlined,
-                      size: 16,
-                      color: urgent ? EduColors.danger : EduColors.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$mm:$ss',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        fontFamily: 'monospace',
-                        color: urgent ? EduColors.danger : EduColors.primary,
-                      ),
-                    ),
-                  ],
+              Text(
+                '${_quiz.courseTitle} · ${_mmDisplay(mm, ss)}',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: urgent ? EduColors.danger : EduColors.muted,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -223,12 +186,14 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
         ),
         body: Column(
           children: [
+            // Barre de progression temporelle reflétant l'avancement du chronomètre.
             LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
+              value: progress.clamp(0, 1),
               color: urgent ? EduColors.danger : EduColors.primary,
               backgroundColor: EduColors.border,
-              minHeight: 5,
+              minHeight: 6,
             ),
+            // Liste déroulante extensible générant une carte interactive par question.
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
@@ -237,28 +202,22 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
               ),
             ),
             if (_error != null)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: EduColors.dangerBg,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   _error!,
-                  style: const TextStyle(color: EduColors.danger, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: EduColors.danger,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: SafeArea(
-                top: false,
-                child: PrimaryCta(
-                  label: _submitting ? 'Correction en cours…' : 'Soumettre le quiz ($_answeredCount/${_quiz.questions.length})',
-                  icon: Icons.task_alt_rounded,
-                  onPressed: _submitting ? null : () => _submit(),
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: PrimaryCta(
+                label: 'Soumettre le quiz',
+                icon: Icons.task_alt_rounded,
+                onPressed: _submitting ? null : () => _submit(),
               ),
             ),
           ],
@@ -267,44 +226,30 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
     );
   }
 
+  /// Formate l'affichage textuel des minutes et secondes restantes dans l'AppBar.
+  String _mmDisplay(String mm, String ss) => '$mm:$ss restantes';
+
+  /// Construit la carte d'une question avec son barème et ses propositions sous forme de [FilterChip].
   Widget _questionCard(int i) {
     final q = _quiz.questions[i];
-    final answered = _answers[i].isNotEmpty;
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: evalCardDecoration(
-        borderColor: answered ? EduColors.primary.withValues(alpha: 0.5) : null,
-      ),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: evalCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              StatusChip(
-                label: 'Question ${i + 1} / ${_quiz.questions.length}',
-                color: EduColors.primary,
-              ),
-              const SizedBox(width: 8),
-              StatusChip(
-                label: '${q.points.toStringAsFixed(0)} pt(s)',
-                color: EduColors.success,
-              ),
-              const Spacer(),
-              if (answered)
-                const Icon(Icons.check_circle_rounded, color: EduColors.success, size: 20)
-              else
-                const Icon(Icons.radio_button_unchecked_rounded, color: EduColors.muted, size: 20),
-            ],
+          StatusChip(
+            label: 'Question ${i + 1} · ${q.points.toStringAsFixed(0)} pts',
+            color: EduColors.primary,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             q.text,
             style: const TextStyle(
               fontSize: 15.5,
               fontWeight: FontWeight.w700,
               color: EduColors.text,
-              height: 1.4,
             ),
           ),
           if (q.isMultiple)
@@ -312,62 +257,23 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
               padding: EdgeInsets.only(top: 4),
               child: Text(
                 'Plusieurs réponses possibles',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: EduColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 12, color: EduColors.muted),
               ),
             ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          // Génère un FilterChip sélectionnable pour chaque proposition de réponse.
           ...List.generate(q.options.length, (oi) {
             final selected = _answers[i].contains(oi);
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _toggleOption(i, oi),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: selected ? EduColors.infoBg : EduColors.neutralBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: selected ? EduColors.primary : EduColors.border,
-                      width: selected ? 1.6 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          shape: q.isMultiple ? BoxShape.rectangle : BoxShape.circle,
-                          borderRadius: q.isMultiple ? BorderRadius.circular(6) : null,
-                          color: selected ? EduColors.primary : Colors.white,
-                          border: Border.all(
-                            color: selected ? EduColors.primary : EduColors.border,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: selected
-                            ? const Icon(Icons.check, size: 16, color: Colors.white)
-                            : null,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          q.options[oi],
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                            color: selected ? EduColors.text : EduColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FilterChip(
+                  selected: selected,
+                  label: Text(q.options[oi]),
+                  onSelected: (_) => _toggle(i, oi),
+                  selectedColor: EduColors.infoBg,
+                  checkmarkColor: EduColors.primary,
                 ),
               ),
             );

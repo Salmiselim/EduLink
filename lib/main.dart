@@ -1,51 +1,414 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'features/auth/screens/sign_in_screen.dart';
+import 'features/courses/data/courses_mock_data.dart';
+import 'features/courses/models/courses_models.dart';
+import 'features/courses/routes/courses_routes.dart';
+import 'features/courses/screens/courses_screen.dart';
 import 'features/evaluations/data/evaluations_mock_data.dart';
 import 'features/evaluations/models/evaluations_models.dart';
 import 'features/evaluations/routes/evaluations_routes.dart';
 import 'features/evaluations/screens/evaluations_screen.dart';
 import 'features/evaluations/widgets/eval_ui.dart';
+import 'features/marketplace/data/marketplace_mock_data.dart';
+import 'features/marketplace/models/marketplace_models.dart';
+import 'features/marketplace/routes/marketplace_routes.dart';
+import 'features/marketplace/screens/marketplace_screen.dart';
+import 'providers/forum_provider.dart';
+import 'routes/app_routes.dart';
+import 'screens/forum_feed_screen.dart';
 
+/// Point d'entrée principal de l'application EduLink.
+/// Le shell intégré [EduLinkShell] est ouvert après la connexion (ou via le
+/// bouton « Passer » de l'écran de démonstration).
 void main() {
-  runApp(const EduLinkEvaluationsApp());
+  runApp(const EduLinkApp());
 }
 
-class EduLinkEvaluationsApp extends StatelessWidget {
-  const EduLinkEvaluationsApp({super.key});
+/// Widget racine de l'application qui configure :
+/// - Le thème Material 3 (charte graphique EduLink)
+/// - Le générateur de routes combiné (`EduLinkRoutes.onGenerateRoute`)
+/// - Le shell intégré [EduLinkShell] avec la barre de navigation à 5 onglets
+class EduLinkApp extends StatelessWidget {
+  const EduLinkApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'EduLink — Évaluations',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: EduColors.primary,
-          brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        // Forum (M3)
+        ChangeNotifierProvider(create: (_) => ForumProvider()),
+      ],
+      child: MaterialApp(
+        title: 'EduLink',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF2563EB),
+            brightness: Brightness.light,
+          ),
+          scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         ),
-        scaffoldBackgroundColor: EduColors.scaffold,
+        onGenerateRoute: EduLinkRoutes.onGenerateRoute,
+        home: const SignInScreen(),
       ),
-      onGenerateRoute: EvaluationsRoutes.onGenerateRoute,
-      home: const EvaluationsShell(),
     );
   }
 }
 
-class EvaluationsShell extends StatelessWidget {
-  const EvaluationsShell({super.key});
+/// Répartiteur centralisé des routes nommées de tous les modules intégrés.
+/// Chaque module expose son propre `onGenerateRoute` (qui retourne null si la
+/// route ne lui appartient pas) : on les chaîne simplement dans l'ordre.
+/// Un nouveau module (M1, M2, M3) n'a qu'à ajouter son appel ici.
+class EduLinkRoutes {
+  EduLinkRoutes._();
+
+  static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
+    final coursesRoute = CoursesRoutes.onGenerateRoute(settings);
+    if (coursesRoute != null) return coursesRoute;
+    final marketplaceRoute = MarketplaceRoutes.onGenerateRoute(settings);
+    if (marketplaceRoute != null) return marketplaceRoute;
+    final evaluationsRoute = EvaluationsRoutes.onGenerateRoute(settings);
+    if (evaluationsRoute != null) return evaluationsRoute;
+    final forumRoute = ForumRoutes.onGenerateRoute(settings);
+    if (forumRoute != null) return forumRoute;
+    return null;
+  }
+}
+
+/// Shell intégré de l'application : une seule barre de navigation inférieure
+/// à 5 onglets et un [IndexedStack] qui conserve l'état de chaque module
+/// quand on change d'onglet.
+/// - Onglet 0 : Cours (live)
+/// - Onglet 1 : Forum (live)
+/// - Onglet 2 : Évaluations (live)
+/// - Onglet 3 : Marketplace (live)
+/// - Onglet 4 : placeholder (Profil)
+class EduLinkShell extends StatefulWidget {
+  const EduLinkShell({super.key});
+
+  @override
+  State<EduLinkShell> createState() => _EduLinkShellState();
+}
+
+class _EduLinkShellState extends State<EduLinkShell> {
+  /// Onglet affiché au démarrage : Cours.
+  int _currentIndex = 0;
 
   @override
   Widget build(BuildContext context) {
-    final controller = EvaluationsController.instance;
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: const [
+          CoursesRoot(),
+          ForumFeedScreen(),
+          EvaluationsRoot(),
+          MarketplaceRoot(),
+          _ModulePlaceholderTab(
+            icon: Icons.person_rounded,
+            title: 'Profil & Badges',
+            subtitle: 'Comptes, rôles, profils & badges',
+            ownerLabel: 'Intégration à venir',
+            branchLabel: 'Auth & Profils',
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        indicatorColor: const Color(0xFFDBEAFE),
+        onDestinationSelected: (index) =>
+            setState(() => _currentIndex = index),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book_rounded),
+            label: 'Cours',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            selectedIcon: Icon(Icons.forum_rounded),
+            label: 'Forum',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.quiz_outlined),
+            selectedIcon: Icon(Icons.quiz_rounded),
+            label: 'Évaluations',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront_rounded),
+            label: 'Marketplace',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profil',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Racine de l'onglet Cours (M2) : AppBar du module + écran principal.
+/// Intégré dans le shell unifié : la barre inférieure est
+/// désormais gérée par [EduLinkShell].
+class CoursesRoot extends StatelessWidget {
+  const CoursesRoot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = CoursesController.instance;
+
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final isTeacher = controller.currentUserRole == UserRole.teacher;
+        final isTeacher = controller.currentUserRole == CourseRole.teacher;
+
         return Scaffold(
           appBar: AppBar(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
+            // Logo + Titre du module Cours
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.menu_book_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'EduLink · Cours',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        'Chapitres, contenu & progression',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ActionChip(
+                  tooltip:
+                      'Changer de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)',
+                  onPressed: controller.toggleCurrentUserRole,
+                  backgroundColor: isTeacher
+                      ? const Color(0xFFDBEAFE)
+                      : const Color(0xFFF1F5F9),
+                  avatar: Icon(
+                    isTeacher
+                        ? Icons.verified_rounded
+                        : Icons.school_outlined,
+                    size: 16,
+                    color: isTeacher
+                        ? const Color(0xFF1D4ED8)
+                        : const Color(0xFF475569),
+                  ),
+                  label: Text(
+                    isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isTeacher
+                          ? const Color(0xFF1D4ED8)
+                          : const Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ),
+              // Raccourci vers l'assistant de création de cours (Métier 1) :
+              // réservé à l'enseignant (CoursesController.isTeacher)
+              if (isTeacher)
+                IconButton(
+                  tooltip: 'Créer un cours (Assistant M2)',
+                  onPressed: () {
+                    Navigator.pushNamed(context, CoursesRoutes.courseWizard);
+                  },
+                  icon: const Icon(
+                    Icons.add_box_rounded,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              const SizedBox(width: 4),
+            ],
+          ),
+          // Écran principal du module Cours (Mes cours | Catalogue / Statistiques)
+          body: const CoursesScreen(),
+        );
+      },
+    );
+  }
+}
+
+/// Racine de l'onglet Marketplace (M5) : AppBar du module + écran principal.
+/// Extrait de du `MarketplaceShell` d'origine : la barre
+/// inférieure est désormais gérée par [EduLinkShell].
+class MarketplaceRoot extends StatelessWidget {
+  const MarketplaceRoot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = MarketplaceController.instance;
+
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isTeacher = controller.currentUserRole == SellerRole.teacher;
+
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            elevation: 0,
+            // Logo + Titre du module Marketplace
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.storefront_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'EduLink · Marketplace',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        'Ressources numériques, physiques & cours particuliers',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ActionChip(
+                  tooltip:
+                      'Changer de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)',
+                  onPressed: controller.toggleCurrentUserRole,
+                  backgroundColor: isTeacher
+                      ? const Color(0xFFDBEAFE)
+                      : const Color(0xFFF1F5F9),
+                  avatar: Icon(
+                    isTeacher
+                        ? Icons.verified_rounded
+                        : Icons.school_outlined,
+                    size: 16,
+                    color: isTeacher
+                        ? const Color(0xFF1D4ED8)
+                        : const Color(0xFF475569),
+                  ),
+                  label: Text(
+                    isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isTeacher
+                          ? const Color(0xFF1D4ED8)
+                          : const Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ),
+              // Raccourci vers l'assistant de création d'offre (Métier 2)
+              IconButton(
+                tooltip: 'Publier une nouvelle offre (Assistant M5)',
+                onPressed: () {
+                  Navigator.pushNamed(
+                    context,
+                    MarketplaceRoutes.offerWizard,
+                  );
+                },
+                icon: const Icon(
+                  Icons.add_box_rounded,
+                  color: Color(0xFF2563EB),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+          ),
+          // Écran principal de la Marketplace (Explorer | Mes offres | Mes commandes)
+          body: const MarketplaceScreen(),
+        );
+      },
+    );
+  }
+}
+
+/// Racine de l'onglet Évaluations (M4) : AppBar du module + écran principal.
+/// Extrait de du `EvaluationsShell` d'origine : la barre
+/// inférieure est désormais gérée par [EduLinkShell].
+class EvaluationsRoot extends StatelessWidget {
+  const EvaluationsRoot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = EvaluationsController.instance;
+
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isTeacher = controller.currentUserRole == UserRole.teacher;
+
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            elevation: 0,
+            // Logo + Titre du module Évaluations
             title: Row(
               children: [
                 Container(
@@ -114,6 +477,7 @@ class EvaluationsShell extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(width: 4),
             ],
           ),
           body: const EvaluationsScreen(),
@@ -126,61 +490,6 @@ class EvaluationsShell extends StatelessWidget {
                   label: const Text('Nouvelle évaluation'),
                 )
               : null,
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: 2,
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            indicatorColor: EduColors.infoBg,
-            onDestinationSelected: (index) {
-              if (index != 2) {
-                const names = [
-                  'M2 · Cours',
-                  'M3 · Forum (Selim)',
-                  'M4 · Évaluations',
-                  'M5 · Marketplace',
-                  'M1 · Profil & Badges',
-                ];
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    duration: const Duration(seconds: 2),
-                    content: Text(
-                      'Onglet ${names[index]} : géré sur la branche de son responsable. Vous êtes sur M4 · Évaluations.',
-                    ),
-                  ),
-                );
-              }
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.menu_book_outlined),
-                selectedIcon: Icon(Icons.menu_book_rounded),
-                label: 'Cours',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.forum_outlined),
-                selectedIcon: Icon(Icons.forum_rounded),
-                label: 'Forum',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.quiz_outlined),
-                selectedIcon: Icon(
-                  Icons.quiz_rounded,
-                  color: Color(0xFF1D4ED8),
-                ),
-                label: 'Évaluations',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.storefront_outlined),
-                selectedIcon: Icon(Icons.storefront_rounded),
-                label: 'Marketplace',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline_rounded),
-                selectedIcon: Icon(Icons.person_rounded),
-                label: 'Profil',
-              ),
-            ],
-          ),
         );
       },
     );
@@ -247,5 +556,127 @@ class EvaluationsShell extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// Onglet placeholder d'un module pas encore intégré.
+/// Reprend le style d'AppBar des autres modules et indique l'intégration à venir du
+/// module.
+class _ModulePlaceholderTab extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String ownerLabel;
+  final String branchLabel;
+
+  const _ModulePlaceholderTab({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.ownerLabel,
+    required this.branchLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'EduLink · ${_shortTitle(title)}',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: const BoxDecoration(
+                color: Color(0xFFDBEAFE),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 36, color: const Color(0xFF1D4ED8)),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '$ownerLabel · $branchLabel',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Module à venir — intégration prévue prochainement.',
+              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Retire un éventuel préfixe « module · » du titre.
+  String _shortTitle(String title) {
+    final parts = title.split('·');
+    return parts.length > 1 ? parts.last.trim() : title;
   }
 }

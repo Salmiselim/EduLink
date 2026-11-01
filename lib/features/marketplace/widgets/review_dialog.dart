@@ -1,0 +1,223 @@
+import 'package:flutter/material.dart';
+import '../models/marketplace_models.dart';
+
+/// Feuille modale (`ModalBottomSheet`) dédiée à la saisie d'un avis vérifié
+/// lorsqu'une commande atteint le statut [OrderStatus.completed].
+/// Un seul avis peut être déposé par commande (`OfferReview.id == order.id`).
+/// Intègre un [Form] piloté par [GlobalKey<FormState>] pour valider le commentaire avant envoi.
+class ReviewBottomSheet extends StatefulWidget {
+  final MarketplaceOrder order;
+  final void Function(int rating, String comment) onSubmit;
+
+  const ReviewBottomSheet({
+    super.key,
+    required this.order,
+    required this.onSubmit,
+  });
+
+  @override
+  State<ReviewBottomSheet> createState() => _ReviewBottomSheetState();
+}
+
+class _ReviewBottomSheetState extends State<ReviewBottomSheet> {
+  /// Clé permettant d'exécuter les validateurs du [Form] à la soumission.
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  /// Note entière choisie par l'acheteur sur une échelle de 1 à 5 étoiles (5 par défaut).
+  int _selectedRating = 5;
+
+  /// Contrôleur du champ texte recueillant le retour d'expérience détaillé.
+  final TextEditingController _commentController = TextEditingController();
+
+  @override
+  void dispose() {
+    // Libération du contrôleur de saisie à la destruction du widget modal.
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  /// Vérifie la validité du formulaire puis invoque le callback [onSubmit] avant de fermer la modale.
+  void _handleSubmit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    widget.onSubmit(_selectedRating, _commentController.text.trim());
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Compense la hauteur du clavier virtuel afin de garder le champ et le bouton visibles.
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+      child: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // En-tête de la feuille modale
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.star_rounded,
+                    color: Color(0xFFD97706),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Évaluer cette commande',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        'Vendeur : ${widget.order.sellerName} (1 seul avis par commande)',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Rappel de l'offre évaluée
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.order.offerType.icon,
+                    size: 18,
+                    color: widget.order.offerType.color,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.order.offerTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Sélecteur interactif de 1 à 5 étoiles généré dynamiquement via List.generate
+            const Center(
+              child: Text(
+                'Quelle note attribuez-vous sur 5 ? *',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (index) {
+                final starValue = index + 1;
+                final isSelected = starValue <= _selectedRating;
+                return IconButton(
+                  onPressed: () => setState(() => _selectedRating = starValue),
+                  iconSize: 38,
+                  icon: Icon(
+                    isSelected ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: isSelected
+                        ? const Color(0xFFF59E0B)
+                        : Colors.grey.shade400,
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 10),
+
+            // Champ d'appréciation soumis à validation en temps réel (non vide et >= 10 caractères)
+            TextFormField(
+              controller: _commentController,
+              maxLines: 3,
+              maxLength: 300,
+              validator: (value) {
+                final text = value?.trim() ?? '';
+                if (text.isEmpty) {
+                  return 'Le commentaire d\'évaluation est obligatoire.';
+                }
+                if (text.length < 10) {
+                  return 'Veuillez saisir au moins 10 caractères (${text.length}/10).';
+                }
+                return null;
+              },
+              decoration: InputDecoration(
+                labelText: 'Votre commentaire sur la ressource ou la séance *',
+                hintText:
+                    'Ex: Support très clair, explications pédagogiques et ponctuel...',
+                helperText: 'Minimum 10 caractères requis',
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Bouton de publication déclenchant la validation et le recalcul de la moyenne de l'offre
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: _handleSubmit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.send_rounded, size: 18),
+                label: const Text(
+                  'Publier mon avis (met à jour la note & les badges L2)',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

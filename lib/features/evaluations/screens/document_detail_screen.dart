@@ -3,6 +3,8 @@ import '../data/evaluations_mock_data.dart';
 import '../routes/evaluations_routes.dart';
 import '../widgets/eval_ui.dart';
 
+/// Écran de consultation détaillée d'un support pédagogique ([CourseDocument]).
+/// Permet le téléchargement avec incrémentation du compteur et, pour l'enseignant, l'accès à l'édition.
 class DocumentDetailScreen extends StatelessWidget {
   final String documentId;
   const DocumentDetailScreen({super.key, required this.documentId});
@@ -10,13 +12,15 @@ class DocumentDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = EvaluationsController.instance;
+    // Écoute le contrôleur via ListenableBuilder pour rafraîchir immédiatement la fiche
+    // après un téléchargement (`downloadsCount + 1`) ou une modification dans DocumentWizardScreen.
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final doc = controller.documentById(documentId);
         if (doc == null) {
           return const Scaffold(
-            body: Center(child: Text('Document introuvable.')),
+            body: Center(child: Text('Document introuvable')),
           );
         }
         return Scaffold(
@@ -25,7 +29,7 @@ class DocumentDetailScreen extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             title: const Text(
-              'Document de cours',
+              'Document du cours',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 17,
@@ -33,6 +37,7 @@ class DocumentDetailScreen extends StatelessWidget {
               ),
             ),
             actions: [
+              // Action d'édition visible uniquement lorsque le rôle actif est enseignant.
               if (controller.isTeacher)
                 IconButton(
                   tooltip: 'Modifier',
@@ -50,101 +55,63 @@ class DocumentDetailScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // Carte présentant le dossier thématique, le titre, la description et les statistiques du fichier.
               Container(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.all(16),
                 decoration: evalCardDecoration(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        StatusChip(
-                          label: doc.folder.label,
-                          color: doc.folder.color,
-                          icon: doc.folder.icon,
-                        ),
-                        const SizedBox(width: 8),
-                        StatusChip(
-                          label: doc.courseTitle,
-                          color: EduColors.muted,
-                          background: EduColors.neutralBg,
-                        ),
-                      ],
+                    StatusChip(
+                      label: doc.folder.label,
+                      color: doc.folder.color,
+                      icon: doc.folder.icon,
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Text(
                       doc.title,
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
-                        color: EduColors.text,
                       ),
                     ),
-                    const SizedBox(height: 4),
                     Text(
-                      'Publié par ${doc.teacherName}',
-                      style: const TextStyle(color: EduColors.muted, fontSize: 13),
+                      '${doc.courseTitle} · ${doc.teacherName}',
+                      style: const TextStyle(color: EduColors.muted),
                     ),
-                    const Divider(height: 24),
-                    const Text(
-                      'Description :',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 10),
                     Text(
                       doc.description,
                       style: const TextStyle(
                         height: 1.5,
-                        fontSize: 13.5,
                         color: EduColors.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: EduColors.neutralBg,
-                        borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Fichier : ${doc.fileUrl}',
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12.5,
                       ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.picture_as_pdf_rounded, color: doc.folder.color, size: 24),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  doc.fileUrl,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                Text(
-                                  '${doc.downloadsCount} téléchargement(s)',
-                                  style: const TextStyle(fontSize: 11.5, color: EduColors.muted),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                    ),
+                    Text(
+                      '${doc.downloadsCount} téléchargement(s)',
+                      style: const TextStyle(color: EduColors.muted),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
+              // Bouton d'action incrémentant le compteur du document dans le contrôleur et affichant un SnackBar.
               PrimaryCta(
-                label: 'Télécharger le document (${doc.downloadsCount} téléchargements)',
+                label: 'Télécharger (simulé)',
                 icon: Icons.download_rounded,
-                backgroundColor: doc.folder.color,
                 onPressed: () {
                   controller.incrementDownload(doc.id);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      backgroundColor: EduColors.success,
-                      content: Text('${doc.fileUrl} téléchargé avec succès (compteur mis à jour).'),
+                      content: Text('${doc.fileUrl} téléchargé (compteur +1).'),
                     ),
                   );
                 },

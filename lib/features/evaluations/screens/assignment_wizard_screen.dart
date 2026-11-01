@@ -4,6 +4,8 @@ import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
 import '../widgets/eval_ui.dart';
 
+/// Assistant enseignant en deux étapes permettant de créer ou de modifier un [Assignment].
+/// Étape 0 : cours rattaché, titre et consignes. Étape 1 : barème, échéance, tolérance au retard et PDF joint.
 class AssignmentWizardScreen extends StatefulWidget {
   final Assignment? existing;
   const AssignmentWizardScreen({super.key, this.existing});
@@ -14,7 +16,11 @@ class AssignmentWizardScreen extends StatefulWidget {
 
 class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
   final _controller = EvaluationsController.instance;
+
+  /// Clé globale de validation associée au [Form] englobant les étapes de l'assistant.
   final _formKey = GlobalKey<FormState>();
+
+  /// Indice de l'étape active (`0` pour les informations générales, `1` pour le barème et les pièces jointes).
   int _step = 0;
 
   late final TextEditingController _title;
@@ -29,15 +35,11 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
   @override
   void initState() {
     super.initState();
+    // Garde d'accès : referme immédiatement l'écran si l'utilisateur courant n'est pas enseignant.
     if (!_controller.isTeacher) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Accès réservé aux enseignants (Règle 2).')),
-        );
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => Navigator.pop(context));
     }
+    // Initialise les contrôleurs avec les valeurs du devoir existant en édition ou des valeurs par défaut.
     final e = widget.existing;
     _title = TextEditingController(text: e?.title ?? '');
     _instructions = TextEditingController(text: e?.instructions ?? '');
@@ -58,22 +60,27 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
     super.dispose();
   }
 
-  bool _validateStep0() {
-    return _formKey.currentState?.validate() ?? false;
-  }
-
-  bool _validateStep1() {
+  /// Valide à la fois les champs du [Form] et la présence d'au moins un support de consigne joint.
+  bool _validate() {
     final ok = _formKey.currentState?.validate() ?? false;
     if (_attachments.isEmpty) {
-      setState(() => _fileError = 'Veuillez joindre au moins une consigne (PDF Cloudinary L10).');
+      setState(() => _fileError = 'Ajoutez au moins une consigne (PDF simulé).');
       return false;
     }
     setState(() => _fileError = null);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Titre, consignes (min. 20 car.) et note max sont requis.'),
+        ),
+      );
+    }
     return ok;
   }
 
+  /// Persiste le devoir créé ou modifié dans [EvaluationsController.upsertAssignment] puis revient à l'écran précédent.
   void _save() {
-    if (!_validateStep1()) return;
+    if (!_validate()) return;
     final course = _controller.courses.firstWhere((c) => c.id == _courseId);
     _controller.upsertAssignment(
       Assignment(
@@ -93,81 +100,36 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
     );
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          widget.existing == null
-              ? 'Devoir publié. Notification FCM (L8) envoyée aux étudiants inscrits.'
-              : 'Devoir mis à jour avec succès.',
-        ),
-      ),
+      const SnackBar(content: Text('Devoir enregistré. Notification L8 envoyée.')),
     );
-  }
-
-  Future<void> _pickDueDate() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _dueDate,
-      firstDate: DateTime(2026, 1, 1),
-      lastDate: DateTime(2027, 12, 31),
-    );
-    if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_dueDate),
-    );
-    if (time == null || !mounted) return;
-    setState(() {
-      _dueDate = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    const steps = ['1. Consignes', '2. Échéance & Barème'];
     return Scaffold(
       backgroundColor: EduColors.scaffold,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.existing == null ? 'Nouveau devoir (dépôt)' : 'Modifier le devoir',
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 17,
-                color: EduColors.text,
-              ),
-            ),
-            const Text(
-              'Enseignant · POST /assignments · Notifications L8',
-              style: TextStyle(fontSize: 11.5, color: EduColors.muted),
-            ),
-          ],
+        title: Text(
+          widget.existing == null ? 'Nouveau devoir' : 'Modifier le devoir',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
+            color: EduColors.text,
+          ),
         ),
       ),
       body: Column(
         children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-            child: Row(
-              children: List.generate(steps.length, (i) {
-                final active = i <= _step;
-                return Expanded(
-                  child: Container(
-                    height: 5,
-                    margin: EdgeInsets.only(right: i == steps.length - 1 ? 0 : 6),
-                    decoration: BoxDecoration(
-                      color: active ? EduColors.primary : EduColors.border,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                );
-              }),
-            ),
+          // Barre de progression linéaire indiquant l'avancement sur les 2 étapes du wizard.
+          LinearProgressIndicator(
+            value: (_step + 1) / 2,
+            color: EduColors.primary,
+            backgroundColor: EduColors.border,
+            minHeight: 6,
           ),
+          // Zone centrale extensible accueillant le formulaire déroulant.
           Expanded(
             child: Form(
               key: _formKey,
@@ -175,157 +137,128 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  Text(
-                    steps[_step],
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: EduColors.text,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
                   if (_step == 0) ...[
+                    // Sélecteur déroulant rattachant le devoir à l'un des cours de l'enseignant.
                     DropdownButtonFormField<String>(
                       initialValue: _courseId,
-                      decoration: evalInputDecoration(
-                        label: 'Cours associé (Liaison L4)',
-                        icon: Icons.menu_book_rounded,
-                      ),
+                      decoration: evalInputDecoration(label: 'Cours (L4)'),
                       items: _controller.accessibleCourses
                           .map(
                             (c) => DropdownMenuItem(
                               value: c.id,
-                              child: Text('${c.title} (${c.level})'),
+                              child: Text(c.title),
                             ),
                           )
                           .toList(),
                       onChanged: (v) => setState(() => _courseId = v!),
                     ),
                     const SizedBox(height: 12),
+                    // Saisie du titre avec contrôle de longueur minimale et maximale.
                     TextFormField(
                       controller: _title,
                       maxLength: 80,
-                      decoration: evalInputDecoration(
-                        label: 'Titre du devoir',
-                        hint: 'Ex. TP — Conception d\'un schéma relationnel',
-                      ),
+                      decoration: evalInputDecoration(label: 'Titre du devoir'),
                       validator: (v) {
                         final t = v?.trim() ?? '';
-                        if (t.length < 5) return 'Titre requis (au moins 5 caractères).';
+                        if (t.length < 5) return 'Titre : 5 à 80 caractères.';
                         return null;
                       },
                     ),
                     const SizedBox(height: 12),
+                    // Saisie multiligne des consignes détaillées du travail demandé.
                     TextFormField(
                       controller: _instructions,
-                      maxLines: 6,
+                      maxLines: 5,
                       maxLength: 800,
                       decoration: evalInputDecoration(
-                        label: 'Consignes détaillées',
-                        hint: 'Décrivez précisément le travail demandé, les critères de notation et les formats de fichiers attendus…',
+                        label: 'Consignes',
+                        hint: 'Décrivez le travail attendu…',
                       ),
                       validator: (v) {
                         final t = v?.trim() ?? '';
                         if (t.length < 20) {
-                          return 'Les consignes doivent comporter au moins 20 caractères.';
+                          return 'Consignes obligatoires (20 à 800 caractères).';
                         }
                         return null;
                       },
                     ),
                   ] else ...[
+                    // Champ numérique restreint aux chiffres définissant le barème maximal (1 à 20).
                     TextFormField(
                       controller: _maxGrade,
                       keyboardType: TextInputType.number,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: evalInputDecoration(
-                        label: 'Barème maximal',
-                        hint: 'Ex. 20',
+                        label: 'Note maximale',
                         icon: Icons.grade_outlined,
                       ),
                       validator: (v) {
                         final n = double.tryParse(v ?? '');
-                        if (n == null || n <= 0 || n > 100) {
-                          return 'Note maximale entre 1 et 100.';
+                        if (n == null || n <= 0 || n > 20) {
+                          return 'Note max entre 1 et 20.';
                         }
                         return null;
                       },
                     ),
                     const SizedBox(height: 12),
+                    // Sélecteur de date limite ouvrant un DatePicker et fixant l'heure à 23h59.
                     ListTile(
                       tileColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                         side: const BorderSide(color: EduColors.border),
                       ),
-                      title: const Text(
-                        'Date et heure d\'échéance',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                      title: const Text('Échéance'),
+                      subtitle: Text(formatDate(_dueDate)),
+                      trailing: const Icon(Icons.event_rounded),
+                      onTap: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: _dueDate,
+                          firstDate: DateTime(2026),
+                          lastDate: DateTime(2027),
+                        );
+                        if (d == null || !mounted) return;
+                        setState(
+                          () => _dueDate = DateTime(d.year, d.month, d.day, 23, 59),
+                        );
+                      },
+                    ),
+                    // Interrupteur contrôlant la politique `allowLate` pour les remises après échéance.
+                    SwitchListTile(
+                      value: _allowLate,
+                      title: const Text('Autoriser les rendus en retard'),
+                      subtitle: const Text(
+                        'Le retard sera détecté automatiquement (isLate).',
                       ),
-                      subtitle: Text(formatDate(_dueDate), style: const TextStyle(fontSize: 12.5)),
-                      leading: const Icon(Icons.event_available_rounded, color: EduColors.primary),
-                      trailing: const Icon(Icons.edit_calendar_outlined, size: 20),
-                      onTap: _pickDueDate,
+                      onChanged: (v) => setState(() => _allowLate = v),
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: EduColors.border),
-                      ),
-                      child: SwitchListTile(
-                        value: _allowLate,
-                        activeThumbColor: EduColors.primary,
-                        title: const Text(
-                          'Autoriser les rendus en retard',
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                        ),
-                        subtitle: const Text(
-                          'Si activé, les étudiants peuvent déposer après la date limite avec la mention automatique « En retard » (isLate: true).',
-                          style: TextStyle(fontSize: 12, color: EduColors.muted),
-                        ),
-                        onChanged: (v) => setState(() => _allowLate = v),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const SectionHeader(
-                      title: 'Pièces jointes & Sujet (MediaService L10)',
-                      subtitle: 'Fichiers PDF associés au devoir',
-                    ),
+                    // Ajout simulé de fichiers PDF d'énoncé rattachés au devoir.
                     OutlinedButton.icon(
                       onPressed: () {
                         setState(() {
-                          _attachments.add('consigne_devoir_${_attachments.length + 1}.pdf');
+                          _attachments.add(
+                            'consigne_${_attachments.length + 1}.pdf',
+                          );
                           _fileError = null;
                         });
                       },
                       icon: const Icon(Icons.attach_file_rounded),
-                      label: const Text('Joindre une consigne (PDF Cloudinary L10)'),
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
+                      label: const Text('Joindre un PDF (MediaService L10, simulé)'),
                     ),
                     if (_fileError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          _fileError!,
-                          style: const TextStyle(color: EduColors.danger, fontWeight: FontWeight.w600, fontSize: 12.5),
-                        ),
+                      Text(
+                        _fileError!,
+                        style: const TextStyle(color: EduColors.danger),
                       ),
-                    const SizedBox(height: 8),
                     ..._attachments.map(
-                      (f) => Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        decoration: evalCardDecoration(),
-                        child: ListTile(
-                          leading: const Icon(Icons.picture_as_pdf_rounded, color: EduColors.danger),
-                          title: Text(f, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.close_rounded, color: EduColors.muted, size: 18),
-                            onPressed: () => setState(() => _attachments.remove(f)),
-                          ),
+                      (f) => ListTile(
+                        leading: const Icon(Icons.picture_as_pdf_rounded),
+                        title: Text(f),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => setState(() => _attachments.remove(f)),
                         ),
                       ),
                     ),
@@ -334,42 +267,34 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
               ),
             ),
           ),
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  if (_step > 0)
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => setState(() => _step = 0),
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          minimumSize: const Size(0, 48),
-                        ),
-                        child: const Text('Retour'),
-                      ),
-                    ),
-                  if (_step > 0) const SizedBox(width: 10),
+          // Barre d'actions inférieure permettant de revenir à l'étape 0 ou de valider l'étape courante.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                if (_step > 0)
                   Expanded(
-                    child: PrimaryCta(
-                      label: _step == 0 ? 'Continuer' : (widget.existing == null ? 'Publier le devoir' : 'Enregistrer les modifications'),
-                      icon: _step == 0 ? Icons.arrow_forward_rounded : Icons.check_circle_rounded,
-                      onPressed: () {
-                        if (_step == 0) {
-                          if (_validateStep0()) {
-                            setState(() => _step = 1);
-                          }
-                        } else {
-                          _save();
-                        }
-                      },
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _step = 0),
+                      child: const Text('Retour'),
                     ),
                   ),
-                ],
-              ),
+                if (_step > 0) const SizedBox(width: 10),
+                Expanded(
+                  child: PrimaryCta(
+                    label: _step == 0 ? 'Continuer' : 'Publier le devoir',
+                    onPressed: () {
+                      if (_step == 0) {
+                        if (_formKey.currentState?.validate() ?? false) {
+                          setState(() => _step = 1);
+                        }
+                      } else {
+                        _save();
+                      }
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ],
