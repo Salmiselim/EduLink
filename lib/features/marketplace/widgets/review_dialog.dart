@@ -5,23 +5,10 @@ import 'package:flutter/material.dart';
 // Liaison avec le modèle `MarketplaceOrder` pour afficher le titre de l'offre et le nom du vendeur
 import '../models/marketplace_models.dart';
 
-// ============================================================================
-// FEUILLE MODALE : DÉPÔT D'UN AVIS AVEC CONTRÔLE DE SAISIE (ReviewBottomSheet)
-// Hérite de `StatefulWidget` car il gère localement :
-// - `_selectedRating` (note interactive de 1 à 5 étoiles ★ mise à jour via `setState`)
-// - `_commentController` (`TextEditingController` libéré proprement dans `dispose()`)
-// - `_formKey` (`GlobalKey<FormState>`) pilotant la validation du `TextFormField`
-//
-// Comment est-il ouvert et relié au reste du code ?
-// - Ouvert via la fonction Material `showModalBottomSheet(isScrollControlled: true, ...)`
-//   depuis `MarketplaceScreen` (vue « Mes commandes ») ET depuis `OrderChatScreen`
-//   uniquement lorsque `order.status == OrderStatus.completed && !order.hasReview`.
-// - À la validation (`_handleSubmit`), il appelle le callback `onSubmit(rating, comment)`
-//   qui invoque `MarketplaceController.instance.submitReview(...)`, recalculant `ratingAvg`.
-// - `MediaQuery.of(context).viewInsets.bottom` ajoute une marge dynamique égale à la hauteur
-//   du clavier virtuel du téléphone afin que le champ de saisie ne soit jamais masqué.
-// ============================================================================
-
+/// Feuille modale (`ModalBottomSheet`) dédiée à la saisie d'un avis vérifié
+/// lorsqu'une commande atteint le statut [OrderStatus.completed].
+/// Un seul avis peut être déposé par commande (`OfferReview.id == order.id`).
+/// Intègre un [Form] piloté par [GlobalKey<FormState>] pour valider le commentaire avant envoi.
 class ReviewBottomSheet extends StatefulWidget {
   final MarketplaceOrder order;
   final void Function(int rating, String comment) onSubmit;
@@ -37,22 +24,23 @@ class ReviewBottomSheet extends StatefulWidget {
 }
 
 class _ReviewBottomSheetState extends State<ReviewBottomSheet> {
-  /// Clé de validation du formulaire d'avis
+  /// Clé permettant d'exécuter les validateurs du [Form] à la soumission.
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  /// Note sélectionnée par l'acheteur (1 à 5 étoiles ★, par défaut 5)
+  /// Note entière choisie par l'acheteur sur une échelle de 1 à 5 étoiles (5 par défaut).
   int _selectedRating = 5;
 
-  /// Contrôleur du champ de commentaire textuel
+  /// Contrôleur du champ texte recueillant le retour d'expérience détaillé.
   final TextEditingController _commentController = TextEditingController();
 
   @override
   void dispose() {
+    // Libération du contrôleur de saisie à la destruction du widget modal.
     _commentController.dispose();
     super.dispose();
   }
 
-  /// Valide le formulaire avant d'envoyer l'avis (`POST /reviews`)
+  /// Vérifie la validité du formulaire puis invoque le callback [onSubmit] avant de fermer la modale.
   void _handleSubmit() {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -63,6 +51,7 @@ class _ReviewBottomSheetState extends State<ReviewBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Compense la hauteur du clavier virtuel afin de garder le champ et le bouton visibles.
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
@@ -151,7 +140,7 @@ class _ReviewBottomSheetState extends State<ReviewBottomSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Sélecteur interactif de 1 à 5 étoiles ★
+            // Sélecteur interactif de 1 à 5 étoiles généré dynamiquement via List.generate
             const Center(
               child: Text(
                 'Quelle note attribuez-vous sur 5 ? *',
@@ -182,7 +171,7 @@ class _ReviewBottomSheetState extends State<ReviewBottomSheet> {
             ),
             const SizedBox(height: 10),
 
-            // Champ de commentaire avec contrôle de saisie obligatoire
+            // Champ d'appréciation soumis à validation en temps réel (non vide et >= 10 caractères)
             TextFormField(
               controller: _commentController,
               maxLines: 3,
@@ -211,7 +200,7 @@ class _ReviewBottomSheetState extends State<ReviewBottomSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Bouton d'envoi (`POST /reviews`)
+            // Bouton de publication déclenchant la validation et le recalcul de la moyenne de l'offre
             SizedBox(
               width: double.infinity,
               height: 48,

@@ -5,30 +5,18 @@ import 'package:flutter/material.dart';
 // Liaison avec le modèle `Offer`, `OfferType`, `SellerRole` et `DeliveryMode`
 import '../models/marketplace_models.dart';
 
-// ============================================================================
-// COMPOSANT RÉUTILISABLE : CARTE D'OFFRE (OfferCard)
-// Hérite de `StatelessWidget` : composant purement déclaratif qui reçoit ses données
-// (`offer`, `isFavorite`, `compact`) et remonte les actions utilisateur à son parent
-// via deux callbacks (`VoidCallback onTap`, `VoidCallback onFavoriteToggle`).
-//
-// Où est-il relié dans le code ?
-// - Dans `MarketplaceScreen._buildExplorerView()` :
-//   1) En mode `compact: true` dans le carrousel horizontal `ListView.separated` des recommandations (L6)
-//   2) En mode normal (`compact: false`) dans la liste verticale du catalogue public
-//
-// Composants Flutter utilisés à l'intérieur :
-// - `Card` + `RoundedRectangleBorder` + `Clip.antiAlias` : conteneur Material 3 aux coins arrondis (16px)
-// - `InkWell` : détecte le clic (`onTap`) avec effet d'onde visuelle Material (ripple effect)
-// - `Wrap` : permet aux badges et métadonnées de passer automatiquement à la ligne sur petit écran (zéro overflow)
-// - `CircleAvatar` : affiche les initiales du vendeur avec code couleur selon son rôle (Étudiant / Enseignant)
-// ============================================================================
-
+/// Carte réutilisable résumant une [Offer] dans la liste principale du catalogue
+/// ou dans le carrousel horizontal de recommandations lorsque [compact] vaut `true`.
+/// S'appuie sur un couple [Card] + [InkWell] pour gérer le découpage (`Clip.antiAlias`)
+/// et l'effet d'onde tactile à l'ouverture du détail ou au clic sur le bouton favori.
 class OfferCard extends StatelessWidget {
   final Offer offer;
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback onFavoriteToggle;
-  final bool compact; // Mode compact pour le carrousel horizontal des recommandations
+
+  /// Réduit l'espacement interne et masque le bandeau de cours lié pour tenir dans le carrousel.
+  final bool compact;
 
   const OfferCard({
     super.key,
@@ -52,6 +40,7 @@ class OfferCard extends StatelessWidget {
       ),
       color: Colors.white,
       clipBehavior: Clip.antiAlias,
+      // Zone cliquable principale déclenchant la navigation vers le détail de l'offre
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -60,7 +49,7 @@ class OfferCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Ligne du haut : Badge Type d'offre + Badge Origine du vendeur (Règle 5) + Bouton Favori
+              // En-tête : badges de catégorie et d'origine du vendeur dans un Wrap adaptatif + icône favori
               Row(
                 children: [
                   Expanded(
@@ -74,6 +63,7 @@ class OfferCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
+                  // Zone tactile indépendante pour basculer le favori sans ouvrir la fiche détail
                   InkWell(
                     onTap: onFavoriteToggle,
                     borderRadius: BorderRadius.circular(20),
@@ -94,7 +84,7 @@ class OfferCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
 
-              // 2. Titre de l'offre
+              // Titre de l'offre limité à deux lignes avec troncature par ellipse
               Text(
                 offer.title,
                 maxLines: 2,
@@ -108,7 +98,7 @@ class OfferCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
 
-              // 3. Puces de métadonnées : Matière · Niveau · Mode (En ligne / Ville) · État & Stock
+              // Puces de métadonnées dynamiques (matière/niveau, modalité Jitsi ou ville, état et stock)
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -142,7 +132,7 @@ class OfferCard extends StatelessWidget {
                 ],
               ),
 
-              // 4. Bandeau Liaison L6 : affiche le cours rattaché s'il existe
+              // Bandeau indiquant le cours académique rattaché (affiché uniquement hors mode compact)
               if (!compact && offer.courseTitle != null) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -185,7 +175,7 @@ class OfferCard extends StatelessWidget {
               const Divider(height: 1),
               const SizedBox(height: 10),
 
-              // 5. Pied de carte : Infos Vendeur + Note moyenne ★ + Prix en TND (ou Gratuit)
+              // Pied de carte : avatar initiales du vendeur, note moyenne sur 5 et étiquette de tarif en TND
               Row(
                 children: [
                   CircleAvatar(
@@ -279,7 +269,7 @@ class OfferCard extends StatelessWidget {
   }
 }
 
-/// Badge coloré indiquant le type de l'offre (`resource_digital`, `resource_physical`, `private_lesson`)
+/// Badge coloré affichant l'icône et l'intitulé court correspondant à [OfferType].
 class _TypeBadge extends StatelessWidget {
   final OfferType type;
 
@@ -312,7 +302,7 @@ class _TypeBadge extends StatelessWidget {
   }
 }
 
-/// Badge indiquant l'origine du vendeur : « Enseignant vérifié » ou « Offre étudiant » (Règle 5, Page 2)
+/// Badge signalant le statut académique du vendeur (« Enseignant vérifié » ou « Offre étudiant »).
 class _SellerOriginBadge extends StatelessWidget {
   final bool isTeacher;
 
@@ -356,7 +346,7 @@ class _SellerOriginBadge extends StatelessWidget {
   }
 }
 
-/// Petite étiquette d'information (Matière/Niveau, Mode Jitsi/Ville, État/Stock)
+/// Puce générique associant une icône et un court libellé descriptif.
 class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String label;

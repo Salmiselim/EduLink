@@ -1,14 +1,14 @@
-# EduLink — Guide Complet du Module M5 (Marketplace) & Design System d'Équipe
+# EduLink — Guide du Module Marketplace & Design System
 
-> **Module** : M5 — Gestion Marketplace (*Ressources numériques, Ressources physiques & Cours particuliers*)  
-> **Branche Git** : `marketplace` (prête à être synchronisée avec `feat/m5-marketplace` / `main`)  
+> **Module** : Marketplace (*Ressources numériques, Ressources physiques & Cours particuliers*)  
+> **Statut** : interfaces prêtes pour intégration  
 > **Version SDK** : Flutter `3.47.8` · Dart `^3.13.5` (`3.13.7`) · Material 3 activé  
 
-Ce document sert à la fois de **documentation complète du travail réalisé sur le module M5 (Marketplace)** et de **charte graphique / Design System de référence** (polices, tailles, couleurs, espacements, composants) pour que les 5 membres de l'équipe (**M1 Users, M2 Cours, M3 Forum/Selim, M4 Évaluations, M5 Marketplace**) gardent une interface 100 % cohérente.
+Ce document sert à la fois de **documentation complète du travail réalisé sur le module Marketplace** et de **charte graphique / Design System de référence** (polices, tailles, couleurs, espacements, composants) pour que tous les modules (**Cours, Forum, Évaluations, Marketplace, Profil**) gardent une interface 100 % cohérente.
 
 ---
 
-## 1. Design System & Charte Graphique (Pour toute l'équipe M1–M5)
+## 1. Design System & Charte Graphique (pour tous les modules)
 
 ### 1.1 Polices de caractères (Fonts) & Typographie
 Le projet utilise la typographie **Material 3 native** de Flutter (`useMaterial3: true` dans `ThemeData`) ainsi que la police `monospace` pour les codes techniques et identifiants :
@@ -19,7 +19,7 @@ Le projet utilise la typographie **Material 3 native** de Flutter (`useMaterial3
 - **Police secondaire (Monospace)** : `fontFamily: 'monospace'` (utilisée pour les codes techniques comme `resource_digital` ou les badges d'endpoints).
 - **Icônes** : `uses-material-design: true` dans `pubspec.yaml` — utilisation privilégiée des variantes **`_rounded`** et **`_outlined`** de `Icons` (ex. `Icons.storefront_rounded`, `Icons.verified_rounded`, `Icons.calendar_month_rounded`).
 
-#### Échelle Typographique (Tailles & Graisses à réutiliser dans M1–M4)
+#### Échelle Typographique (Tailles & Graisses à réutiliser dans tous les modules)
 
 | Usage dans l'interface | `fontSize` | `fontWeight` | Couleur | Exemple |
 | :--- | :--- | :--- | :--- | :--- |
@@ -86,7 +86,7 @@ lib/
 ├── main.dart                                      # Point d'entrée, Thème Material 3, Bascule Rôle (Étudiant/Enseignant)
 └── features/marketplace/
     ├── models/
-    │   └── marketplace_models.dart                # Enums & Classes correspondant aux collections Firestore M5
+    │   └── marketplace_models.dart                # Enums & Classes correspondant aux collections Firestore
     ├── data/
     │   └── marketplace_mock_data.dart             # MarketplaceController (ChangeNotifier) + Données de démo
     ├── widgets/
@@ -127,7 +127,7 @@ flowchart TD
 
 ## 3. Modèles de Données & Correspondance Firestore (`marketplace_models.dart`)
 
-Tous les modèles suivent strictement le schéma gelé des pages 7 et 8 du plan d'équipe :
+Tous les modèles suivent strictement le schéma de données validé en équipe :
 
 | Collection Firestore | Classe Dart | Champs implémentés |
 | :--- | :--- | :--- |
@@ -180,7 +180,7 @@ Implémenté dans **`OfferWizardScreen`** (route poussée) et **`MarketplaceScre
    - **Étape 5 (`Cours lié optionnel — Liaison L6`)** : Permet de rattacher l'offre à un cours (`offers.courseId`).
    - **Étape 6 (`Aperçu & Publication`)** : Récapitulatif complet avec double bouton **« Brouillon (`draft`) »** ou **« Publier l'offre (`published`) »**.
 2. **Tableau de bord vendeur (`GET /seller/stats`)** :
-   - Affiche en temps réel : **Vues totales**, **Ventes**, **Séances données (1h)**, **Note moyenne ★**, ainsi que les **Badges M5** (*Vendeur*, *Mentor*, *Bien noté*).
+   - Affiche en temps réel : **Vues totales**, **Ventes**, **Séances données (1h)**, **Note moyenne ★**, ainsi que les **Badges** (*Vendeur*, *Mentor*, *Bien noté*).
    - Gestion rapide de ses offres : filtrage par statut, boutons **Publier / Masquer** (`PATCH /offers/:id/publish|hide`), bouton **Créneaux (`availabilities` CRUD)**, **Aperçu**, et **Supprimer**.
 
 ---
@@ -203,9 +203,9 @@ Implémenté dans **`OrderCheckoutScreen`**, **`MarketplaceScreen` (Vue « Mes c
 
 ---
 
-## 5. Conformité aux 5 Critères d'Évaluation Enseignant
+## 5. Conformité aux Critères de Qualité
 
-| Critère d'évaluation | Implémentation dans le module M5 (Marketplace) |
+| Critère d'évaluation | Implémentation dans le module Marketplace |
 | :--- | :--- |
 | **1. Respect de la charte graphique** | Palette Material 3 unifiée (`#2563EB` Primary, `#F8FAFC` Scaffold, badges sémantiques par type d'offre et statut), typographie hiérarchisée, cartes à bordures fines `1px` et `borderRadius: 16`. |
 | **2. Utilisation des composants adéquats** | `NavigationBar` (5 onglets), `SegmentedButton`, `FilterChip`, `ChoiceChip`, `Slider`, `SwitchListTile`, `DropdownButtonFormField`, `DraggableScrollableSheet`, `Badge`, `FloatingActionButton.extended`, `AlertDialog`. |
@@ -215,19 +215,19 @@ Implémenté dans **`OrderCheckoutScreen`**, **`MarketplaceScreen` (Vue « Mes c
 
 ---
 
-## 6. Points de Branchement avec les Autres Membres (Liaisons L1 à L10)
+## 6. Points de Branchement avec les Autres Modules
 
-Lorsque nous connecterons le backend NestJS / Firebase en semaines 2 à 4, voici comment les modules des coéquipiers se relient aux écrans de la Marketplace :
+Lorsque nous connecterons le backend NestJS / Firebase en semaines 2 à 4, voici comment les autres modules se relient aux écrans de la Marketplace :
 
 | Liaison | Module Partenaire | Point d'intégration dans nos fichiers Marketplace |
 | :--- | :--- | :--- |
-| **L1 (Auth & Rôles)** | **M1 (Users)** | Remplacer `MarketplaceController.currentUserId` et `currentUserRole` par le `UserProvider` et le widget `RoleAware` livrés par M1. |
-| **L2 (Badges)** | **M1 (Users)** | Appeler `BadgesService.checkAndGrant()` lors d'une 1re vente (`Vendeur`), de 5 cours particuliers terminés (`Mentor`), et d'une note ≥ 4.5 sur 10 avis (`Bien noté`). |
-| **L6 (Cours <-> Offres)** | **M2 (Cours)** | Champ `Offer.courseId` dans `OfferWizardScreen` (Étape 5) alimenté par `CoursesService.getOwned()` / `EnrollmentsService.getSubjects()`, et exposition de `OffersService.listByCourse(courseId)` pour la page d'un cours. |
-| **L7 (Forum -> Offres)** | **M3 (Forum - Selim)** | Le bouton *« Trouver une ressource ou un tuteur »* dans le détail d'une question du forum pourra ouvrir `MarketplaceScreen` pré-filtré sur la matière (`_filterSubject`) ou appeler `OffersService.suggestForTags(tags, subject)`. |
-| **L8 (Notifications FCM)** | **M4 (Évaluations)** | Appeler `NotificationsService.send()` lors de `createOrder()` (demande reçue), `updateOrderStatus()` (cours confirmé) et `sendMessage()` (nouveau message). |
-| **L9 (Profil Public)** | **M1 (Users)** | Exposer `OffersService.listBySeller(userId)` et `ReviewsService.getSummary(userId)` pour afficher les offres et la note moyenne d'un vendeur sur son profil public. |
-| **L10 (Médias Cloudinary)** | **M2 (Cours)** | Brancher les boutons d'upload de photos/PDF dans `OfferWizardScreen` (Étape 2) et de pièces jointes dans `OrderChatScreen` sur `MediaService.upload(file, folder)`. |
+| **L1 (Auth & Rôles)** | **Users** | Remplacer `MarketplaceController.currentUserId` et `currentUserRole` par le `UserProvider` et le widget `RoleAware` livrés par le module Users. |
+| **L2 (Badges)** | **Users** | Appeler `BadgesService.checkAndGrant()` lors d'une 1re vente (`Vendeur`), de 5 cours particuliers terminés (`Mentor`), et d'une note ≥ 4.5 sur 10 avis (`Bien noté`). |
+| **L6 (Cours <-> Offres)** | **Cours** | Champ `Offer.courseId` dans `OfferWizardScreen` (Étape 5) alimenté par `CoursesService.getOwned()` / `EnrollmentsService.getSubjects()`, et exposition de `OffersService.listByCourse(courseId)` pour la page d'un cours. |
+| **L7 (Forum -> Offres)** | **Forum** | Le bouton *« Trouver une ressource ou un tuteur »* dans le détail d'une question du forum pourra ouvrir `MarketplaceScreen` pré-filtré sur la matière (`_filterSubject`) ou appeler `OffersService.suggestForTags(tags, subject)`. |
+| **L8 (Notifications FCM)** | **Évaluations** | Appeler `NotificationsService.send()` lors de `createOrder()` (demande reçue), `updateOrderStatus()` (cours confirmé) et `sendMessage()` (nouveau message). |
+| **L9 (Profil Public)** | **Users** | Exposer `OffersService.listBySeller(userId)` et `ReviewsService.getSummary(userId)` pour afficher les offres et la note moyenne d'un vendeur sur son profil public. |
+| **L10 (Médias Cloudinary)** | **Cours** | Brancher les boutons d'upload de photos/PDF dans `OfferWizardScreen` (Étape 2) et de pièces jointes dans `OrderChatScreen` sur `MediaService.upload(file, folder)`. |
 
 ---
 

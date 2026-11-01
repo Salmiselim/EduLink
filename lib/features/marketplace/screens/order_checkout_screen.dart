@@ -7,24 +7,11 @@ import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
 
-// ============================================================================
-// ROUTE POUSSÉE : ÉCRAN DE COMMANDE OU DE RÉSERVATION (OrderCheckoutScreen)
-// Route nommée : `MarketplaceRoutes.orderCheckout` (`/marketplace/order-checkout`)
-// Reçoit `OrderCheckoutArgs(offer: ..., preselectedSlot: ...)` depuis `OfferDetailScreen`.
-//
-// Liaisons techniques et parcours utilisateur :
-// 1. Adapte dynamiquement son interface selon `offer.type` :
-//    - `privateLesson` : sélection d'un `AvailabilitySlot` libre via `ListTile` radio (les créneaux déjà
-//      réservés `slot.isBooked` sont grisés, barrés et ont `onTap: null`).
-//    - `resourcePhysical` : sélecteur de quantité borné `[1..maxStock]` via `IconButton.outlined`
-//      et affichage du lieu de remise OpenStreetMap Nominatim.
-//    - `resourceDigital` : récapitulatif du PDF privé Cloudinary (débloqué immédiatement si gratuit).
-// 2. Valide le message initial `orders.note` (>= 10 caractères) via `_formKey.currentState!.validate()`.
-// 3. Appelle `_controller.createOrder(...)` puis utilise `Navigator.pushReplacementNamed` vers
-//    `MarketplaceRoutes.orderChat` afin de remplacer l'écran de paiement par le chat de suivi
-//    (évite de recréer une commande en double si l'utilisateur appuie sur le bouton Retour).
-// ============================================================================
-
+/// Écran de validation d'une commande ou d'une réservation ([MarketplaceRoutes.orderCheckout]).
+/// Adapte son formulaire ([Form] + [GlobalKey<FormState>]) selon le type d'offre :
+/// sélection et verrouillage d'un créneau libre pour un cours particulier, choix de la quantité
+/// en stock pour une ressource physique ou récapitulatif d'accès pour un PDF numérique,
+/// accompagnés d'un message initial obligatoire avant redirection vers [OrderChatScreen].
 class OrderCheckoutScreen extends StatefulWidget {
   final Offer offer;
   final AvailabilitySlot? preselectedSlot;
@@ -57,7 +44,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   void initState() {
     super.initState();
     _selectedSlot = widget.preselectedSlot;
-    // Si aucun créneau n'a été présélectionné sur l'écran précédent, on sélectionne le 1er créneau libre
+    // Présélectionne par défaut le premier créneau non réservé lorsqu'aucun choix n'a été transmis depuis la fiche détail
     if (_selectedSlot == null && widget.offer.type == OfferType.privateLesson) {
       final freeSlots = _controller
           .getSlotsForOffer(widget.offer.id)
@@ -71,11 +58,14 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
   @override
   void dispose() {
+    // Libération du contrôleur du champ de note initiale à la fermeture de l'écran.
     _noteController.dispose();
     super.dispose();
   }
 
-  /// Exécute tous les contrôles de saisie avant de créer la commande (`POST /orders`)
+  /// Vérifie la sélection d'un créneau libre (si cours particulier) ainsi que la validité du [Form],
+  /// déclenche `createOrder` (qui verrouille le créneau et initialise le chat), puis remplace
+  /// la route courante via `Navigator.pushReplacementNamed` vers [MarketplaceRoutes.orderChat].
   void _confirmOrder() {
     bool isSlotValid = true;
     if (widget.offer.type == OfferType.privateLesson && _selectedSlot == null) {
@@ -135,6 +125,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
         ),
       ),
+      // Formulaire global activant la validation interactive dès la saisie utilisateur
       body: Form(
         key: _formKey,
         autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -512,7 +503,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
             const SizedBox(height: 16),
 
-            // 4. Encadré d'information sur le paiement hors-application (Page 7)
+            // 4. Rappel des modalités de règlement hors application convenues entre acheteur et vendeur
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -629,7 +620,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   }
 }
 
-/// Carte générique de section utilisée dans l'écran de confirmation de commande
+/// Conteneur visuel réutilisable structurant chaque étape de saisie de l'écran de confirmation.
 class _SectionCard extends StatelessWidget {
   final String title;
   final String subtitle;
