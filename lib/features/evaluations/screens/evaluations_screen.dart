@@ -479,7 +479,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                       ),
                       FilledButton(
                         onPressed: () =>
-                            _controller.publishQuiz(quiz.id, !quiz.isPublished),
+                            _controller.publishQuizToggle(quiz.id, !quiz.isPublished),
                         child: Text(quiz.isPublished ? 'Masquer' : 'Publier'),
                       ),
                       IconButton(

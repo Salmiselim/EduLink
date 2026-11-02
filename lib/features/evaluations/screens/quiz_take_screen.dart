@@ -19,7 +19,7 @@ class QuizTakeScreen extends StatefulWidget {
 class _QuizTakeScreenState extends State<QuizTakeScreen> {
   final _controller = EvaluationsController.instance;
   late final Quiz _quiz;
-  late final String _attemptId;
+  String? _attemptId;
 
   /// Matrice des indices d'options sélectionnés pour chaque question du quiz.
   late List<List<int>> _answers;
@@ -36,8 +36,8 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   void initState() {
     super.initState();
     _quiz = _controller.quizById(widget.quizId)!;
-    // Crée l'enregistrement de tentative dans le contrôleur dès l'entrée sur l'écran.
-    _attemptId = _controller.startAttempt(widget.quizId);
+    // Crée l'enregistrement de tentative côté contrôleur dès l'entrée sur l'écran.
+    _createAttempt();
     _answers = List.generate(_quiz.questions.length, (_) => <int>[]);
     _remainingSeconds = _quiz.timeLimitMin * 60;
     // Décrémente le compteur chaque seconde et déclenche l'envoi automatique dès que le délai atteint zéro.
@@ -49,6 +49,13 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
         setState(() => _remainingSeconds--);
       }
     });
+  }
+
+  /// Crée la tentative de façon asynchrone et retient son identifiant.
+  Future<void> _createAttempt() async {
+    final attempt = await _controller.startAttempt(widget.quizId);
+    if (!mounted) return;
+    setState(() => _attemptId = attempt?.id);
   }
 
   @override
@@ -75,7 +82,9 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
         _answers[qi] = current;
       }
     });
-    _controller.saveAttemptAnswers(_attemptId, _answers);
+    if (_attemptId != null) {
+      _controller.saveAttemptAnswers(_attemptId!, _answers);
+    }
   }
 
   /// Valide la tentative (manuellement ou automatiquement en fin de chronomètre),
@@ -99,10 +108,12 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
       _error = null;
     });
     _timer?.cancel();
-    _controller.saveAttemptAnswers(_attemptId, _answers);
+    if (_attemptId == null) return;
+    _controller.saveAttemptAnswers(_attemptId!, _answers);
     // Correction automatique et calcul du score ramené sur 20 dans le contrôleur.
-    final score = _controller.submitAttempt(_attemptId);
+    final attempt = await _controller.submitAttempt(_attemptId!, _answers);
     if (!mounted) return;
+    final score = attempt?.score ?? 0.0;
     // Remplace l'écran de passage dans la pile de navigation pour empêcher un retour arrière sur la copie close.
     Navigator.pushReplacementNamed(
       context,

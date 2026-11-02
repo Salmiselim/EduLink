@@ -476,7 +476,7 @@ class EvaluationsRoot extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(
                   tooltip: 'Changer de rôle simulé (RoleAware)',
-                  onPressed: controller.toggleCurrentUserRole,
+                  onPressed: controller.toggleRole,
                   backgroundColor:
                       isTeacher ? EduColors.infoBg : EduColors.neutralBg,
                   avatar: Icon(

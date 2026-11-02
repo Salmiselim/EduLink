@@ -177,7 +177,7 @@ class _AssignmentSubmitScreenState extends State<AssignmentSubmitScreen> {
                 }
                 _controller.submitAssignment(
                   assignmentId: assignment.id,
-                  files: List.of(_files),
+                  fileUrls: List.of(_files),
                   comment: _comment.text.trim(),
                 );
                 Navigator.pop(context);

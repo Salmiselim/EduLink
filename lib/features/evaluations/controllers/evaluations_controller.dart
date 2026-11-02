@@ -643,7 +643,7 @@ class EvaluationsController extends ChangeNotifier {
 
   /// Publie ou dépublie un quiz. [publish] ignoré ici (le serveur gère le toggle).
   Future<Quiz?> publishQuizToggle(String quizId, [bool publish = true]) {
-    return super.publishQuiz(quizId);
+    return publishQuiz(quizId);
   }
 
   /// Crée ou met à jour un devoir. Déclenche l'API en arrière-plan.
@@ -733,7 +733,10 @@ class EvaluationsController extends ChangeNotifier {
     // Mise à jour API (non bloquante).
     _repo
         .updateDocument(documentId, {'downloadsCount': updated.downloadsCount})
-        .catchError((e) => debugPrint('[Controller] incrementDownload error: $e'));
+        .catchError((e) {
+          debugPrint('[Controller] incrementDownload error: $e');
+          return updated;
+        });
   }
 
   /// Génère des questions de quiz localement pour le brouillon Gemini (mode démo).
