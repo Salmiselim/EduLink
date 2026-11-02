@@ -609,7 +609,7 @@ class MarketplaceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ajoute un message utilisateur (avec pièce jointe optionnelle hébergée sur Cloudinary)
+  /// Ajoute un message utilisateur (avec pièce jointe optionnelle).
   /// dans le fil de discussion de la commande [orderId], puis notifie les écouteurs.
   void sendMessage(String orderId, String text, {String? attachmentLabel}) {
     final list = _messagesByOrder.putIfAbsent(orderId, () => []);
@@ -621,7 +621,7 @@ class MarketplaceController extends ChangeNotifier {
         senderName: currentUserName,
         text: text,
         attachmentUrl: attachmentLabel != null
-            ? 'https://res.cloudinary.com/edulink/upload/$attachmentLabel'
+            ? '/fichiers/edulink/upload/$attachmentLabel'
             : null,
         attachmentLabel: attachmentLabel,
         readAt: DateTime.now(),
@@ -717,7 +717,7 @@ class MarketplaceController extends ChangeNotifier {
         description:
             'Pack complet de révision en Algorithmique et Structures de Données : arbres AVL, graphes (Dijkstra, Bellman-Ford), programmation dynamique et analyse de complexité amortie. Inclut 25 sujets d\'examens corrigés étape par étape.',
         price: 12,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_algo_l2.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_algo_l2.pdf',
         fileSizeLabel: 'PDF haute qualité · 6.4 Mo · 54 pages',
         courseId: 'course_algo_1',
         courseTitle: 'Algorithmique & Structures de Données (Chapitres 1–6)',
@@ -801,7 +801,7 @@ class MarketplaceController extends ChangeNotifier {
         description:
             'Support synthétique gratuit couvrant l\'optimisation des requêtes SQL, la conception de schémas NoSQL (collections, sous-collections et index composites Firestore) et des cas pratiques.',
         price: 0,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/sql_firestore_sheet.pdf',
+        fileUrl: '/fichiers/edulink/private/sql_firestore_sheet.pdf',
         fileSizeLabel: 'PDF · 2.1 Mo · 18 pages',
         courseId: 'course_bdd_2',
         courseTitle: 'Bases de Données Relationnelles & SQL Avancé',
@@ -860,7 +860,7 @@ class MarketplaceController extends ChangeNotifier {
         description:
             'Fiches illustrées avec exercices de découpage VLSM/CIDR, analyse de trames Wireshark et protocole de routage OSPF.',
         price: 10,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_reseaux_vlsm.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_reseaux_vlsm.pdf',
         fileSizeLabel: 'PDF · 3.8 Mo · 32 pages',
         status: OfferStatus.published,
         viewsCount: 146,
@@ -1038,7 +1038,7 @@ class MarketplaceController extends ChangeNotifier {
         sellerName: 'Amine Trabelsi',
         sellerRole: SellerRole.student,
         amount: 12,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_algo_l2.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_algo_l2.pdf',
         status: OrderStatus.completed,
         note: 'Je te règle les 12 TND demain matin devant le département Info !',
         createdAt: DateTime(2026, 10, 21, 10, 30),
@@ -1078,7 +1078,7 @@ class MarketplaceController extends ChangeNotifier {
         sellerName: 'Yasmine Ben Ali',
         sellerRole: SellerRole.student,
         amount: 10,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_reseaux_vlsm.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_reseaux_vlsm.pdf',
         status: OrderStatus.accepted,
         note: 'Merci beaucoup, je passe à la pause de 13h pour le règlement hors-app.',
         createdAt: DateTime(2026, 10, 24, 09, 40),
@@ -1165,7 +1165,7 @@ class MarketplaceController extends ChangeNotifier {
         senderName: 'Dr. Salma Khelifi',
         text:
             'Bonjour Yasmine ! C\'est noté, je vous ai préparé la série d\'exercices corrigés en pièce jointe pour mardi.',
-        attachmentUrl: 'https://res.cloudinary.com/edulink/upload/serie_graphes_avl.pdf',
+        attachmentUrl: '/fichiers/edulink/upload/serie_graphes_avl.pdf',
         attachmentLabel: 'serie_graphes_avl.pdf',
         createdAt: DateTime(2026, 10, 24, 15, 02),
       ),
@@ -1196,7 +1196,7 @@ class MarketplaceController extends ChangeNotifier {
         senderId: 'buyer_skander',
         senderName: 'Skander Haddad',
         text: 'Je t\'envoie l\'énoncé du DS en pièce jointe.',
-        attachmentUrl: 'https://res.cloudinary.com/edulink/upload/ds_logique_2025.pdf',
+        attachmentUrl: '/fichiers/edulink/upload/ds_logique_2025.pdf',
         attachmentLabel: 'ds_logique_2025.pdf',
         createdAt: DateTime(2026, 10, 25, 11, 12),
       ),

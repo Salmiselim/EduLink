@@ -332,9 +332,9 @@ class Offer {
   final String subject;
   final String level;
   final String description;
-  final List<String> images; // URLs des photos d'illustration hébergées sur Cloudinary
+  final List<String> images; // URLs des photos d'illustration
   final double price; // Prix en TND (0 = gratuit)
-  final String? fileUrl; // URL privée Cloudinary (uniquement pour resource_digital)
+  final String? fileUrl; // Fichier privé (uniquement pour resource_digital)
   final String? fileSizeLabel; // Métadonnées affichées pour le fichier PDF
   final OfferCondition? condition; // État neuf | bon | usagé (pour resource_physical)
   final int? quantity; // Stock disponible (pour resource_physical)

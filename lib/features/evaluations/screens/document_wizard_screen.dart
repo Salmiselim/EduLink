@@ -73,10 +73,18 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
             // Liste déroulante associant le document à l'un des cours gérés par l'enseignant.
             DropdownButtonFormField<String>(
               initialValue: _courseId,
+              isExpanded: true,
               decoration: evalInputDecoration(label: 'Cours'),
               items: _controller.accessibleCourses
                   .map(
-                    (c) => DropdownMenuItem(value: c.id, child: Text(c.title)),
+                    (c) => DropdownMenuItem(
+                      value: c.id,
+                      child: Text(
+                        c.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   )
                   .toList(),
               onChanged: (v) => setState(() => _courseId = v),

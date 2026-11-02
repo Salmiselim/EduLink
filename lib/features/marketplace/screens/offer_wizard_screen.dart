@@ -45,8 +45,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
   String _selectedLevel = 'L2';
   OfferCondition _selectedCondition = OfferCondition.bon;
   int _stockQuantity = 1;
-  String? _uploadedFileName = 'support_revision_edulink.pdf';
-  final List<String> _uploadedPhotos = ['photo_couverture_1.jpg'];
+  String? _uploadedFileName;
+  final List<String> _uploadedPhotos = [];
   String? _mediaValidationError;
 
   // --- ÉTAPE 3 : Prix en TND (0 = offre gratuite) ---
@@ -75,7 +75,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     '2. Infos & Médias',
     '3. Prix (TND)',
     '4. Mode, Lieu & Créneaux',
-    '5. Cours lié (L6)',
+    '5. Cours lié',
     '6. Aperçu & Publication',
   ];
 
@@ -407,7 +407,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       images: _uploadedPhotos,
       price: parsedPrice,
       fileUrl: _selectedType == OfferType.resourceDigital
-          ? 'https://res.cloudinary.com/edulink/private/${_uploadedFileName ?? "document.pdf"}'
+          ? '/fichiers/edulink/private/${_uploadedFileName ?? "document.pdf"}'
           : null,
       fileSizeLabel: _selectedType == OfferType.resourceDigital
           ? 'PDF privé · ${_uploadedFileName ?? "document.pdf"}'
@@ -541,15 +541,19 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text(
-                      _stepTitles[_currentStep],
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1E3A8A),
+                    Expanded(
+                      child: Text(
+                        _stepTitles[_currentStep],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E3A8A),
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       'Étape ${_currentStep + 1} sur ${_stepTitles.length}',
                       style: TextStyle(
@@ -592,45 +596,72 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
               child: Row(
                 children: [
                   if (_currentStep > 0)
-                    OutlinedButton.icon(
-                      onPressed: () => setState(() => _currentStep--),
-                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                      label: const Text('Précédent'),
+                    Flexible(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() => _currentStep--),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                        label: const Text(
+                          'Précédent',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
                   const Spacer(),
                   if (_currentStep < _stepTitles.length - 1)
-                    FilledButton.icon(
-                      onPressed: _goToNextStep,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
+                    Flexible(
+                      child: FilledButton.icon(
+                        onPressed: _goToNextStep,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        icon: const Icon(Icons.arrow_forward_rounded,
+                            size: 18),
+                        label: const Text(
+                          'Étape suivante',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                      label: const Text('Étape suivante'),
                     )
                   else ...[
-                    OutlinedButton(
-                      onPressed: () =>
-                          _submitOffer(status: OfferStatus.draft),
-                      child: const Text('Brouillon'),
-                    ),
-                    const SizedBox(width: 10),
-                    FilledButton.icon(
-                      onPressed: () =>
-                          _submitOffer(status: OfferStatus.published),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF16A34A),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
+                    Flexible(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            _submitOffer(status: OfferStatus.draft),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        child: const Text(
+                          'Brouillon',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      icon: const Icon(Icons.rocket_launch_rounded, size: 18),
-                      label: Text(
-                        _isEditing ? 'Enregistrer' : 'Publier l\'offre',
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            _submitOffer(status: OfferStatus.published),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 12,
+                          ),
+                        ),
+                        icon: const Icon(Icons.rocket_launch_rounded,
+                            size: 18),
+                        label: Text(
+                          _isEditing ? 'Enregistrer' : 'Publier l\'offre',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
@@ -839,6 +870,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   flex: 2,
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedSubject,
+                    isExpanded: true,
                     decoration: InputDecoration(
                       labelText: 'Matière *',
                       border: OutlineInputBorder(
@@ -846,7 +878,16 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                       ),
                     ),
                     items: MarketplaceController.subjects
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(
+                              s,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => _selectedSubject = val);
@@ -857,6 +898,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedLevel,
+                    isExpanded: true,
                     decoration: InputDecoration(
                       labelText: 'Niveau *',
                       border: OutlineInputBorder(
@@ -1000,7 +1042,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
             const SizedBox(height: 14),
             const Text(
-              'Photos d\'illustration (`images[]`)',
+              'Photos d\'illustration',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
             ),
             const SizedBox(height: 8),
@@ -1418,9 +1460,11 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const Text(
             'Rattacher l\'offre à un cours (Optionnel)',
             style: TextStyle(
@@ -1431,7 +1475,9 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Une offre rattachée à un cours (`offers.courseId`) apparaît directement sur la page de ce cours et dans les recommandations des étudiants inscrits.',
+            'Une offre rattachée à un cours (offers.courseId) apparaît '
+            'directement sur la page de ce cours et dans les recommandations '
+            'des étudiants inscrits.',
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 14),
@@ -1467,6 +1513,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -1497,12 +1544,16 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             children: [
               const Icon(Icons.verified_outlined, color: Color(0xFF16A34A)),
               const SizedBox(width: 8),
-              const Text(
-                'Aperçu avant publication',
-                style: TextStyle(
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+              const Expanded(
+                child: Text(
+                  'Aperçu avant publication',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
               ),
               const Spacer(),

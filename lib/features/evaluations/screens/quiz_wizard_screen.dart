@@ -290,15 +290,20 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           // Choix du cours auquel rattacher l'évaluation parmi les cours gérés par l'enseignant.
           DropdownButtonFormField<String>(
             initialValue: _courseId,
+            isExpanded: true,
             decoration: evalInputDecoration(
-              label: 'Cours lié (L4)',
+              label: 'Cours lié',
               icon: Icons.menu_book_rounded,
             ),
             items: _controller.accessibleCourses
                 .map(
                   (c) => DropdownMenuItem(
                     value: c.id,
-                    child: Text('${c.title} · ${c.level}'),
+                    child: Text(
+                      '${c.title} · ${c.level}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 )
                 .toList(),

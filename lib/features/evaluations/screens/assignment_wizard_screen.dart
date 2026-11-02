@@ -155,12 +155,17 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                     // Sélecteur déroulant rattachant le devoir à l'un des cours de l'enseignant.
                     DropdownButtonFormField<String>(
                       initialValue: _courseId,
-                      decoration: evalInputDecoration(label: 'Cours (L4)'),
+                      isExpanded: true,
+                      decoration: evalInputDecoration(label: 'Cours'),
                       items: _controller.accessibleCourses
                           .map(
                             (c) => DropdownMenuItem(
                               value: c.id,
-                              child: Text(c.title),
+                              child: Text(
+                                c.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           )
                           .toList(),

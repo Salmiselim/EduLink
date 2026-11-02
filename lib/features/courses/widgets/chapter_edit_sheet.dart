@@ -276,14 +276,14 @@ class ChapterEditSheet {
                   // Génère une URI de stockage média pour illustrer le rattachement d'un document PDF.
                   setSheetState(() {
                     controller.text =
-                        'cloudinary://edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
+                        '/documents/edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
                   });
                   ScaffoldMessenger.of(sheetContext).showSnackBar(
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
                         'Fichier simulé — upload via le service média '
-                        '(Cloudinary) — intégration à venir.',
+                        '— intégration à venir.',
                       ),
                     ),
                   );

@@ -488,7 +488,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                       duration: Duration(seconds: 2),
                       content: Text(
                         'Image de couverture via le service média '
-                        '(Cloudinary) — intégration à venir.',
+                        '— intégration à venir.',
                       ),
                     ),
                   );
