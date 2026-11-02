@@ -1,5 +1,8 @@
 plugins {
     id("com.android.application")
+    // Plugin Google services : rend le fichier google-services.json accessible
+    // aux SDK Firebase Android (requis par les plugins Flutter Firebase).
+    id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
