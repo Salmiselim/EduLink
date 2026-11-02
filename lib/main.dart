@@ -49,6 +49,7 @@ Future<void> _initFirebase() async {
     AuthService.onSignedIn = (user) async {
       await CoursesController.instance.connectCloud();
       await MarketplaceController.instance.connectFirestore();
+      await EvaluationsController.instance.connectCloud();
     };
     await CoursesController.instance.connectCloud();
   } catch (e) {

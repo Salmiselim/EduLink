@@ -1,6 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import '../../courses/data/courses_mock_data.dart';
 import '../models/evaluations_models.dart';
 import '../services/evaluations_api_service.dart';
+import '../services/evaluations_firestore_service.dart';
 import '../services/evaluations_local_service.dart';
 import '../repositories/evaluations_repository.dart';
 
@@ -40,14 +45,14 @@ class EvaluationsController extends ChangeNotifier {
 
   Future<void> _initRepository() async {
     final local = EvaluationsLocalService();
-    final api = EvaluationsApiService(
-      getToken: () async {
-        // En debug sans Firebase, retourne null (pas d'en-tête Authorization).
-        // En production, remplacer par :
-        //   return await FirebaseAuth.instance.currentUser?.getIdToken();
-        return null;
-      },
-    );
+    // Source de données : Firestore quand Firebase est initialisé, sinon
+    // l'ancien client REST. Les deux implémentations partagent la même
+    // surface d'appels (voir EvaluationsFirestoreService).
+    final EvaluationsApiService api = Firebase.apps.isNotEmpty
+        ? EvaluationsFirestoreService()
+        : EvaluationsApiService(
+            getToken: () async => null,
+          );
     _repo = EvaluationsRepository(
       api: api,
       local: local,
@@ -89,6 +94,45 @@ class EvaluationsController extends ChangeNotifier {
     }
     loadAll();
     notifyListeners();
+  }
+
+  /// Connecte le contrôleur au compte Firebase : identité réelle (uid, nom,
+  /// rôle lu dans `users/{uid}`), liaison L4 avec les cours du module Cours
+  /// (mêmes identifiants), puis rechargement des données depuis Firestore.
+  Future<void> connectCloud() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      currentUserId = user.uid;
+      currentUserName = (userDoc.data()?['name'] as String?) ??
+          user.displayName ??
+          'Utilisateur EduLink';
+      currentUserRole = (userDoc.data()?['role'] == 'teacher')
+          ? UserRole.teacher
+          : UserRole.student;
+      if (_ready) {
+        _repo.currentUserId = currentUserId;
+        _repo.currentUserName = currentUserName;
+        _repo.currentUserRole = currentUserRole;
+      }
+      // Liaison L4 réelle : les cours rattachés proviennent du module Cours.
+      _courses = CoursesController.instance.publishedCourses
+          .map((c) => LinkedCourse(
+                id: c.id,
+                title: c.title,
+                subject: c.subject,
+                level: c.level,
+                teacherId: c.teacherId,
+                teacherName: c.teacherName,
+              ))
+          .toList();
+      if (_ready) await loadAll();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[EvalCloud] connectCloud : $e');
+    }
   }
 
   // ── État de chargement ────────────────────────────────────────────────────
@@ -465,7 +509,7 @@ class EvaluationsController extends ChangeNotifier {
   /// Liste brute des cours accessibles (utilisée dans les wizards enseignant).
   /// En attendant le chargement API, retourne une liste locale statique de démo.
   List<LinkedCourse> get courses => _courses;
-  final List<LinkedCourse> _courses = const [
+  List<LinkedCourse> _courses = const [
     LinkedCourse(
       id: 'course_algo_1',
       title: 'Algorithmique',
