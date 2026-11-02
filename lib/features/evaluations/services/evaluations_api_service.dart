@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/evaluations_models.dart';
 
@@ -309,62 +310,73 @@ class EvaluationsApiService {
   /// désérialiser les entrées JSON stockées dans le cache Hive local.
   Quiz quizFromJsonPublic(Map<String, dynamic> j) => _quizFromJson(j);
 
+  /// Date tolérante : accepte un ISO string, un Timestamp Firestore ou null.
+  DateTime _safeDate(dynamic v, {DateTime? fallback}) {
+    if (v is DateTime) return v;
+    if (v is Timestamp) return v.toDate();
+    if (v is String) return DateTime.tryParse(v) ?? fallback ?? DateTime.now();
+    return fallback ?? DateTime.now();
+  }
+
   Quiz _quizFromJson(Map<String, dynamic> j) => Quiz(
-        id: j['id'] as String,
-        courseId: j['courseId'] as String,
+        id: j['id'] as String? ?? '',
+        courseId: j['courseId'] as String? ?? '',
         courseTitle: j['courseTitle'] as String? ?? '',
-        teacherId: j['teacherId'] as String,
+        teacherId: j['teacherId'] as String? ?? '',
         teacherName: j['teacherName'] as String? ?? '',
-        title: j['title'] as String,
-        timeLimitMin: (j['timeLimitMin'] as num).toInt(),
-        attemptsAllowed: (j['attemptsAllowed'] as num).toInt(),
-        availableFrom: DateTime.parse(j['availableFrom'] as String),
-        dueDate: DateTime.parse(j['dueDate'] as String),
+        title: j['title'] as String? ?? 'Quiz sans titre',
+        timeLimitMin: (j['timeLimitMin'] as num? ?? 10).toInt(),
+        attemptsAllowed: (j['attemptsAllowed'] as num? ?? 1).toInt(),
+        availableFrom: _safeDate(j['availableFrom']),
+        dueDate: _safeDate(j['dueDate']),
         isPublished: j['isPublished'] as bool? ?? false,
-        questions: (j['questions'] as List? ?? [])
-            .map((q) => _questionFromJson(q as Map<String, dynamic>))
-            .toList(),
+        questions: [
+          for (var i = 0; i < (j['questions'] as List? ?? []).length; i++)
+            _questionFromJson(
+                (j['questions'] as List)[i] as Map<String, dynamic>, i),
+        ],
       );
 
-  QuizQuestion _questionFromJson(Map<String, dynamic> j) => QuizQuestion(
-        id: j['id'] as String,
-        type: (j['type'] as String) == 'vrai_faux'
+  QuizQuestion _questionFromJson(Map<String, dynamic> j, [int index = 0]) =>
+      QuizQuestion(
+        id: (j['id'] as String?) ?? 'q_$index',
+        type: (j['type'] as String?) == 'vrai_faux'
             ? QuestionType.vraiFaux
             : QuestionType.qcm,
-        text: j['text'] as String,
-        options: (j['options'] as List).cast<String>(),
-        correct: (j['correct'] as List).cast<int>(),
-        points: (j['points'] as num).toDouble(),
+        text: j['text'] as String? ?? '',
+        options: (j['options'] as List? ?? []).cast<String>(),
+        correct: (j['correct'] as List? ?? []).cast<int>(),
+        points: (j['points'] as num? ?? 1).toDouble(),
         explanation: j['explanation'] as String? ?? '',
       );
 
   QuizAttempt _attemptFromJson(Map<String, dynamic> j) => QuizAttempt(
-        id: j['id'] as String,
-        quizId: j['quizId'] as String,
-        studentId: j['studentId'] as String,
+        id: j['id'] as String? ?? '',
+        quizId: j['quizId'] as String? ?? '',
+        studentId: j['studentId'] as String? ?? '',
         studentName: j['studentName'] as String? ?? '',
-        attemptNo: (j['attemptNo'] as num).toInt(),
+        attemptNo: (j['attemptNo'] as num? ?? 1).toInt(),
         answers: (j['answers'] as List? ?? [])
             .map((a) => (a as List).cast<int>())
             .toList(),
         score: j['score'] != null ? (j['score'] as num).toDouble() : null,
-        startedAt: DateTime.parse(j['startedAt'] as String),
+        startedAt: _safeDate(j['startedAt']),
         submittedAt: j['submittedAt'] != null
-            ? DateTime.parse(j['submittedAt'] as String)
+            ? _safeDate(j['submittedAt'])
             : null,
       );
 
   Assignment _assignmentFromJson(Map<String, dynamic> j) => Assignment(
-        id: j['id'] as String,
-        courseId: j['courseId'] as String,
+        id: j['id'] as String? ?? '',
+        courseId: j['courseId'] as String? ?? '',
         courseTitle: j['courseTitle'] as String? ?? '',
-        teacherId: j['teacherId'] as String,
+        teacherId: j['teacherId'] as String? ?? '',
         teacherName: j['teacherName'] as String? ?? '',
-        title: j['title'] as String,
+        title: j['title'] as String? ?? 'Devoir sans titre',
         instructions: j['instructions'] as String? ?? '',
         attachments: (j['attachments'] as List? ?? []).cast<String>(),
-        dueDate: DateTime.parse(j['dueDate'] as String),
-        maxGrade: (j['maxGrade'] as num).toDouble(),
+        dueDate: _safeDate(j['dueDate']),
+        maxGrade: (j['maxGrade'] as num? ?? 20).toDouble(),
         allowLate: j['allowLate'] as bool? ?? false,
       );
 
@@ -375,7 +387,7 @@ class EvaluationsApiService {
         studentName: j['studentName'] as String? ?? '',
         fileUrls: (j['fileUrls'] as List? ?? []).cast<String>(),
         comment: j['comment'] as String? ?? '',
-        submittedAt: DateTime.parse(j['submittedAt'] as String),
+        submittedAt: _safeDate(j['submittedAt']),
         isLate: j['isLate'] as bool? ?? false,
         status: (j['status'] as String?) == 'graded'
             ? SubmissionStatus.graded
@@ -383,7 +395,7 @@ class EvaluationsApiService {
         grade: j['grade'] != null ? (j['grade'] as num).toDouble() : null,
         feedback: j['feedback'] as String?,
         gradedAt: j['gradedAt'] != null
-            ? DateTime.parse(j['gradedAt'] as String)
+            ? _safeDate(j['gradedAt'])
             : null,
       );
 
@@ -404,7 +416,7 @@ class EvaluationsApiService {
       folder: folder,
       fileUrl: j['fileUrl'] as String? ?? '',
       order: (j['order'] as num? ?? 0).toInt(),
-      visibleFrom: DateTime.parse(j['visibleFrom'] as String),
+      visibleFrom: _safeDate(j['visibleFrom']),
       downloadsCount: (j['downloadsCount'] as num? ?? 0).toInt(),
     );
   }

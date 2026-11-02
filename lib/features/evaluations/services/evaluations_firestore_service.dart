@@ -84,6 +84,7 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       'id': id,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
+      'questions': _questionsWithIds(body['questions'] as List?),
     };
     await _quizzes.doc(id).set(doc);
     return quizFromJsonPublic(doc);
@@ -92,7 +93,10 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<Quiz> updateQuiz(String quizId, Map<String, dynamic> body) async {
     await _ensureIdentity();
-    await _quizzes.doc(quizId).update(body);
+    final safeBody = {...body};
+    safeBody['questions'] =
+        _questionsWithIds(safeBody['questions'] as List?);
+    await _quizzes.doc(quizId).update(safeBody);
     final doc = await _quizzes.doc(quizId).get();
     return quizFromJsonPublic({'id': quizId, ...doc.data()!});
   }
@@ -493,6 +497,19 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   // ════════════════════════════════════════════════════════════════════════
   // MAPPING (mêmes clés que le contrat JSON de l'API)
   // ════════════════════════════════════════════════════════════════════════
+
+  /// Garantit un `id` stable pour chaque question (les body du contrôleur
+  /// n'en contiennent pas — l'index sert de repli).
+  List<Map<String, dynamic>> _questionsWithIds(List? questions) {
+    final list = questions ?? const [];
+    return [
+      for (var i = 0; i < list.length; i++)
+        {
+          ...(list[i] as Map<String, dynamic>),
+          'id': ((list[i] as Map<String, dynamic>)['id'] as String?) ?? 'q_$i',
+        },
+    ];
+  }
 
   Map<String, dynamic> _attemptMap(QuizAttempt a) => {
         'quizId': a.quizId,
