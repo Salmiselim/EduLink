@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'package:provider/provider.dart';
 
+import 'firebase_options.dart';
 import 'features/auth/screens/sign_in_screen.dart';
 import 'features/courses/data/courses_mock_data.dart';
 import 'features/courses/models/courses_models.dart';
@@ -38,7 +39,9 @@ Future<void> main() async {
 /// reste utilisable avec les données en mémoire.
 Future<void> _initFirebase() async {
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     MarketplaceFirestoreService.enableOfflinePersistence();
     await MarketplaceController.instance.connectFirestore();
   } catch (e) {
