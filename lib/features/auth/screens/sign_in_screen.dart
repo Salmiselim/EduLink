@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../main.dart';
+import '../services/auth_service.dart';
 import '../widgets/auth_ui.dart';
 import 'forgot_password_screen.dart';
 import 'sign_up_screen.dart';
@@ -53,9 +54,26 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   /// Déclenche la validation des `TextFormField` avant d'autoriser l'entrée dans l'application.
-  void _submit() {
+  Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    _enterApp(message: 'Bienvenue sur EduLink ! (mode démonstration)');
+    final result = await AuthService.instance.signIn(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
+    if (!mounted) return;
+    switch (result.outcome) {
+      case AuthOutcome.failure:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 3),
+            content: Text(result.error ?? 'Connexion impossible.'),
+          ),
+        );
+      case AuthOutcome.success:
+        _enterApp(message: 'Bienvenue sur EduLink !');
+      case AuthOutcome.demo:
+        _enterApp(message: 'Bienvenue sur EduLink ! (mode démonstration)');
+    }
   }
 
   @override
