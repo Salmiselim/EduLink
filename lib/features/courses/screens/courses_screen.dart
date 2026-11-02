@@ -5,14 +5,12 @@ import '../routes/courses_routes.dart';
 import '../widgets/course_card.dart';
 import '../widgets/courses_ui.dart';
 
-// ============================================================================
-// ÉCRAN PRINCIPAL DE L'ONGLET COURS (CoursesScreen)
-// Page 5 du Plan d'équipe — Section Flutter :
-// « onglet Cours (vue enseignant : mes cours + assistant ; vue étudiant :
-// mes cours + catalogue), lecteur de chapitres en route poussée ».
-// La vue enseignant ajoute le tableau de bord de progression (Métier 3).
-// ============================================================================
+// Écran racine de l'onglet Cours (`CoursesScreen`), intégré au `Scaffold` principal.
+// Adapte dynamiquement ses deux sous-sections au rôle courant de `CoursesController` :
+// - profil étudiant   : cours suivis avec reprise rapide et catalogue filtrable ;
+// - profil enseignant : gestion des cours créés et tableau de bord analytique.
 
+/// Vue principale de l'onglet Cours gérant la bascule de section et l'état des filtres.
 class CoursesScreen extends StatefulWidget {
   const CoursesScreen({super.key});
 
@@ -24,14 +22,14 @@ class _CoursesScreenState extends State<CoursesScreen> {
   final CoursesController _controller = CoursesController.instance;
   final TextEditingController _searchController = TextEditingController();
 
-  /// Bascule principale : 0 = Mes cours · 1 = Catalogue (étudiant) ou
-  /// Statistiques (enseignant)
+  /// Indice de la sous-vue active dans le `SegmentedButton` :
+  /// `0` pour « Mes cours », `1` pour « Catalogue » (étudiant) ou « Statistiques » (enseignant).
   int _section = 0;
 
-  // --- État des filtres du catalogue (Métier 2) ---
+  // Critères actifs de filtrage et de tri appliqués au catalogue étudiant.
   String? _filterSubject;
   String? _filterLevel;
-  String _sortBy = 'recent'; // recent | popular | title
+  String _sortBy = 'recent'; // Valeurs possibles : 'recent', 'popular', 'title'.
 
   @override
   void dispose() {
@@ -39,6 +37,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
     super.dispose();
   }
 
+  /// Nombre de filtres de matière et de niveau actifs, affiché sur le `Badge` du bouton « Filtres & tri ».
   int get _activeFiltersCount {
     int count = 0;
     if (_filterSubject != null) count++;
@@ -46,8 +45,8 @@ class _CoursesScreenState extends State<CoursesScreen> {
     return count;
   }
 
-  /// Filtre et trie le catalogue public
-  /// Endpoint simulé : `GET /courses?subject=&level=&q=`
+  /// Filtre les cours publiés par matière, niveau et texte libre (titre, description,
+  /// matière ou nom de l'enseignant), puis ordonne le résultat selon `_sortBy`.
   List<Course> _getFilteredCatalogCourses() {
     final query = _searchController.text.trim().toLowerCase();
     final list = _controller.publishedCourses.where((course) {
@@ -80,8 +79,8 @@ class _CoursesScreenState extends State<CoursesScreen> {
     return list;
   }
 
-  /// Recommandations d'après les matières des cours déjà suivis :
-  /// ici les cours suggérés partagent une matière avec un cours suivi)
+  /// Suggère des cours publiés non encore rejoints partageant une matière
+  /// avec au moins un cours déjà suivi par l'étudiant connecté.
   List<Course> _getRecommendedCourses() {
     final followedSubjects =
         _controller.enrolledCourses.map((c) => c.subject).toSet();
@@ -93,6 +92,8 @@ class _CoursesScreenState extends State<CoursesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // S'abonne à `CoursesController` pour réagir au changement de rôle, aux inscriptions
+    // et aux modifications de cours ou de progression sans gestion manuelle de flux.
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
@@ -100,7 +101,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
 
         return Column(
           children: [
-            // Bascule principale de l'onglet Cours (SegmentedButton — M3)
+            // Sélecteur segmenté (`SegmentedButton`) adaptant ses deux onglets au rôle actif.
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: SegmentedButton<int>(
@@ -135,6 +136,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
                     setState(() => _section = selection.first),
               ),
             ),
+            // Occupe tout l'espace vertical restant sous le sélecteur pour afficher la sous-vue choisie.
             Expanded(
               child: isTeacher
                   ? (_section == 0
@@ -150,10 +152,10 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  // ===========================================================================
-  // VUE ÉTUDIANT — « Mes cours » (inscriptions & reprise de lecture)
-  // ===========================================================================
+  // Vue étudiant — section « Mes cours » : carrousel de reprise et liste des cours suivis.
 
+  /// Construit la liste des cours rejoints par l'étudiant avec leur progression
+  /// et un bandeau horizontal de reprise rapide pour les cours entamés.
   Widget _buildStudentCourses() {
     final enrollments = _controller.myEnrollments;
     if (enrollments.isEmpty) {
@@ -213,10 +215,10 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  // ===========================================================================
-  // VUE ÉTUDIANT — « Catalogue » (recherche, filtres, recommandations)
-  // ===========================================================================
+  // Vue étudiant — section « Catalogue » : recherche, puces de matières et recommandations.
 
+  /// Construit l'explorateur des cours publiés avec barre de recherche temps réel,
+  /// ruban horizontal de `ChoiceChip` par matière et ouverture du panneau de filtres avancés.
   Widget _buildCatalog() {
     final results = _getFilteredCatalogCourses();
     final recommendations =
@@ -226,7 +228,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
 
     return Column(
       children: [
-        // Recherche instantanée + puces matières + filtres & tri
+        // En-tête fixe regroupant le champ de recherche, les `ChoiceChip` de matière et le bouton de tri.
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -375,10 +377,10 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  // ===========================================================================
-  // VUE ENSEIGNANT — « Mes cours » (CRUD + publication)
-  // ===========================================================================
+  // Vue enseignant — section « Mes cours » : compteurs synthétiques et liste gérable.
 
+  /// Affiche les indicateurs rapides (`StatCard` répartis via `Expanded`) suivis
+  /// des cours créés par l'enseignant avec accès aux options de gestion.
   Widget _buildTeacherCourses() {
     final courses = _controller.teacherCourses;
 
@@ -440,8 +442,8 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  /// Feuille coulissante « Options du cours » (modifier, gérer, publier,
-  /// supprimer) — les actions secondaires vivent dans des bottom sheets.
+  /// Ouvre une `ModalBottomSheet` regroupant les actions d'administration d'un cours :
+  /// édition dans l'assistant, gestion des chapitres/inscrits, publication et suppression.
   void _openCourseOptionsSheet(Course course) {
     showModalBottomSheet<void>(
       context: context,
@@ -574,7 +576,8 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  /// Boîte de dialogue de confirmation avant suppression (critère 5)
+  /// Affiche un `AlertDialog` de confirmation avant d'appeler `CoursesController.deleteCourse`
+  /// afin d'éviter toute suppression accidentelle du cours et de ses inscriptions.
   void _confirmDeleteCourse(Course course) {
     showDialog<void>(
       context: context,
@@ -612,10 +615,10 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  // ===========================================================================
-  // VUE ENSEIGNANT — « Statistiques » (tableau de bord — Métier 3)
-  // ===========================================================================
+  // Vue enseignant — section « Statistiques » : suivi global et points de décrochage.
 
+  /// Construit le tableau de bord analytique de l'enseignant : totaux globaux,
+  /// chapitres au plus faible taux d'achèvement et barre de progression moyenne par cours.
   Widget _buildTeacherStats() {
     final leastCompleted = _controller.leastCompletedChapters(limit: 5);
     final coursesWithStudents = _controller.teacherCourses
@@ -743,10 +746,9 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  // ===========================================================================
-  // Actions partagées : navigation, inscription, feuilles coulissantes
-  // ===========================================================================
+  // Méthodes utilitaires de navigation et feuilles modales partagées.
 
+  /// Pousse la route nommée `CoursesRoutes.courseDetail` avec un `CourseDetailArgs` typé.
   void _openCourse(String courseId) {
     Navigator.pushNamed(
       context,
@@ -755,7 +757,8 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  /// Feuille de confirmation d'inscription (`POST /enrollments`)
+  /// Ouvre une `ModalBottomSheet` récapitulant les métadonnées du cours avant de
+  /// valider l'inscription de l'étudiant via `CoursesController.enroll`.
   void _openEnrollSheet(Course course) {
     showModalBottomSheet<void>(
       context: context,
@@ -870,7 +873,9 @@ class _CoursesScreenState extends State<CoursesScreen> {
     );
   }
 
-  /// Feuille coulissante « Filtres & tri » du catalogue
+  /// Ouvre une `ModalBottomSheet` pilotée par un `StatefulBuilder` local permettant
+  /// de combiner filtre de matière (`Wrap` de `ChoiceChip`), niveau et critère de tri
+  /// (`SegmentedButton`) avant d'appliquer la sélection à l'état du catalogue.
   void _openFiltersSheet() {
     String? subject = _filterSubject;
     String? level = _filterLevel;
@@ -1092,11 +1097,11 @@ class _CoursesScreenState extends State<CoursesScreen> {
   }
 }
 
-// ============================================================================
-// WIDGETS PRIVÉS DE L'ÉCRAN
-// ============================================================================
+// Composants privés dédiés aux sous-sections de `CoursesScreen`.
 
-/// Carte horizontale « Continuer la lecture » (reprise là où l'on s'est arrêté)
+/// Carte compacte cliquable (`InkWell`) du carrousel « Continuer la lecture »,
+/// affichant la barre de progression et ouvrant directement `ChapterReaderScreen`
+/// sur le dernier chapitre consulté.
 class _ContinueCard extends StatelessWidget {
   final Enrollment enrollment;
 
@@ -1214,7 +1219,8 @@ class _ContinueCard extends StatelessWidget {
   }
 }
 
-/// Carte « chapitre le moins terminé » du tableau de bord enseignant
+/// Tuile analytique représentant un chapitre à faible complétion dans l'onglet
+/// « Statistiques », avec code couleur sémantique selon le pourcentage atteint.
 class _ChapterStatCard extends StatelessWidget {
   final ChapterCompletionStat stat;
 

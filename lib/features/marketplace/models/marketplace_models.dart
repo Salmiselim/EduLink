@@ -1,21 +1,21 @@
+// `package:flutter/material.dart` est importé ici uniquement pour les types `Color` et `IconData`
+// associés aux énumérations (`OfferType`, `OfferStatus`, `OrderStatus`), ce qui centralise
+// la charte graphique (couleurs et icônes par type/statut) directement sur les modèles typés.
 import 'package:flutter/material.dart';
 
-// ============================================================================
-// MODÈLES DE DONNÉES — MODULE M5 : MARKETPLACE (Pages 7 et 8 du Plan d'équipe)
-// Correspond aux collections Firestore :
-// - offers
-// - availabilities
-// - orders
-// - reviews (id = orderId)
-// - favorites
-// - reports
-// - conversations & conversations/{id}/messages
-// ============================================================================
+// Modèles de données immuables de la Marketplace EduLink.
+// Structure alignée sur les collections Firestore :
+// - offers : ressources numériques, ressources physiques et cours particuliers
+// - availabilities : créneaux horaires rattachés aux cours particuliers
+// - orders : commandes et réservations entre acheteurs et vendeurs
+// - reviews : avis vérifiés (identifiant du document égal à orderId)
+// - favorites & reports : favoris utilisateurs et signalements de modération
+// - conversations & conversations/{id}/messages : messagerie temps réel par commande
 
-/// Les 3 types d'offres autorisés dans la Marketplace (Page 7) :
-/// - [resourceDigital] (`resource_digital`) : ex. Fiches PDF, annales corrigées
-/// - [resourcePhysical] (`resource_physical`) : ex. Livre d'occasion, polycopié, calculatrice
-/// - [privateLesson] (`private_lesson`) : ex. Cours particulier d'1 heure (en ligne Jitsi ou présentiel)
+/// Catégories d'offres prises en charge dans le catalogue :
+/// - [resourceDigital] (`resource_digital`) : supports numériques PDF (fiches, annales corrigées)
+/// - [resourcePhysical] (`resource_physical`) : ouvrages ou matériel académique d'occasion
+/// - [privateLesson] (`private_lesson`) : séance individuelle d'une heure (en ligne via Jitsi ou en présentiel)
 enum OfferType {
   resourceDigital,
   resourcePhysical,
@@ -82,8 +82,8 @@ enum OfferType {
   }
 }
 
-/// Rôle du vendeur (`offers.sellerRole`) — Implémente la Règle 5 (Page 2) :
-/// Chaque offre affiche l'origine du vendeur : « Offre étudiant » ou « Enseignant vérifié ».
+/// Profil d'origine du vendeur (`offers.sellerRole`) permettant de distinguer
+/// visuellement une publication étudiante d'une publication d'enseignant vérifié.
 enum SellerRole {
   student,
   teacher;
@@ -132,8 +132,8 @@ enum DeliveryMode {
   }
 }
 
-/// Statut du cycle de vie d'une offre (`offers.status` : draft | published | sold_out | hidden)
-/// Note : Une offre passe automatiquement à `hidden` à partir de 3 signalements (Page 8).
+/// Cycle de vie d'une offre dans le catalogue (`draft`, `published`, `sold_out`, `hidden`).
+/// Une offre publiée bascule automatiquement vers [hidden] lorsqu'elle cumule 3 signalements.
 enum OfferStatus {
   draft,
   published,
@@ -167,12 +167,12 @@ enum OfferStatus {
   }
 }
 
-/// Statut du parcours d'une commande (`orders.status`, Page 7-8) :
-/// 1. [requested] : créée par l'acheteur (créneau verrouillé par transaction Firestore)
-/// 2. [accepted] : acceptée par le vendeur (PDF débloqué, stock diminué, ou lien Jitsi généré)
-/// 3. [completed] : terminée après remise/séance (ouvre le droit de laisser un avis 1-5 ★)
-/// 4. [rejected] : refusée par le vendeur (libère le créneau et le stock)
-/// 5. [cancelled] : annulée par l'acheteur avant acceptation (libère le créneau et le stock)
+/// États successifs d'une commande ou réservation (`orders.status`) :
+/// - [requested] : demande envoyée par l'acheteur (verrouille le créneau choisi le cas échéant)
+/// - [accepted] : confirmée par le vendeur (débloque le PDF privé, décrémente le stock ou génère le lien Jitsi)
+/// - [completed] : remise ou séance effectuée (autorise le dépôt d'un unique avis noté de 1 à 5 étoiles)
+/// - [rejected] : déclinée par le vendeur (libère automatiquement le créneau réservé)
+/// - [cancelled] : annulée par l'acheteur avant acceptation (libère le créneau réservé)
 enum OrderStatus {
   requested,
   accepted,
@@ -226,8 +226,8 @@ enum OrderStatus {
   }
 }
 
-/// Coordonnées géographiques et adresse d'une offre (`offers.location {address, lat, lng}`)
-/// Résolues via l'API externe gratuite OpenStreetMap Nominatim (Page 8).
+/// Adresse postale et coordonnées GPS (`lat`, `lng`) d'un lieu de remise ou de cours en présentiel,
+/// résolues via le service de géocodage OpenStreetMap Nominatim.
 class OfferLocation {
   final String address;
   final String city;
@@ -240,10 +240,22 @@ class OfferLocation {
     required this.lat,
     required this.lng,
   });
+
+  /// Conversion vers un document Firestore (sous-map `location` de l'offre).
+  Map<String, dynamic> toMap() =>
+      {'address': address, 'city': city, 'lat': lat, 'lng': lng};
+
+  /// Reconstruit le lieu depuis la map Firestore.
+  factory OfferLocation.fromMap(Map<String, dynamic> m) => OfferLocation(
+        address: m['address'] as String? ?? '',
+        city: m['city'] as String? ?? '',
+        lat: (m['lat'] as num? ?? 0).toDouble(),
+        lng: (m['lng'] as num? ?? 0).toDouble(),
+      );
 }
 
-/// Créneau de disponibilité d'un cours particulier (Collection Firestore `availabilities`, Page 7).
-/// Lorsqu'un acheteur réserve ce créneau, [isBooked] passe à `true` et [orderId] est renseigné.
+/// Créneau horaire d'une heure rattaché à une offre de cours particulier (`availabilities`).
+/// Lors d'une réservation, [isBooked] passe à `true` et [orderId] conserve la référence de la commande.
 class AvailabilitySlot {
   final String id;
   final String offerId;
@@ -265,10 +277,33 @@ class AvailabilitySlot {
     this.orderId,
   });
 
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'offerId': offerId,
+        'sellerId': sellerId,
+        'date': date,
+        'startTime': startTime,
+        'endTime': endTime,
+        'isBooked': isBooked,
+        'orderId': orderId,
+      };
+
+  factory AvailabilitySlot.fromMap(Map<String, dynamic> m) => AvailabilitySlot(
+        id: m['id'] as String,
+        offerId: m['offerId'] as String,
+        sellerId: m['sellerId'] as String,
+        date: m['date'] as String,
+        startTime: m['startTime'] as String,
+        endTime: m['endTime'] as String,
+        isBooked: m['isBooked'] as bool? ?? false,
+        orderId: m['orderId'] as String?,
+      );
+
   /// Retourne une copie modifiée du créneau (ex. lors du verrouillage/déverrouillage)
   AvailabilitySlot copyWith({
     bool? isBooked,
     String? orderId,
+    bool clearOrderId = false,
   }) {
     return AvailabilitySlot(
       id: id,
@@ -278,26 +313,26 @@ class AvailabilitySlot {
       startTime: startTime,
       endTime: endTime,
       isBooked: isBooked ?? this.isBooked,
-      orderId: orderId ?? this.orderId,
+      orderId: clearOrderId ? null : (orderId ?? this.orderId),
     );
   }
 }
 
-/// Modèle principal d'une Offre de la Marketplace (Collection Firestore `offers`, Page 7).
+/// Entité immuable représentant une offre publiée ou en brouillon (`offers`).
 class Offer {
   final String id;
   final String sellerId;
   final String sellerName;
   final String sellerAvatar;
-  final String sellerSubtitle; // Université / Filière (étudiant) ou Titre (enseignant)
-  final List<String> sellerBadges; // Badges du vendeur : Vendeur, Mentor, Bien noté
+  final String sellerSubtitle; // Filière/établissement (étudiant) ou grade académique (enseignant)
+  final List<String> sellerBadges; // Badges d'activité obtenus par le vendeur
   final SellerRole sellerRole; // student | teacher
   final OfferType type; // resource_digital | resource_physical | private_lesson
   final String title;
   final String subject;
   final String level;
   final String description;
-  final List<String> images; // URLs Cloudinary (MediaService L10)
+  final List<String> images; // URLs des photos d'illustration hébergées sur Cloudinary
   final double price; // Prix en TND (0 = gratuit)
   final String? fileUrl; // URL privée Cloudinary (uniquement pour resource_digital)
   final String? fileSizeLabel; // Métadonnées affichées pour le fichier PDF
@@ -348,6 +383,80 @@ class Offer {
     required this.createdAt,
     this.isRecommendedByCourse = false,
   });
+
+  /// Conversion vers un document Firestore ; les dates sont stockées en ISO-8601.
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'sellerId': sellerId,
+        'sellerName': sellerName,
+        'sellerAvatar': sellerAvatar,
+        'sellerSubtitle': sellerSubtitle,
+        'sellerBadges': sellerBadges,
+        'sellerRole': sellerRole.name,
+        'type': type.name,
+        'title': title,
+        'subject': subject,
+        'level': level,
+        'description': description,
+        'images': images,
+        'price': price,
+        'fileUrl': fileUrl,
+        'fileSizeLabel': fileSizeLabel,
+        'condition': condition?.name,
+        'quantity': quantity,
+        'mode': mode?.name,
+        'location': location?.toMap(),
+        'courseId': courseId,
+        'courseTitle': courseTitle,
+        'status': status.name,
+        'viewsCount': viewsCount,
+        'salesCount': salesCount,
+        'ratingAvg': ratingAvg,
+        'ratingCount': ratingCount,
+        'reportsCount': reportsCount,
+        'createdAt': createdAt.toIso8601String(),
+        'isRecommendedByCourse': isRecommendedByCourse,
+      };
+
+  /// Reconstruit une offre depuis un document Firestore.
+  factory Offer.fromMap(Map<String, dynamic> m) => Offer(
+        id: m['id'] as String,
+        sellerId: m['sellerId'] as String,
+        sellerName: m['sellerName'] as String? ?? '',
+        sellerAvatar: m['sellerAvatar'] as String? ?? '',
+        sellerSubtitle: m['sellerSubtitle'] as String? ?? '',
+        sellerBadges: List<String>.from(m['sellerBadges'] ?? const []),
+        sellerRole: SellerRole.values.byName(m['sellerRole'] as String),
+        type: OfferType.values.byName(m['type'] as String),
+        title: m['title'] as String? ?? '',
+        subject: m['subject'] as String? ?? '',
+        level: m['level'] as String? ?? '',
+        description: m['description'] as String? ?? '',
+        images: List<String>.from(m['images'] ?? const []),
+        price: (m['price'] as num? ?? 0).toDouble(),
+        fileUrl: m['fileUrl'] as String?,
+        fileSizeLabel: m['fileSizeLabel'] as String?,
+        condition: m['condition'] == null
+            ? null
+            : OfferCondition.values.byName(m['condition'] as String),
+        quantity: (m['quantity'] as num?)?.toInt(),
+        mode: m['mode'] == null
+            ? null
+            : DeliveryMode.values.byName(m['mode'] as String),
+        location: m['location'] == null
+            ? null
+            : OfferLocation.fromMap(Map<String, dynamic>.from(m['location'])),
+        courseId: m['courseId'] as String?,
+        courseTitle: m['courseTitle'] as String?,
+        status: OfferStatus.values.byName(m['status'] as String),
+        viewsCount: (m['viewsCount'] as num? ?? 0).toInt(),
+        salesCount: (m['salesCount'] as num? ?? 0).toInt(),
+        ratingAvg: (m['ratingAvg'] as num? ?? 0).toDouble(),
+        ratingCount: (m['ratingCount'] as num? ?? 0).toInt(),
+        reportsCount: (m['reportsCount'] as num? ?? 0).toInt(),
+        createdAt: DateTime.parse(m['createdAt'] as String),
+        isRecommendedByCourse: m['isRecommendedByCourse'] as bool? ?? false,
+      );
 
   /// Indique si l'offre est gratuite (`price == 0`)
   bool get isFree => price <= 0;
@@ -416,7 +525,7 @@ class Offer {
   }
 }
 
-/// Modèle d'une Commande ou Réservation (Collection Firestore `orders`, Page 7).
+/// Entité immuable représentant une commande de ressource ou une réservation de créneau (`orders`).
 class MarketplaceOrder {
   final String id;
   final String offerId;
@@ -468,6 +577,59 @@ class MarketplaceOrder {
     this.hasReview = false,
   });
 
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'offerId': offerId,
+        'offerTitle': offerTitle,
+        'offerType': offerType.name,
+        'offerSubject': offerSubject,
+        'buyerId': buyerId,
+        'buyerName': buyerName,
+        'sellerId': sellerId,
+        'sellerName': sellerName,
+        'sellerRole': sellerRole.name,
+        'quantity': quantity,
+        'amount': amount,
+        'slotId': slotId,
+        'slotLabel': slotLabel,
+        'meetingLink': meetingLink,
+        'pickupAddress': pickupAddress,
+        'fileUrl': fileUrl,
+        'status': status.name,
+        'note': note,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+        'unreadCount': unreadCount,
+        'hasReview': hasReview,
+      };
+
+  factory MarketplaceOrder.fromMap(Map<String, dynamic> m) => MarketplaceOrder(
+        id: m['id'] as String,
+        offerId: m['offerId'] as String,
+        offerTitle: m['offerTitle'] as String? ?? '',
+        offerType: OfferType.values.byName(m['offerType'] as String),
+        offerSubject: m['offerSubject'] as String? ?? '',
+        buyerId: m['buyerId'] as String,
+        buyerName: m['buyerName'] as String? ?? '',
+        sellerId: m['sellerId'] as String,
+        sellerName: m['sellerName'] as String? ?? '',
+        sellerRole: SellerRole.values.byName(m['sellerRole'] as String),
+        quantity: (m['quantity'] as num? ?? 1).toInt(),
+        amount: (m['amount'] as num? ?? 0).toDouble(),
+        slotId: m['slotId'] as String?,
+        slotLabel: m['slotLabel'] as String?,
+        meetingLink: m['meetingLink'] as String?,
+        pickupAddress: m['pickupAddress'] as String?,
+        fileUrl: m['fileUrl'] as String?,
+        status: OrderStatus.values.byName(m['status'] as String),
+        note: m['note'] as String? ?? '',
+        createdAt: DateTime.parse(m['createdAt'] as String),
+        updatedAt: DateTime.parse(m['updatedAt'] as String),
+        unreadCount: (m['unreadCount'] as num? ?? 0).toInt(),
+        hasReview: m['hasReview'] as bool? ?? false,
+      );
+
+  /// Retourne une nouvelle instance de [MarketplaceOrder] avec les propriétés modifiées.
   MarketplaceOrder copyWith({
     OrderStatus? status,
     String? meetingLink,
@@ -503,8 +665,8 @@ class MarketplaceOrder {
   }
 }
 
-/// Avis laissé par l'acheteur après une commande terminée (Collection `reviews`, Page 7).
-/// L'identifiant du document [id] est égal à `orderId`, garantissant un seul avis par commande.
+/// Évaluation vérifiée déposée par l'acheteur une fois la commande terminée (`reviews`).
+/// L'identifiant [id] reprend `orderId` afin d'imposer un seul avis par transaction.
 class OfferReview {
   final String id; // = orderId (unicité garantie)
   final String buyerId;
@@ -527,17 +689,41 @@ class OfferReview {
     required this.comment,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'buyerId': buyerId,
+        'buyerName': buyerName,
+        'buyerRoleLabel': buyerRoleLabel,
+        'sellerId': sellerId,
+        'offerId': offerId,
+        'rating': rating,
+        'comment': comment,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory OfferReview.fromMap(Map<String, dynamic> m) => OfferReview(
+        id: m['id'] as String,
+        buyerId: m['buyerId'] as String,
+        buyerName: m['buyerName'] as String? ?? '',
+        buyerRoleLabel: m['buyerRoleLabel'] as String? ?? '',
+        sellerId: m['sellerId'] as String,
+        offerId: m['offerId'] as String,
+        rating: (m['rating'] as num).toInt(),
+        comment: m['comment'] as String? ?? '',
+        createdAt: DateTime.parse(m['createdAt'] as String),
+      );
 }
 
-/// Message d'une conversation liée à une commande (`conversations/{orderId}/messages`, Page 8).
-/// Écouté en temps réel via les snapshots Firestore dans l'écran `OrderChatScreen`.
+/// Message échangé dans le fil de discussion associé à une commande (`conversations/{orderId}/messages`).
+/// Peut représenter un message utilisateur ou une notification automatique de suivi ([isSystemMessage]).
 class ChatMessage {
   final String id;
   final String orderId;
   final String senderId;
   final String senderName;
   final String text;
-  final String? attachmentUrl; // Pièce jointe envoyée via MediaService (Cloudinary L10)
+  final String? attachmentUrl; // URL de la pièce jointe stockée sur Cloudinary
   final String? attachmentLabel;
   final DateTime? readAt; // Horodatage de lecture du message
   final DateTime createdAt;
@@ -555,4 +741,30 @@ class ChatMessage {
     required this.createdAt,
     this.isSystemMessage = false,
   });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'orderId': orderId,
+        'senderId': senderId,
+        'senderName': senderName,
+        'text': text,
+        'attachmentUrl': attachmentUrl,
+        'attachmentLabel': attachmentLabel,
+        'readAt': readAt?.toIso8601String(),
+        'createdAt': createdAt.toIso8601String(),
+        'isSystemMessage': isSystemMessage,
+      };
+
+  factory ChatMessage.fromMap(Map<String, dynamic> m) => ChatMessage(
+        id: m['id'] as String,
+        orderId: m['orderId'] as String,
+        senderId: m['senderId'] as String,
+        senderName: m['senderName'] as String? ?? '',
+        text: m['text'] as String? ?? '',
+        attachmentUrl: m['attachmentUrl'] as String?,
+        attachmentLabel: m['attachmentLabel'] as String?,
+        readAt: m['readAt'] == null ? null : DateTime.parse(m['readAt'] as String),
+        createdAt: DateTime.parse(m['createdAt'] as String),
+        isSystemMessage: m['isSystemMessage'] as bool? ?? false,
+      );
 }

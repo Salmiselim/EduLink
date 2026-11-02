@@ -4,6 +4,8 @@ import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
 import '../widgets/eval_ui.dart';
 
+/// Assistant enseignant en trois étapes pour créer ou modifier un [Quiz] :
+/// 0. Paramètres généraux et dates · 1. Éditeur de questions et génération de brouillon · 2. Aperçu et publication.
 class QuizWizardScreen extends StatefulWidget {
   final Quiz? existing;
   const QuizWizardScreen({super.key, this.existing});
@@ -14,7 +16,11 @@ class QuizWizardScreen extends StatefulWidget {
 
 class _QuizWizardScreenState extends State<QuizWizardScreen> {
   final _controller = EvaluationsController.instance;
+
+  /// Clé globale de validation rattachée au [Form] de la première étape (`_infoStep`).
   final _infoKey = GlobalKey<FormState>();
+
+  /// Indice de l'étape active (`0`, `1` ou `2`).
   int _step = 0;
 
   late final TextEditingController _title;
@@ -32,11 +38,13 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
   @override
   void initState() {
     super.initState();
+    // Sécurité d'accès : renvoie immédiatement en arrière si l'utilisateur actif n'est pas enseignant.
     if (!_controller.isTeacher) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Navigator.pop(context);
       });
     }
+    // Préremplit les champs et clone la liste de questions lorsqu'un quiz existant est modifié.
     final existing = widget.existing;
     final firstCourse = _controller.accessibleCourses.first;
     _title = TextEditingController(text: existing?.title ?? '');
@@ -62,12 +70,15 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     super.dispose();
   }
 
+  /// Valide les contraintes métier propres à l'étape courante avant d'autoriser le passage à la suivante
+  /// ou la sauvegarde finale du quiz.
   bool _validate() {
     if (_step == 0) {
       final ok = _infoKey.currentState?.validate() ?? false;
       if (!ok) {
         _snack('Vérifiez le titre, la durée, les tentatives et les dates.');
       }
+      // Vérifie la cohérence chronologique entre la date d'ouverture et l'échéance de fermeture.
       if (_dueDate.isBefore(_availableFrom)) {
         _snack('L\'échéance doit être postérieure à la date d\'ouverture.');
         return false;
@@ -80,6 +91,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
         _snack('Un quiz doit contenir au moins une question.');
         return false;
       }
+      // Contrôle individuel de chaque question : longueur d'énoncé, options non vides, réponse cochée et barème valide.
       for (final q in _questions) {
         if (q.text.trim().length < 10) {
           setState(
@@ -106,13 +118,17 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     return true;
   }
 
+  /// Affiche un message d'information ou d'erreur dans un [SnackBar] en bas de l'écran.
   void _snack(String m) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  /// Résout l'objet [LinkedCourse] correspondant à l'identifiant sélectionné `_courseId`.
   LinkedCourse get _course =>
       _controller.courses.firstWhere((c) => c.id == _courseId);
 
+  /// Construit l'instance finale de [Quiz] et l'enregistre dans [EvaluationsController.upsertQuiz]
+  /// soit en brouillon (`publish: false`), soit directement publiée (`publish: true`).
   void _save({required bool publish}) {
     if (!_validate()) return;
     final quiz = Quiz(
@@ -138,6 +154,8 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Enchaîne un sélecteur de date (`showDatePicker`) et d'heure (`showTimePicker`)
+  /// pour définir précisément la fenêtre d'ouverture ou l'échéance du quiz.
   Future<void> _pickDate({required bool opening}) async {
     final initial = opening ? _availableFrom : _dueDate;
     final date = await showDatePicker(
@@ -196,6 +214,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
       ),
       body: Column(
         children: [
+          // Indicateur visuel en 3 segments horizontaux (`Expanded`) illustrant l'étape active.
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
@@ -215,6 +234,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
               }),
             ),
           ),
+          // Contenu déroulant affichant le sous-formulaire correspondant à `_step`.
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
@@ -240,12 +260,14 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Étape 0 : formulaire des métadonnées générales du quiz (cours, titre, durée, tentatives et dates).
   Widget _infoStep() {
     return Form(
       key: _infoKey,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       child: Column(
         children: [
+          // Choix du cours auquel rattacher l'évaluation parmi les cours gérés par l'enseignant.
           DropdownButtonFormField<String>(
             initialValue: _courseId,
             decoration: evalInputDecoration(
@@ -263,6 +285,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
             onChanged: (v) => setState(() => _courseId = v!),
           ),
           const SizedBox(height: 12),
+          // Saisie du titre rejetant les chaînes trop courtes ou purement numériques.
           TextFormField(
             controller: _title,
             maxLength: 80,
@@ -280,6 +303,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
             },
           ),
           const SizedBox(height: 12),
+          // Deux champs numériques côte à côte (`Expanded`) pour la durée en minutes et le plafond de tentatives.
           Row(
             children: [
               Expanded(
@@ -332,6 +356,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Tuile cliquable affichant une date formatée et déclenchant le sélecteur date/heure associé.
   Widget _dateTile(String label, DateTime value, VoidCallback onTap) {
     return ListTile(
       onTap: onTap,
@@ -347,10 +372,12 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Étape 1 : génération assistée de questions de départ et ajout/édition manuelle de QCM ou Vrai/Faux.
   Widget _questionsStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Encart de préremplissage automatique ajoutant 3 questions via `generateGeminiQuestions`.
         Container(
           padding: const EdgeInsets.all(14),
           decoration: evalCardDecoration(),
@@ -387,6 +414,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        // Barre de puces d'action (`Wrap` + `ActionChip`) permettant d'insérer un QCM ou un Vrai/Faux vierge.
         Wrap(
           spacing: 8,
           children: [
@@ -419,6 +447,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Ajoute une nouvelle question vierge à `_questions` avec options préconfigurées selon [type].
   void _addQuestion(QuestionType type) {
     setState(() {
       _questions.add(
@@ -437,6 +466,8 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     });
   }
 
+  /// Construit la carte d'édition d'une question identifiée par `ValueKey(q.id)` :
+  /// énoncé, propositions cochables via `CheckboxListTile`, barème en points et explication de corrigé.
   Widget _questionCard(MapEntry<int, QuizQuestion> entry) {
     final i = entry.key;
     final q = entry.value;
@@ -469,6 +500,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
             onChanged: (v) => _questions[i] = q.copyWith(text: v),
           ),
           const SizedBox(height: 8),
+          // Chaque option combine un champ d'intitulé (verrouillé sur Vrai/Faux) et une case à cocher marquant les réponses exactes.
           ...List.generate(q.options.length, (oi) {
             final selected = q.correct.contains(oi);
             return CheckboxListTile(
@@ -490,6 +522,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
               onChanged: (v) {
                 final next = [...q.correct];
                 if (v == true) {
+                  // Un Vrai/Faux n'admet qu'une seule réponse exacte à la fois.
                   if (q.type == QuestionType.vraiFaux) {
                     next
                       ..clear()
@@ -533,6 +566,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Étape 2 : récapitulatif en lecture seule des paramètres et des questions avant enregistrement.
   Widget _previewStep() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -571,6 +605,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Barre d'actions inférieure gérant la navigation entre étapes et le choix final Brouillon / Publier.
   Widget _bottomBar() {
     return Container(
       color: Colors.white,

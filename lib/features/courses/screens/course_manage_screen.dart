@@ -5,14 +5,12 @@ import '../widgets/chapter_edit_sheet.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
 
-// ============================================================================
-// GESTION D'UN COURS — VUE ENSEIGNANT (CourseManageScreen)
-// ROUTE POUSSÉE — ouverte depuis « Options du cours » ou la page du cours.
-// Réunit les statistiques du cours, la gestion des chapitres (ajout,
-// modification, suppression et réordonnancement) et le suivi des inscrits
-// avec leur progression individuelle (Métier 3).
-// ============================================================================
+// Écran d'administration d'un cours côté enseignant (`CourseManageScreen`).
+// Centralise les indicateurs clés du cours, l'édition et le réordonnancement des
+// chapitres par glisser-déposer (`ReorderableListView.builder`) ainsi que le suivi
+// individuel de progression des étudiants inscrits.
 
+/// Tableau de gestion d'un cours ouvert via la route nommée `CoursesRoutes.courseManage`.
 class CourseManageScreen extends StatefulWidget {
   final String courseId;
 
@@ -25,10 +23,10 @@ class CourseManageScreen extends StatefulWidget {
 class _CourseManageScreenState extends State<CourseManageScreen> {
   final CoursesController _controller = CoursesController.instance;
 
-  // --- Actions ----------------------------------------------------------------
+  // Actions de gestion sur le cours, ses chapitres et ses inscrits.
 
-  /// Publie ou masque le cours (`PATCH /courses/:id/publish`).
-  /// La publication est refusée (`false`) tant que le cours n'a aucun chapitre.
+  /// Bascule la publication du cours via `CoursesController.setPublished` et affiche
+  /// un retour `SnackBar` (bloque la publication tant qu'aucun chapitre n'existe).
   void _togglePublish(Course course) {
     final wasPublished = course.isPublished;
     final ok = _controller.setPublished(course.id, !wasPublished);
@@ -46,7 +44,8 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     );
   }
 
-  /// Feuille d'actions sur un chapitre (modifier / supprimer)
+  /// Ouvre une `ModalBottomSheet` contextuelle permettant d'éditer le chapitre
+  /// via `ChapterEditSheet.open` ou de le retirer via `CoursesController.deleteChapter`.
   void _openChapterActionsSheet(Course course, Chapter chapter) {
     showModalBottomSheet<void>(
       context: context,
@@ -126,8 +125,8 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     );
   }
 
-  /// Feuille de détail d'un étudiant inscrit : anneau de progression, dernier
-  /// accès et lecture seule des chapitres (cochés s'ils sont terminés)
+  /// Affiche une `ModalBottomSheet` détaillant l'avancement d'un étudiant inscrit :
+  /// anneau `ProgressRing`, date du dernier accès et liste des chapitres validés en lecture seule.
   void _openStudentSheet(Course course, Enrollment enrollment) {
     final progress = _controller.progressOf(enrollment);
     final chapters = _controller.chaptersOf(course.id);
@@ -231,16 +230,16 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     );
   }
 
-  // --- Helpers d'affichage ------------------------------------------------------
+  // Fonctions utilitaires de formatage pour l'affichage.
 
-  /// Formate une date au format jour/mois/année (ex. 24/10/2026)
+  /// Formate un `DateTime` sous la forme `JJ/MM/AAAA` (ex. `24/10/2026`).
   String _formatDate(DateTime date) {
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     return '$day/$month/${date.year}';
   }
 
-  /// Initiales d'un nom complet pour l'avatar (ex. « Yasmine Ben Ali » → « YA »)
+  /// Extrait une ou deux initiales en majuscules à partir du nom complet pour le `CircleAvatar`.
   String _initials(String fullName) {
     final parts = fullName.trim().split(' ');
     if (parts.isEmpty || parts.first.isEmpty) return '?';
@@ -248,10 +247,12 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
-  // --- Construction de l'interface ------------------------------------------------
+  // Construction réactive de l'arbre de widgets.
 
   @override
   Widget build(BuildContext context) {
+    // Écoute `CoursesController` afin de refléter instantanément l'ajout, la suppression,
+    // le réordonnancement de chapitres et le changement de statut de publication.
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
@@ -320,7 +321,7 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     );
   }
 
-  /// Rangée de statistiques : inscrits, progression moyenne et chapitres
+  /// Aligne trois cartes `StatCard` de largeur égale (`Expanded`) pour les métriques du cours.
   Widget _buildStatRow(Course course) {
     return Row(
       children: [
@@ -354,8 +355,9 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     );
   }
 
-  /// Section chapitres : ajout, réordonnancement par glisser-déposer et
-  /// actions secondaires (modifier / supprimer) via la poignée ⋮
+  /// Construit la section de gestion des chapitres : bouton d'ajout vers `ChapterEditSheet`
+  /// et liste réordonnable (`ReorderableListView.builder`) déléguant la nouvelle position
+  /// à `CoursesController.reorderChapters`.
   Widget _buildChaptersSection(Course course) {
     final chapters = _controller.chaptersOf(course.id);
 
@@ -397,6 +399,8 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
             ),
           )
         else
+          // Liste réordonnable sans poignées implicites : seule la poignée dédiée
+          // `ReorderableDragStartListener` déclenche le déplacement de la tuile identifiée par `ValueKey`.
           ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -448,8 +452,8 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
     );
   }
 
-  /// Section inscrits : progression individuelle de chaque étudiant, avec
-  /// une feuille de détail au toucher (anneau, dernier accès, chapitres)
+  /// Liste les étudiants inscrits au cours avec leur barre `ProgressBar` et ouvre
+  /// la feuille de suivi détaillé au clic (`InkWell`) sur une ligne.
   Widget _buildStudentsSection(Course course) {
     final enrollments = _controller.enrollmentsOf(course.id);
 

@@ -4,14 +4,9 @@ import '../widgets/auth_ui.dart';
 import 'forgot_password_screen.dart';
 import 'sign_up_screen.dart';
 
-// ============================================================================
-// ÉCRAN DE CONNEXION (SignInScreen) — interface de démonstration.
-// Aucun backend : toute combinaison e-mail / mot de passe au format valide
-// ouvre l'application, et le bouton « Passer » permet de tester librement
-// sans compte. La connexion réelle (Firebase Authentication) sera branchée
-// par le module Comptes & Profils.
-// ============================================================================
-
+/// Écran de connexion de l'application EduLink.
+/// Valide le format des identifiants localement avant d'ouvrir le shell
+/// principal `EduLinkShell` (mode démonstration en attente de Firebase Auth).
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
 
@@ -20,22 +15,30 @@ class SignInScreen extends StatefulWidget {
 }
 
 class _SignInScreenState extends State<SignInScreen> {
+  /// Clé globale permettant d'exécuter la validation groupée du widget `Form`.
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  /// Contrôleurs récupérant les valeurs saisies dans les champs e-mail et mot de passe.
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+  /// Contrôle l'affichage masqué ou en clair du mot de passe.
   bool _obscure = true;
+
+  /// État de la case à cocher de mémorisation de session.
   bool _rememberMe = false;
 
   @override
   void dispose() {
+    // Libération des contrôleurs de saisie à la destruction de l'écran.
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  /// Ouvre l'application (shell intégré) en remplaçant toute la pile.
-  /// [message] : facultatif, affiché en SnackBar sur l'écran suivant.
+  /// Affiche éventuellement un [SnackBar] d'information puis redirige vers
+  /// `EduLinkShell` via `Navigator.pushAndRemoveUntil` en vidant toute la pile
+  /// de navigation pour empêcher un retour arrière vers l'authentification.
   void _enterApp({String? message}) {
     if (message != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -49,6 +52,7 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
+  /// Déclenche la validation des `TextFormField` avant d'autoriser l'entrée dans l'application.
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     _enterApp(message: 'Bienvenue sur EduLink ! (mode démonstration)');
@@ -56,18 +60,22 @@ class _SignInScreenState extends State<SignInScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Scaffold fournissant la structure visuelle de base de l'écran de connexion.
     return Scaffold(
       backgroundColor: AuthColors.scaffold,
+      // SafeArea évite le chevauchement avec la barre d'état et les encoches système.
       body: SafeArea(
+        // SingleChildScrollView évite les erreurs de dépassement à l'ouverture du clavier.
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          // Formulaire relié à `_formKey` avec validation dynamique au fil de la saisie.
           child: Form(
             key: _formKey,
             autovalidateMode: AutovalidateMode.onUserInteraction,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Passer — accès direct à l'application pour tester
+                // Accès rapide permettant d'ouvrir directement le shell principal sans saisie.
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -87,8 +95,10 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
+                // En-tête de marque partagé entre les écrans d'authentification.
                 const AuthHeader(subtitle: 'Apprendre, échanger, progresser'),
                 const SizedBox(height: 28),
+                // Champ e-mail validé en temps réel via `AutovalidateMode.onUserInteraction`.
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -109,6 +119,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
+                // Champ mot de passe avec bouton de visibilité et validation de longueur minimale.
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscure,
@@ -139,37 +150,45 @@ class _SignInScreenState extends State<SignInScreen> {
                   },
                 ),
                 const SizedBox(height: 8),
-                Row(
+                // Ligne regroupant l'option de maintien de session et le lien de récupération.
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: Checkbox(
-                        value: _rememberMe,
-                        onChanged: (value) =>
-                            setState(() => _rememberMe = value ?? false),
-                        activeColor: AuthColors.primary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: Checkbox(
+                            value: _rememberMe,
+                            onChanged: (value) =>
+                                setState(() => _rememberMe = value ?? false),
+                            activeColor: AuthColors.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            side: const BorderSide(color: AuthColors.border),
+                            visualDensity: VisualDensity.compact,
+                          ),
                         ),
-                        side: const BorderSide(color: AuthColors.border),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _rememberMe = !_rememberMe),
-                      child: const Text(
-                        'Se souvenir de moi',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: AuthColors.textSecondary,
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _rememberMe = !_rememberMe),
+                          child: const Text(
+                            'Se souvenir de moi',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: AuthColors.textSecondary,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                    const Spacer(),
+                    // Empile `ForgotPasswordScreen` sur le navigateur courant.
                     TextButton(
                       onPressed: () {
                         Navigator.push(
@@ -194,10 +213,12 @@ class _SignInScreenState extends State<SignInScreen> {
                   ],
                 ),
                 const SizedBox(height: 18),
+                // Bouton principal déclenchant la validation et la connexion.
                 AuthPrimaryButton(label: 'Se connecter', onPressed: _submit),
                 const SizedBox(height: 22),
                 const AuthDivider(label: 'ou continuer avec'),
                 const SizedBox(height: 14),
+                // Boutons de connexion tierce répartis sur toute la largeur via `Expanded`.
                 Row(
                   children: [
                     Expanded(
@@ -222,8 +243,10 @@ class _SignInScreenState extends State<SignInScreen> {
                   ],
                 ),
                 const SizedBox(height: 26),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                // Redirection vers `SignUpScreen` par remplacement de la route active.
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text(
                       'Pas encore de compte ?',

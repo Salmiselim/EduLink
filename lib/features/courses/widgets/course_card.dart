@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/courses_models.dart';
 import 'courses_ui.dart';
 
-// ============================================================================
-// CARTE DE COURS RÉUTILISABLE — MODULE M2 : COURS
-// Trois variantes selon la vue, même structure visuelle que `OfferCard` (M5) :
-// - Catalogue (étudiant)  : bouton « S'inscrire » ou état « Inscrit ✓ »
-// - Mes cours (étudiant)  : progression + reprise de lecture
-// - Mes cours (enseignant): badge de statut + menu d'actions (⋮)
-// ============================================================================
+// Carte polymorphe représentant un `Course` dans les listes de `CoursesScreen`.
+// Décline trois configurations visuelles à partir d'un seul composant :
+// - catalogue étudiant   : bouton d'inscription rapide ou anneau si déjà inscrit ;
+// - cours suivis étudiant : barre `ProgressBar` et indication du prochain chapitre ;
+// - gestion enseignant   : badge de publication (`CourseStatusBadge`) et menu d'options.
 
+/// Carte interactive (`InkWell`) présentant un cours avec vignette, badges (`Wrap`) et action contextuelle.
 class CourseCard extends StatelessWidget {
   final Course course;
   final bool isTeacherVariant;
@@ -148,8 +147,8 @@ class CourseCard extends StatelessWidget {
     );
   }
 
-  /// Visuel de couverture : image distante si disponible (Cloudinary, L10),
-  /// sinon un dégradé bleu EduLink avec l'icône de la matière.
+  /// Affiche la miniature réseau du cours si `coverImageUrl` est renseigné,
+  /// avec repli automatique sur `_gradientFallback` en cas d'absence ou d'erreur de chargement.
   Widget _cover() {
     Widget child;
     if (course.coverImageUrl != null && course.coverImageUrl!.isNotEmpty) {
@@ -169,6 +168,7 @@ class CourseCard extends StatelessWidget {
     return SizedBox(width: 64, height: 64, child: child);
   }
 
+  /// Vignette par défaut à dégradé bleu affichée lorsqu'aucune image de couverture n'est disponible.
   Widget _gradientFallback() {
     return Container(
       decoration: const BoxDecoration(
@@ -187,8 +187,8 @@ class CourseCard extends StatelessWidget {
     );
   }
 
-  /// Élément de droite selon la variante : bouton d'inscription, anneau de
-  /// progression, badge statut + menu, ou chevron par défaut.
+  /// Sélectionne le widget de fin de ligne selon le contexte : menu d'options enseignant,
+  /// anneau `ProgressRing` pour un inscrit, bouton `OutlinedButton` d'inscription ou chevron.
   Widget _trailing() {
     if (isTeacherVariant) {
       return IconButton(

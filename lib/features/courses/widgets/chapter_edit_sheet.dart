@@ -3,17 +3,18 @@ import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
 import 'courses_ui.dart';
 
-// ============================================================================
-// FEUILLE COULISSANTE D'AJOUT / MODIFICATION DE CHAPITRE
-// Partagée entre l'assistant de création de cours (CourseWizardScreen) et le
-// tableau de gestion (CourseManageScreen). Choisit le type (texte, PDF, vidéo
-// ou lien), valide les champs selon le type, puis écrit via le contrôleur.
-// ============================================================================
+// Feuille modale réutilisable de création et d'édition de chapitre (`ChapterEditSheet`).
+// Partagée entre `CourseWizardScreen` et `CourseManageScreen` afin de factoriser
+// le formulaire (`Form` + `GlobalKey<FormState>`), le choix du `ChapterType` et les
+// validations spécifiques à chaque type de contenu.
 
+/// Utilitaire statique ouvrant une `ModalBottomSheet` de saisie d'un chapitre.
 class ChapterEditSheet {
   ChapterEditSheet._();
 
-  /// Ouvre la feuille. `existing` = chapitre à modifier (sinon ajout).
+  /// Affiche la feuille modale d'ajout (`existing == null`) ou de modification (`existing != null`)
+  /// d'un chapitre rattaché à [courseId], ajuste le retrait clavier via `viewInsets.bottom`
+  /// et enregistre les données validées dans `CoursesController`.
   static Future<void> open(
     BuildContext context, {
     required String courseId,
@@ -91,7 +92,7 @@ class ChapterEditSheet {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      // Type de contenu (verrouillé en modification)
+                      // Sélecteur du format de support (`Wrap` de `ChoiceChip`), figé en mode édition.
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -136,7 +137,7 @@ class ChapterEditSheet {
                         },
                       ),
                       const SizedBox(height: 12),
-                      // Champ spécifique au type de contenu
+                      // Zone de saisie dynamique adaptée au `ChapterType` sélectionné.
                       _typeSpecificField(
                         type: type,
                         controller: contentController,
@@ -235,7 +236,8 @@ class ChapterEditSheet {
     );
   }
 
-  /// Champ de contenu selon le type choisi
+  /// Construit le champ de formulaire correspondant à [type] avec son `validator` dédié :
+  /// texte long (>= 20 car.), sélecteur de document PDF, URL YouTube ou URI HTTP/HTTPS externe.
   static Widget _typeSpecificField({
     required ChapterType type,
     required TextEditingController controller,
@@ -271,7 +273,7 @@ class ChapterEditSheet {
               height: 46,
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // Upload Cloudinary via le service média partagé
+                  // Génère une URI de stockage média pour illustrer le rattachement d'un document PDF.
                   setSheetState(() {
                     controller.text =
                         'cloudinary://edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';

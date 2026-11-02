@@ -1,4 +1,9 @@
+// Bibliothèque officielle Material Design de Flutter : fournit MaterialApp, Scaffold,
+// AppBar, NavigationBar, ActionChip, IconButton, SnackBar, ThemeData et ColorScheme.
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+
+import 'package:provider/provider.dart';
 
 import 'features/auth/screens/sign_in_screen.dart';
 import 'features/courses/data/courses_mock_data.dart';
@@ -13,17 +18,36 @@ import 'features/evaluations/widgets/eval_ui.dart';
 import 'features/marketplace/data/marketplace_mock_data.dart';
 import 'features/marketplace/models/marketplace_models.dart';
 import 'features/marketplace/routes/marketplace_routes.dart';
+import 'features/marketplace/services/marketplace_firestore_service.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
+import 'providers/forum_provider.dart';
+import 'routes/app_routes.dart';
+import 'screens/forum_feed_screen.dart';
 
 /// Point d'entrée principal de l'application EduLink.
 /// Le shell intégré [EduLinkShell] est ouvert après la connexion (ou via le
 /// bouton « Passer » de l'écran de démonstration).
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _initFirebase();
   runApp(const EduLinkApp());
 }
 
+/// Initialise Firebase puis branche la Marketplace sur Cloud Firestore.
+/// Si Firebase n'est pas encore configuré (pas de google-services.json), l'appli
+/// reste utilisable avec les données en mémoire.
+Future<void> _initFirebase() async {
+  try {
+    await Firebase.initializeApp();
+    MarketplaceFirestoreService.enableOfflinePersistence();
+    await MarketplaceController.instance.connectFirestore();
+  } catch (e) {
+    debugPrint('Firebase non configuré, mode hors Firestore : $e');
+  }
+}
+
 /// Widget racine de l'application qui configure :
-/// - Le thème Material 3 (charte graphique EduLink — MARKETPLACE_GUIDE.md)
+/// - Le thème Material 3 (charte graphique EduLink)
 /// - Le générateur de routes combiné (`EduLinkRoutes.onGenerateRoute`)
 /// - Le shell intégré [EduLinkShell] avec la barre de navigation à 5 onglets
 class EduLinkApp extends StatelessWidget {
@@ -31,19 +55,25 @@ class EduLinkApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'EduLink',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
-          brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        // Forum (M3)
+        ChangeNotifierProvider(create: (_) => ForumProvider()),
+      ],
+      child: MaterialApp(
+        title: 'EduLink',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF2563EB),
+            brightness: Brightness.light,
+          ),
+          scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         ),
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+        onGenerateRoute: EduLinkRoutes.onGenerateRoute,
+        home: const SignInScreen(),
       ),
-      onGenerateRoute: EduLinkRoutes.onGenerateRoute,
-      home: const SignInScreen(),
     );
   }
 }
@@ -62,17 +92,20 @@ class EduLinkRoutes {
     if (marketplaceRoute != null) return marketplaceRoute;
     final evaluationsRoute = EvaluationsRoutes.onGenerateRoute(settings);
     if (evaluationsRoute != null) return evaluationsRoute;
+    final forumRoute = ForumRoutes.onGenerateRoute(settings);
+    if (forumRoute != null) return forumRoute;
     return null;
   }
 }
 
 /// Shell intégré de l'application : une seule barre de navigation inférieure
-/// à 5 onglets (Page 2 du Plan d'équipe) et un [IndexedStack] qui conserve
-/// l'état de chaque module quand on change d'onglet.
-/// - Onglet 0 : M2 · Cours (live)
-/// - Onglet 2 : M4 · Évaluations (live)
-/// - Onglet 3 : M5 · Marketplace (live)
-/// - Onglets 1, 4 : placeholders (M3 · Forum, M1 · Profil)
+/// à 5 onglets et un [IndexedStack] qui conserve l'état de chaque module
+/// quand on change d'onglet.
+/// - Onglet 0 : Cours (live)
+/// - Onglet 1 : Forum (live)
+/// - Onglet 2 : Évaluations (live)
+/// - Onglet 3 : Marketplace (live)
+/// - Onglet 4 : placeholder (Profil)
 class EduLinkShell extends StatefulWidget {
   const EduLinkShell({super.key});
 
@@ -91,21 +124,15 @@ class _EduLinkShellState extends State<EduLinkShell> {
         index: _currentIndex,
         children: const [
           CoursesRoot(),
-          _ModulePlaceholderTab(
-            icon: Icons.forum_rounded,
-            title: 'M3 · Forum (Selim)',
-            subtitle: 'Questions, réponses & réactions',
-            ownerLabel: 'Responsable : Selim',
-            branchLabel: 'Branche : QA',
-          ),
+          ForumFeedScreen(),
           EvaluationsRoot(),
           MarketplaceRoot(),
           _ModulePlaceholderTab(
             icon: Icons.person_rounded,
-            title: 'M1 · Profil & Badges',
+            title: 'Profil & Badges',
             subtitle: 'Comptes, rôles, profils & badges',
-            ownerLabel: 'Responsable : M1',
-            branchLabel: 'Branche : feat/m1-user',
+            ownerLabel: 'Intégration à venir',
+            branchLabel: 'Auth & Profils',
           ),
         ],
       ),
@@ -149,7 +176,7 @@ class _EduLinkShellState extends State<EduLinkShell> {
 }
 
 /// Racine de l'onglet Cours (M2) : AppBar du module + écran principal.
-/// Intégré dans le shell unifié (branche cours) : la barre inférieure est
+/// Intégré dans le shell unifié : la barre inférieure est
 /// désormais gérée par [EduLinkShell].
 class CoursesRoot extends StatelessWidget {
   const CoursesRoot({super.key});
@@ -168,7 +195,7 @@ class CoursesRoot extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
-            // Logo + Titre du module M2 Cours
+            // Logo + Titre du module Cours
             title: Row(
               children: [
                 Container(
@@ -265,7 +292,7 @@ class CoursesRoot extends StatelessWidget {
 }
 
 /// Racine de l'onglet Marketplace (M5) : AppBar du module + écran principal.
-/// Extrait de l'ancien `MarketplaceShell` (branche marketplace) : la barre
+/// Extrait de du `MarketplaceShell` d'origine : la barre
 /// inférieure est désormais gérée par [EduLinkShell].
 class MarketplaceRoot extends StatelessWidget {
   const MarketplaceRoot({super.key});
@@ -273,18 +300,21 @@ class MarketplaceRoot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = MarketplaceController.instance;
-
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final isTeacher = controller.currentUserRole == SellerRole.teacher;
 
+        // `Scaffold` : structure visuelle Material 3 standard fournissant :
+        // - `appBar` (en-tête fixe en haut)
+        // - `body` (contenu principal : `MarketplaceScreen`)
+        // - `bottomNavigationBar` (barre de navigation à 5 onglets de l'application EduLink)
         return Scaffold(
           appBar: AppBar(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
-            // Logo + Titre du module M5 Marketplace
+            // Logo + Titre du module Marketplace
             title: Row(
               children: [
                 Container(
@@ -382,7 +412,7 @@ class MarketplaceRoot extends StatelessWidget {
 }
 
 /// Racine de l'onglet Évaluations (M4) : AppBar du module + écran principal.
-/// Extrait de l'ancien `EvaluationsShell` (branche evaluations) : la barre
+/// Extrait de du `EvaluationsShell` d'origine : la barre
 /// inférieure est désormais gérée par [EduLinkShell].
 class EvaluationsRoot extends StatelessWidget {
   const EvaluationsRoot({super.key});
@@ -401,7 +431,7 @@ class EvaluationsRoot extends StatelessWidget {
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             elevation: 0,
-            // Logo + Titre du module M4 Évaluations
+            // Logo + Titre du module Évaluations
             title: Row(
               children: [
                 Container(
@@ -552,9 +582,9 @@ class EvaluationsRoot extends StatelessWidget {
   }
 }
 
-/// Onglet placeholder d'un module pas encore intégré (M1, M2 ou M3).
-/// Reprend le style d'AppBar des autres modules et affiche la branche où le
-/// travail réel est en cours.
+/// Onglet placeholder d'un module pas encore intégré.
+/// Reprend le style d'AppBar des autres modules et indique l'intégration à venir du
+/// module.
 class _ModulePlaceholderTab extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -658,7 +688,7 @@ class _ModulePlaceholderTab extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Module à venir — géré sur la branche de son responsable.',
+              'Module à venir — intégration prévue prochainement.',
               style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
             ),
           ],
@@ -667,7 +697,7 @@ class _ModulePlaceholderTab extends StatelessWidget {
     );
   }
 
-  /// « M2 · Cours » → « Cours » (le préfixe module est déjà dans le titre AppBar)
+  /// Retire un éventuel préfixe « module · » du titre.
   String _shortTitle(String title) {
     final parts = title.split('·');
     return parts.length > 1 ? parts.last.trim() : title;

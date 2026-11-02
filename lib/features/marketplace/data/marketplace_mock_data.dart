@@ -1,27 +1,34 @@
+// `package:flutter/foundation.dart` est la bibliothèque légère de base de Flutter :
+// elle fournit la classe `ChangeNotifier` (patron de conception Observateur / Observer Pattern)
+// sans importer toute la couche graphique UI dans la couche de gestion des données.
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+
+// Liaison vers la couche Modèles (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`, `OfferReview`, `ChatMessage`)
 import '../models/marketplace_models.dart';
+import '../services/marketplace_firestore_service.dart';
 
-// ============================================================================
-// CONTRÔLEUR D'ÉTAT & DONNÉES DE DÉMONSTRATION — MODULE M5 : MARKETPLACE
-// Hérite de [ChangeNotifier] (compatible avec Provider) pour synchroniser
-// toutes les vues (Catalogue, Détail, Assistant, Commandes, Chat, Avis).
-// ============================================================================
-
+/// Contrôleur central de la Marketplace basé sur [ChangeNotifier].
+/// Expose un singleton partagé ([instance]) observé par les différents écrans
+/// via `ListenableBuilder` afin de propager chaque mutation d'état (`notifyListeners()`)
+/// entre le catalogue, la fiche détail, l'assistant d'offre, les commandes et le chat.
 class MarketplaceController extends ChangeNotifier {
-  /// Instance singleton partagée à travers tous les écrans de la Marketplace
+  /// Instance unique partagée dans toute la fonctionnalité Marketplace.
   static final MarketplaceController instance = MarketplaceController._internal();
 
+  /// Constructeur privé initialisant le jeu de données en mémoire au démarrage.
   MarketplaceController._internal() {
     _seedInitialData();
   }
 
-  /// Utilisateur connecté simulé (`users.uid` et `users.role`)
+  /// Identité et rôle de l'utilisateur courant simulé (`users.uid` et `users.role`).
   String currentUserId = 'user_me';
   String currentUserName = 'Yasmine Ben Ali';
   SellerRole currentUserRole = SellerRole.student;
 
-  /// Permet de basculer entre un compte Étudiant et un compte Enseignant vérifié
-  /// afin de tester le widget RoleAware et le badge d'origine du vendeur (Règle 5).
+  /// Bascule le profil actif entre étudiant et enseignant vérifié, puis notifie
+  /// les vues abonnées via [notifyListeners] pour rafraîchir les badges dépendants du rôle.
   void toggleCurrentUserRole() {
     if (currentUserRole == SellerRole.student) {
       currentUserRole = SellerRole.teacher;
@@ -33,7 +40,8 @@ class MarketplaceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Collections simulées en mémoire (correspondant aux collections Firestore de M5)
+  // Collections en mémoire reflétant la structure des collections Firestore
+  // (`offers`, `favorites`, `availabilities`, `orders`, `reviews`, `conversations`).
   final List<Offer> _offers = [];
   final Set<String> _favoriteOfferIds = {'offer_1', 'offer_3'};
   final Map<String, List<AvailabilitySlot>> _slotsByOffer = {};
@@ -41,13 +49,128 @@ class MarketplaceController extends ChangeNotifier {
   final List<OfferReview> _reviews = [];
   final Map<String, List<ChatMessage>> _messagesByOrder = {};
 
-  // Accesseurs en lecture seule
+  // ------------------------------------------------------------------ Firestore
+  // Tant que `connectFirestore()` n'est pas appelé (ou si Firebase n'est pas configuré),
+  // `_remote` reste nul et le contrôleur fonctionne uniquement en mémoire.
+  MarketplaceFirestoreService? _remote;
+  final List<StreamSubscription<dynamic>> _subs = [];
+
+  /// Vrai quand les données proviennent de Cloud Firestore.
+  bool get isOnline => _remote != null;
+
+  /// Branche le contrôleur sur Firestore :
+  /// 1. si la base est vide, on y injecte le jeu de données de démonstration ;
+  /// 2. sinon on remplace la mémoire par le contenu distant ;
+  /// 3. on écoute ensuite chaque collection en temps réel (les mises à jour des autres
+  ///    utilisateurs et le cache hors-ligne passent par ces flux).
+  Future<void> connectFirestore([MarketplaceFirestoreService? service]) async {
+    final remote = service ?? MarketplaceFirestoreService();
+    try {
+      if (await remote.isOffersEmpty()) {
+        await remote.seed(
+          offers: _offers,
+          slots: _slotsByOffer.values.expand((l) => l),
+          orders: _orders,
+          reviews: _reviews,
+          messages: _messagesByOrder.values.expand((l) => l),
+        );
+      }
+    } catch (e) {
+      debugPrint('Firestore indisponible, mode mémoire conservé : $e');
+      return;
+    }
+
+    _remote = remote;
+    _offers.clear();
+    _slotsByOffer.clear();
+    _orders.clear();
+    _reviews.clear();
+    _messagesByOrder.clear();
+    _favoriteOfferIds.clear();
+
+    void listen<T>(Stream<T> s, void Function(T) onData) {
+      _subs.add(s.listen((v) {
+        onData(v);
+        notifyListeners();
+      }, onError: (Object e) => debugPrint('Flux Firestore : $e')));
+    }
+
+    listen<List<Offer>>(remote.watchOffers(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _offers
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<AvailabilitySlot>>(remote.watchSlots(), (list) {
+      _slotsByOffer.clear();
+      for (final s in list) {
+        _slotsByOffer.putIfAbsent(s.offerId, () => []).add(s);
+      }
+      for (final l in _slotsByOffer.values) {
+        l.sort((a, b) => a.id.compareTo(b.id));
+      }
+    });
+    listen<List<MarketplaceOrder>>(remote.watchOrders(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _orders
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<OfferReview>>(remote.watchReviews(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _reviews
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<ChatMessage>>(remote.watchMessages(), (list) {
+      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _messagesByOrder.clear();
+      for (final m in list) {
+        _messagesByOrder.putIfAbsent(m.orderId, () => []).add(m);
+      }
+    });
+    listen<Set<String>>(remote.watchFavorites(currentUserId), (ids) {
+      _favoriteOfferIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    super.dispose();
+  }
+
+  /// Une erreur réseau ne doit jamais faire planter l'interface.
+  void _guard(Future<void>? f) {
+    f?.catchError((Object e) => debugPrint('Écriture Firestore échouée : $e'));
+  }
+
+  void _pushOffer(String offerId) {
+    final i = _offers.indexWhere((o) => o.id == offerId);
+    if (i != -1) _guard(_remote?.saveOffer(_offers[i]));
+  }
+
+  void _pushOrder(String orderId) {
+    final i = _orders.indexWhere((o) => o.id == orderId);
+    if (i != -1) _guard(_remote?.saveOrder(_orders[i]));
+  }
+
+  void _pushSlots(String offerId) {
+    for (final s in _slotsByOffer[offerId] ?? const <AvailabilitySlot>[]) {
+      _guard(_remote?.saveSlot(s));
+    }
+  }
+  // Accesseurs exposant des vues non modifiables (`unmodifiable`) pour préserver l'encapsulation.
   List<Offer> get allOffers => List.unmodifiable(_offers);
   Set<String> get favoriteOfferIds => Set.unmodifiable(_favoriteOfferIds);
   List<MarketplaceOrder> get allOrders => List.unmodifiable(_orders);
   List<OfferReview> get allReviews => List.unmodifiable(_reviews);
 
-  /// Liste des matières disponibles pour les filtres et l'assistant d'offre
+  /// Référentiel des matières académiques proposées dans les filtres et le formulaire d'offre.
   static const List<String> subjects = [
     'Algorithmique',
     'Bases de Données',
@@ -58,7 +181,7 @@ class MarketplaceController extends ChangeNotifier {
     'Développement Mobile',
   ];
 
-  /// Liste des niveaux académiques (L1 à M2)
+  /// Niveaux d'études universitaires disponibles (de la licence au master).
   static const List<String> levels = [
     'L1',
     'L2',
@@ -67,7 +190,7 @@ class MarketplaceController extends ChangeNotifier {
     'M2',
   ];
 
-  /// Villes disponibles pour le filtre de proximité OpenStreetMap Nominatim
+  /// Villes universitaires utilisées pour le filtrage géographique et la géolocalisation Nominatim.
   static const List<String> cities = [
     'Tunis',
     'Ariana',
@@ -77,7 +200,7 @@ class MarketplaceController extends ChangeNotifier {
     'Monastir',
   ];
 
-  /// Cours suivis ou enseignés (intégration avec le module Cours)
+  /// Catalogue des cours académiques pouvant être rattachés optionnellement à une offre.
   static const List<Map<String, String>> availableCoursesL6 = [
     {
       'id': 'course_algo_1',
@@ -101,95 +224,107 @@ class MarketplaceController extends ChangeNotifier {
     },
   ];
 
-  /// Vérifie si une offre fait partie des favoris de l'utilisateur (`favorites`)
+  /// Indique si l'offre [offerId] figure dans l'ensemble des favoris de l'utilisateur courant.
   bool isFavorite(String offerId) => _favoriteOfferIds.contains(offerId);
 
-  /// Ajoute ou retire une offre des favoris (`PUT|DELETE /favorites`)
+  /// Bascule l'état favori d'une offre (`PUT | DELETE /favorites`) et déclenche [notifyListeners].
   void toggleFavorite(String offerId) {
     if (_favoriteOfferIds.contains(offerId)) {
       _favoriteOfferIds.remove(offerId);
     } else {
       _favoriteOfferIds.add(offerId);
     }
+    _guard(_remote?.setFavorite(currentUserId, offerId, _favoriteOfferIds.contains(offerId)));
     notifyListeners();
   }
 
-  /// Récupère les créneaux horaires d'un cours particulier (`availabilities`)
+  /// Retourne une vue non modifiable des créneaux horaires associés à l'offre [offerId].
   List<AvailabilitySlot> getSlotsForOffer(String offerId) {
     return List.unmodifiable(_slotsByOffer[offerId] ?? const []);
   }
 
-  /// Récupère la liste des avis associés à une offre (`GET /reviews`)
+  /// Filtre et retourne les avis vérifiés rattachés à l'offre [offerId] (`GET /reviews`).
   List<OfferReview> getReviewsForOffer(String offerId) {
     return _reviews.where((r) => r.offerId == offerId).toList();
   }
 
-  /// Récupère l'historique des messages d'une commande (`conversations/{id}/messages`)
+  /// Retourne l'historique chronologique des messages de la commande [orderId].
   List<ChatMessage> getMessagesForOrder(String orderId) {
     return List.unmodifiable(_messagesByOrder[orderId] ?? const []);
   }
 
-  /// Offres publiées par l'utilisateur connecté (Vue « Mes offres »)
+  /// Offres dont le vendeur correspond à l'utilisateur courant (onglet « Mes offres »).
   List<Offer> get myOffers =>
       _offers.where((o) => o.sellerId == currentUserId).toList();
 
-  /// Commandes passées par l'utilisateur en tant qu'acheteur (`GET /orders/me?as=buyer`)
+  /// Commandes passées par l'utilisateur courant en tant qu'acheteur (`GET /orders/me?as=buyer`).
   List<MarketplaceOrder> get myPurchases =>
       _orders.where((o) => o.buyerId == currentUserId).toList();
 
-  /// Commandes reçues par l'utilisateur en tant que vendeur (`GET /orders/me?as=seller`)
+  /// Demandes de commandes reçues par l'utilisateur courant en tant que vendeur (`GET /orders/me?as=seller`).
   List<MarketplaceOrder> get receivedOrders =>
       _orders.where((o) => o.sellerId == currentUserId).toList();
 
-  /// Incrémente le compteur de vues lors de l'ouverture du détail d'une offre (`GET /offers/:id`)
+  /// Incrémente le compteur de consultations d'une offre (`GET /offers/:id`) via `copyWith`.
   void incrementViewCount(String offerId) {
     final idx = _offers.indexWhere((o) => o.id == offerId);
     if (idx != -1) {
       _offers[idx] = _offers[idx].copyWith(
         viewsCount: _offers[idx].viewsCount + 1,
       );
+      _pushOffer(offerId);
       notifyListeners();
     }
   }
 
-  /// Crée une nouvelle offre via l'Assistant d'offre (`POST /offers`)
+  /// Insère une nouvelle offre en tête du catalogue (`POST /offers`) ainsi que ses éventuels créneaux.
   void addOffer(Offer offer, {List<AvailabilitySlot> slots = const []}) {
     _offers.insert(0, offer);
     if (slots.isNotEmpty) {
       _slotsByOffer[offer.id] = List.from(slots);
     }
+    _pushOffer(offer.id);
+    _pushSlots(offer.id);
     notifyListeners();
   }
 
-  /// Met à jour une offre existante via l'Assistant d'offre (`PATCH /offers/:id`)
+  /// Remplace une offre existante (`PATCH /offers/:id`) et met à jour ses créneaux horaires si fournis.
   void updateOffer(Offer updatedOffer, {List<AvailabilitySlot>? slots}) {
     final idx = _offers.indexWhere((o) => o.id == updatedOffer.id);
     if (idx != -1) {
       _offers[idx] = updatedOffer;
       if (slots != null) {
+        final keptIds = slots.map((s) => s.id).toSet();
+        for (final old in _slotsByOffer[updatedOffer.id] ?? const <AvailabilitySlot>[]) {
+          if (!keptIds.contains(old.id)) _guard(_remote?.deleteSlot(old.id));
+        }
         _slotsByOffer[updatedOffer.id] = List.from(slots);
+        _pushSlots(updatedOffer.id);
       }
+      _pushOffer(updatedOffer.id);
       notifyListeners();
     }
   }
 
-  /// Change le statut d'une offre : publier ou masquer (`PATCH /offers/:id/publish|hide`)
+  /// Modifie la visibilité d'une offre (`published`, `hidden`, `draft`) et rafraîchit l'interface.
   void updateOfferStatus(String offerId, OfferStatus newStatus) {
     final idx = _offers.indexWhere((o) => o.id == offerId);
     if (idx != -1) {
       _offers[idx] = _offers[idx].copyWith(status: newStatus);
+      _pushOffer(offerId);
       notifyListeners();
     }
   }
 
-  /// Supprime une offre du vendeur (`DELETE /offers/:id`)
+  /// Supprime définitivement une offre ainsi que ses créneaux associés (`DELETE /offers/:id`).
   void deleteOffer(String offerId) {
     _offers.removeWhere((o) => o.id == offerId);
     _slotsByOffer.remove(offerId);
+    _guard(_remote?.deleteOffer(offerId));
     notifyListeners();
   }
 
-  /// Ajoute un créneau de disponibilité pour un cours particulier (`POST /availabilities`)
+  /// Ajoute un créneau horaire libre à un cours particulier (`POST /availabilities`).
   void addAvailabilitySlot(String offerId, String date, String startTime, String endTime) {
     final list = _slotsByOffer.putIfAbsent(offerId, () => []);
     list.add(
@@ -202,17 +337,23 @@ class MarketplaceController extends ChangeNotifier {
         endTime: endTime,
       ),
     );
+    _pushSlots(offerId);
     notifyListeners();
   }
 
-  /// Supprime un créneau libre non réservé (`DELETE /availabilities/:id`)
+  /// Supprime un créneau horaire uniquement s'il n'est pas déjà verrouillé par une réservation (`!s.isBooked`).
   void removeAvailabilitySlot(String offerId, String slotId) {
+    final before = _slotsByOffer[offerId]?.length ?? 0;
     _slotsByOffer[offerId]?.removeWhere((s) => s.id == slotId && !s.isBooked);
+    if ((_slotsByOffer[offerId]?.length ?? 0) < before) {
+      _guard(_remote?.deleteSlot(slotId));
+    }
     notifyListeners();
   }
 
-  /// Enregistre un signalement sur une offre (`POST /reports`).
-  /// Règle Métier 1 (Page 8) : Une offre est masquée automatiquement à partir de 3 signalements.
+  /// Incrémente le compteur de signalements d'une offre (`POST /reports`).
+  /// Dès que le seuil de 3 signalements est atteint, l'offre passe automatiquement
+  /// au statut [OfferStatus.hidden] pour la retirer du catalogue public.
   bool reportOffer(String offerId, String reason) {
     final idx = _offers.indexWhere((o) => o.id == offerId);
     if (idx == -1) return false;
@@ -222,14 +363,18 @@ class MarketplaceController extends ChangeNotifier {
       reportsCount: newReportsCount,
       status: autoHidden ? OfferStatus.hidden : _offers[idx].status,
     );
+    _pushOffer(offerId);
     notifyListeners();
     return autoHidden;
   }
 
-  /// Crée une commande ou réserve un créneau (`POST /orders`, Étape 1 du parcours d'une commande, Page 8) :
-  /// - Passe la commande à `requested` (ou `accepted` immédiatement si ressource numérique gratuite)
-  /// - Verrouille le créneau choisi pour éviter toute double réservation
-  /// - Ouvre la conversation liée à la commande (`conversations/{orderId}`)
+  /// Enregistre une nouvelle commande ou réservation (`POST /orders`) :
+  /// - Positionne le statut initial sur [OrderStatus.requested], ou directement sur
+  ///   [OrderStatus.accepted] lorsqu'il s'agit d'une ressource numérique gratuite.
+  /// - Verrouille immédiatement le créneau sélectionné (`isBooked: true`) pour empêcher
+  ///   toute double réservation concurrente sur le même horaire.
+  /// - Initialise le fil de discussion dédié (`conversations/{orderId}`) avec un message système
+  ///   suivi de la note initiale de l'acheteur.
   MarketplaceOrder createOrder({
     required Offer offer,
     int quantity = 1,
@@ -312,13 +457,22 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ];
 
+    _pushOrder(orderId);
+    _pushSlots(offer.id);
+    for (final m in _messagesByOrder[orderId]!) {
+      _guard(_remote?.saveMessage(m));
+    }
     notifyListeners();
     return newOrder;
   }
 
-  /// Met à jour le statut d'une commande (`PATCH /orders/:id/status`, Étapes 2 à 4 du parcours, Page 8) :
-  /// - Vendeur : accepter (`accepted`), refuser (`rejected`), terminer (`completed`)
-  /// - Acheteur : annuler (`cancelled`)
+  /// Fait évoluer le cycle de vie d'une commande (`PATCH /orders/:id/status`) et applique
+  /// les effets de bord associés :
+  /// - À l'acceptation (`accepted`) : génère automatiquement la salle Jitsi Meet pour un cours
+  ///   en ligne, ou décrémente le stock disponible pour une ressource physique (passage à `soldOut` si stock nul).
+  /// - Au refus (`rejected`) ou à l'annulation (`cancelled`) : déverrouille le créneau horaire réservé.
+  /// - À la clôture (`completed`) : incrémente le compteur de ventes `salesCount` de l'offre.
+  /// Ajoute systématiquement un message système dans la conversation liée avant d'appeler [notifyListeners].
   void updateOrderStatus(String orderId, OrderStatus newStatus) {
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx == -1) return;
@@ -354,7 +508,7 @@ class MarketplaceController extends ChangeNotifier {
       if (slots != null) {
         final sIdx = slots.indexWhere((s) => s.id == order.slotId);
         if (sIdx != -1) {
-          slots[sIdx] = slots[sIdx].copyWith(isBooked: false, orderId: null);
+          slots[sIdx] = slots[sIdx].copyWith(isBooked: false, clearOrderId: true);
         }
       }
     }
@@ -410,10 +564,15 @@ class MarketplaceController extends ChangeNotifier {
       ),
     );
 
+    _pushOrder(orderId);
+    _pushOffer(order.offerId);
+    _pushSlots(order.offerId);
+    _guard(_remote?.saveMessage(msgs.last));
     notifyListeners();
   }
 
-  /// Envoie un message ou une pièce jointe dans le chat d'une commande (`POST /messages`)
+  /// Ajoute un message utilisateur (avec pièce jointe optionnelle hébergée sur Cloudinary)
+  /// dans le fil de discussion de la commande [orderId], puis notifie les écouteurs.
   void sendMessage(String orderId, String text, {String? attachmentLabel}) {
     final list = _messagesByOrder.putIfAbsent(orderId, () => []);
     list.add(
@@ -438,20 +597,24 @@ class MarketplaceController extends ChangeNotifier {
         unreadCount: 0,
       );
     }
+    _guard(_remote?.saveMessage(list.last));
+    _pushOrder(orderId);
     notifyListeners();
   }
 
-  /// Remet à zéro le compteur de messages non-lus à l'ouverture du chat
+  /// Réinitialise le compteur `unreadCount` de la commande [orderId] à l'ouverture de l'écran de chat.
   void markConversationRead(String orderId) {
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx != -1 && _orders[idx].unreadCount > 0) {
       _orders[idx] = _orders[idx].copyWith(unreadCount: 0);
+      _pushOrder(orderId);
       notifyListeners();
     }
   }
 
-  /// Soumet un avis (1 à 5 ★) après une commande terminée (`POST /reviews`, id = orderId).
-  /// Met à jour la note moyenne (`ratingAvg`) de l'offre et déclenche la vérification des badges (L2).
+  /// Enregistre l'évaluation vérifiée d'une commande terminée (`POST /reviews`).
+  /// Utilise `order.id` comme identifiant d'avis pour garantir l'unicité par commande,
+  /// marque `hasReview: true` et recalcule la moyenne pondérée `ratingAvg` de l'offre.
   void submitReview({
     required MarketplaceOrder order,
     required int rating,
@@ -489,12 +652,16 @@ class MarketplaceController extends ChangeNotifier {
         ratingAvg: totalScore / newCount,
         ratingCount: newCount,
       );
+      _pushOffer(order.offerId);
     }
 
+    _pushOrder(order.id);
+    _guard(_remote?.saveReview(_reviews.first));
     notifyListeners();
   }
 
-  /// Initialise les données de démonstration réalistes (scénario du Plan d'équipe, Pages 7 à 9)
+  /// Peuple les collections en mémoire avec un jeu de données initial cohérent
+  /// (offres publiées et brouillon, créneaux horaires, commandes acheteur/vendeur, avis et messages).
   void _seedInitialData() {
     _offers.addAll([
       Offer(
@@ -720,6 +887,7 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ]);
 
+    // Créneaux horaires rattachés aux offres de cours particuliers
     _slotsByOffer['offer_2'] = [
       const AvailabilitySlot(
         id: 'slot_201',
@@ -881,6 +1049,7 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ]);
 
+    // Avis vérifiés initiaux associés aux offres du catalogue
     _reviews.addAll([
       OfferReview(
         id: 'rev_101',
@@ -920,6 +1089,7 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ]);
 
+    // Historiques initiaux des conversations liées aux commandes en cours
     _messagesByOrder['ord_demo_1'] = [
       ChatMessage(
         id: 'm1',

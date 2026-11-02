@@ -2,30 +2,31 @@ import 'package:flutter/material.dart';
 import '../models/courses_models.dart';
 import 'courses_ui.dart';
 
-// ============================================================================
-// LIGNE DE CHAPITRE RÉUTILISABLE — MODULE M2 : COURS
-// Utilisée dans : la page du cours, le lecteur (feuille coulissante),
-// l'assistant de création (réordonnancement) et le tableau de bord enseignant.
-// ============================================================================
+// Tuile réutilisable représentant un chapitre dans tout le module Cours :
+// sommaire de `CourseDetailScreen`, volet coulissant de `ChapterReaderScreen`,
+// listes réordonnables de `CourseWizardScreen` et `CourseManageScreen`.
 
+/// Ligne interactive (`InkWell`) affichant le rang, le titre, le badge de format,
+/// la durée et l'état d'un [Chapter].
 class ChapterTile extends StatelessWidget {
   final Chapter chapter;
 
-  /// Numéro affiché (1-based)
+  /// Position d'affichage du chapitre dans le cours (numérotation à partir de 1).
   final int number;
 
-  /// Chapitre terminé par l'étudiant (coche verte)
+  /// Indique si le chapitre a été validé par l'étudiant (coche verte et titre barré).
   final bool completed;
 
-  /// Chapitre en cours de lecture (surbrillance bleue)
+  /// Met la tuile en surbrillance lorsqu'elle correspond au chapitre ouvert dans le lecteur.
   final bool highlighted;
 
+  /// Action déclenchée au toucher sur la tuile (`InkWell`).
   final VoidCallback? onTap;
 
-  /// Poignée de réordonnancement (assistant & gestion enseignant)
+  /// Affiche une icône de poignée de déplacement à droite lorsque [trailingOverride] est nul.
   final bool showDragHandle;
 
-  /// Widget replacement pour la zone de droite (menu ⋮ enseignant, etc.)
+  /// Widget personnalisé remplaçant l'icône de droite (ex. poignée de drag + bouton d'options enseignant).
   final Widget? trailingOverride;
 
   const ChapterTile({
@@ -134,7 +135,7 @@ class ChapterTile extends StatelessWidget {
     );
   }
 
-  /// Pastille du numéro de chapitre (coche verte si terminé)
+  /// Construit la pastille circulaire de gauche : coche verte si terminé, numéro d'ordre sinon.
   Widget _leading() {
     if (completed) {
       return Container(

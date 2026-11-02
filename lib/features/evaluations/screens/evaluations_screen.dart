@@ -5,6 +5,8 @@ import '../models/evaluations_models.dart';
 import '../routes/evaluations_routes.dart';
 import '../widgets/eval_ui.dart';
 
+/// Écran principal du module Évaluations adaptant dynamiquement ses onglets et ses actions
+/// selon le rôle courant (`UserRole.student` ou `UserRole.teacher`) exposé par [EvaluationsController].
 class EvaluationsScreen extends StatefulWidget {
   const EvaluationsScreen({super.key});
 
@@ -13,11 +15,22 @@ class EvaluationsScreen extends StatefulWidget {
 }
 
 class _EvaluationsScreenState extends State<EvaluationsScreen> {
+  /// Instance singleton du contrôleur réactif fournissant les données et actions métier.
   final _controller = EvaluationsController.instance;
+
+  /// Contrôleur du champ de recherche filtrant les quiz et les devoirs par titre ou par cours.
   final _search = TextEditingController();
+
+  /// Indice de la sous-section active sélectionnée dans le [SegmentedButton] (`0`, `1` ou `2`).
   int _section = 0;
+
+  /// Filtre par nature d'évaluation (`all`, `quiz` ou `assignment`) piloté par des [ChoiceChip].
   String _typeFilter = 'all';
+
+  /// Identifiant du cours sélectionné pour filtrer le carnet de notes ou l'espace documentaire (`null` = tous).
   String? _courseFilter;
+
+  /// Répertoire thématique sélectionné pour filtrer les supports de cours (`null` = tous les dossiers).
   DocumentFolder? _folderFilter;
 
   @override
@@ -28,12 +41,16 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Reconstruit automatiquement les onglets et listes dès que `notifyListeners()` est appelé
+    // sur le contrôleur (changement de rôle, publication, remise de copie, notation ou téléchargement).
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
         final teacher = _controller.isTeacher;
         return Column(
           children: [
+            // Sélecteur segmenté à 3 vues : Mes évaluations / Copies / Documents côté enseignant,
+            // ou À faire / Notes / Documents côté étudiant.
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: SegmentedButton<int>(
@@ -76,6 +93,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                 onSelectionChanged: (s) => setState(() => _section = s.first),
               ),
             ),
+            // Zone principale extensible affichant la vue associée au rôle et au segment actif.
             Expanded(
               child: teacher
                   ? (_section == 0
@@ -95,6 +113,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Champ de recherche textuelle déclenchant un filtrage immédiat des cartes à chaque frappe.
   Widget _searchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -110,6 +129,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Vue étudiante « À faire » regroupant les quiz publiés et les devoirs des cours inscrits,
+  /// filtrés par mot-clé et par catégorie (`ChoiceChip`).
   Widget _studentTodo() {
     final q = _search.text.trim().toLowerCase();
     final quizzes = _controller.publishedQuizzesForStudent().where((item) {
@@ -129,6 +150,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
       padding: const EdgeInsets.only(bottom: 24),
       children: [
         _searchBar(),
+        // Barre de filtres rapides par type d'évaluation disposée dans un Wrap adaptatif.
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Wrap(
@@ -171,6 +193,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Carte étudiante d'un [Quiz] affichant le quota de tentatives, le dernier score éventuel
+  /// et les boutons de navigation vers `QuizTakeScreen` ou `QuizResultsScreen`.
   Widget _quizTile(Quiz quiz) {
     final count = _controller.attemptCountFor(quiz.id, _controller.currentUserId);
     final last = _controller.attemptsForQuiz(
@@ -277,6 +301,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Carte étudiante d'un [Assignment] indiquant l'échéance, la mention éventuelle de retard (`sub.isLate`),
+  /// la note obtenue et le bouton d'accès à `AssignmentSubmitScreen` (désactivé si hors délai non toléré).
   Widget _assignmentTile(Assignment assignment) {
     final sub = _controller.submissionFor(
       assignment.id,
@@ -343,6 +369,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Vue enseignante « Mes évaluations » permettant de filtrer, modifier, publier/masquer,
+  /// consulter les statistiques ou supprimer avec confirmation les quiz et les devoirs.
   Widget _teacherEvaluations() {
     final q = _search.text.trim().toLowerCase();
     final quizzes = _controller.quizzes.where((item) {
@@ -387,6 +415,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             subtitle: 'CRUD enseignant · publier · statistiques',
           ),
         ),
+        // Cartes de gestion enseignant pour chaque quiz (brouillon ou publié).
         ...quizzes.map((quiz) {
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -424,6 +453,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                     style: const TextStyle(color: EduColors.muted, fontSize: 12.5),
                   ),
                   const SizedBox(height: 8),
+                  // Barre d'actions enveloppée dans un Wrap pour éviter tout débordement horizontal sur petit écran.
                   Wrap(
                     spacing: 8,
                     children: [
@@ -470,6 +500,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             ),
           );
         }),
+        // Cartes de gestion enseignant pour chaque devoir avec compteur de copies en attente.
         ...assignments.map((asg) {
           final pending = _controller.submissions
               .where(
@@ -547,6 +578,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Vue enseignante « Copies » combinant la file d'attente des dépôts à noter
+  /// (ouvrant `SubmissionGradeScreen`) et le carnet de notes complet de la promotion.
   Widget _teacherCopies() {
     final copies = _controller.copiesToGrade();
     return ListView(
@@ -593,12 +626,15 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Composant partagé du carnet de notes : affiche uniquement les notes de l'étudiant connecté
+  /// lorsque [studentOnly] vaut `true`, ou l'ensemble de la classe côté enseignant, avec filtre par cours et export CSV.
   Widget _gradebook({required bool studentOnly}) {
     final rows = _controller.gradebook(
       courseId: _courseFilter,
       student: studentOnly ? _controller.currentUserId : null,
     );
     return ListView(
+      // Désactive le défilement interne (`shrinkWrap` + `NeverScrollableScrollPhysics`) lorsqu'il est imbriqué dans `_teacherCopies`.
       shrinkWrap: studentOnly ? false : true,
       physics: studentOnly ? null : const NeverScrollableScrollPhysics(),
       padding: studentOnly ? const EdgeInsets.all(16) : EdgeInsets.zero,
@@ -618,6 +654,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             ),
           ],
         ),
+        // Filtre déroulant par cours mettant à jour à la fois l'affichage et l'export CSV.
         DropdownButtonFormField<String?>(
           initialValue: _courseFilter,
           decoration: evalInputDecoration(label: 'Filtrer par cours'),
@@ -685,6 +722,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Onglet « Documents » filtrable par cours (`DropdownButtonFormField`) et par dossier
+  /// (`ChoiceChip` pour Polycopiés, Corrigés, Annales), ouvrant `DocumentDetailScreen` au clic.
   Widget _documents() {
     final docs = _controller.visibleDocuments(
       courseId: _courseFilter,
@@ -709,6 +748,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           onChanged: (v) => setState(() => _courseFilter = v),
         ),
         const SizedBox(height: 10),
+        // Filtres par répertoire thématique disposés en Wrap.
         Wrap(
           spacing: 8,
           children: [
@@ -762,6 +802,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     );
   }
 
+  /// Affiche une boîte de dialogue modale ([AlertDialog]) demandant confirmation
+  /// avant d'exécuter une suppression irréversible de quiz ou de devoir.
   Future<void> _confirmDelete(String message, VoidCallback onYes) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -783,6 +825,8 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
     if (ok == true) onYes();
   }
 
+  /// Génère le contenu CSV du carnet de notes via [EvaluationsController.exportGradebookCsv]
+  /// et l'affiche dans une feuille modale basse (`showModalBottomSheet`) avec copie vers le presse-papiers ([Clipboard]).
   Future<void> _exportCsv({required bool studentOnly}) async {
     final csv = _controller.exportGradebookCsv(
       courseId: _courseFilter,
@@ -807,6 +851,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
+              // Aperçu sélectionnable et défilable du contenu CSV généré.
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 280),
                 child: SingleChildScrollView(
@@ -817,6 +862,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              // Copie la chaîne CSV dans le presse-papiers système puis referme la feuille modale avec notification SnackBar.
               PrimaryCta(
                 label: 'Copier dans le presse-papiers',
                 icon: Icons.copy_rounded,

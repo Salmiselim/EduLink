@@ -1,32 +1,35 @@
 import 'package:flutter/foundation.dart';
 import '../models/courses_models.dart';
 
-// ============================================================================
-// CONTRÔLEUR D'ÉTAT & DONNÉES DE DÉMONSTRATION — MODULE M2 : COURS
-// Hérite de [ChangeNotifier] (même pattern que les contrôleurs des autres
-// modules) pour synchroniser toutes les vues du module.
-// Les ids de cours sont alignés sur les mocks des modules partenaires
-// (évaluations et marketplace) pour que les intégrations pointent
-// vers les mêmes cours lors des démos.
-// ============================================================================
+// Contrôleur d'état réactif et jeu de données initiales du module Cours.
+// Implémente un singleton basé sur `ChangeNotifier` : chaque mutation appelle
+// `notifyListeners()` afin de reconstruire automatiquement les écrans abonnés
+// via `ListenableBuilder` (`CoursesScreen`, `CourseDetailScreen`,
+// `ChapterReaderScreen`, `CourseManageScreen`).
+// Les identifiants des cours préchargés sont partagés avec les données des
+// modules Évaluations et Marketplace pour assurer la cohérence des rattachements.
 
+/// Contrôleur central gérant le catalogue de cours, les chapitres, les
+/// inscriptions étudiants et le calcul des indicateurs de progression.
 class CoursesController extends ChangeNotifier {
-  /// Instance singleton partagée à travers tous les écrans du module Cours
+  /// Instance unique partagée entre tous les écrans et feuilles du module Cours.
   static final CoursesController instance = CoursesController._internal();
 
+  /// Constructeur privé initialisant en mémoire le jeu de cours, chapitres et inscriptions.
   CoursesController._internal() {
     _seedInitialData();
   }
 
-  /// Utilisateur connecté simulé (`users.uid` et `users.role`)
+  /// Identifiant, nom affichable et rôle de l'utilisateur courant en session locale.
   String currentUserId = 'user_me';
   String currentUserName = 'Yasmine Ben Ali';
   CourseRole currentUserRole = CourseRole.student;
 
+  /// Indique si le profil actif dispose des droits enseignant sur l'interface.
   bool get isTeacher => currentUserRole == CourseRole.teacher;
 
-  /// Bascule Étudiant ↔ Enseignant pour tester les deux vues de l'onglet Cours
-  /// (l'enseignant simulé est le même que celui du mock M4 : Dr. Leila Mansour)
+  /// Permute le rôle courant entre étudiant et enseignant, met à jour l'identité
+  /// affichée et déclenche `notifyListeners()` pour rafraîchir la barre d'onglets et les vues.
   void toggleCurrentUserRole() {
     if (currentUserRole == CourseRole.student) {
       currentUserRole = CourseRole.teacher;
@@ -38,7 +41,7 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Matières identiques à celles de la Marketplace (M5) — cohérence des filtres
+  /// Liste de référence des matières proposées dans les formulaires et les filtres du catalogue.
   static const List<String> subjects = [
     'Algorithmique',
     'Bases de Données',
@@ -49,36 +52,38 @@ class CoursesController extends ChangeNotifier {
     'Développement Mobile',
   ];
 
-  /// Niveaux académiques (L1 à M2)
+  /// Niveaux universitaires disponibles (de la Licence 1 au Master 2).
   static const List<String> levels = ['L1', 'L2', 'L3', 'M1', 'M2'];
 
-  // Collections simulées en mémoire (collections Firestore de M2)
+  // Stockage local en mémoire représentant les collections `courses`, `chapters` et `enrollments`.
   final List<Course> _courses = [];
   final Map<String, List<Chapter>> _chaptersByCourse = {};
   final List<Enrollment> _enrollments = [];
 
-  // --- Accesseurs en lecture seule -------------------------------------------
+  // Accesseurs de lecture exposant des vues non modifiables de l'état interne.
 
+  /// Ensemble complet des cours en mémoire, publiés comme brouillons.
   List<Course> get allCourses => List.unmodifiable(_courses);
 
-  /// Catalogue public : uniquement les cours publiés
+  /// Sous-ensemble des cours ayant `isPublished == true`, exposés dans le catalogue étudiant.
   List<Course> get publishedCourses =>
       _courses.where((c) => c.isPublished).toList(growable: false);
 
-  /// Cours de l'enseignant connecté (`GET /courses?teacherId=me`)
+  /// Cours dont l'auteur correspond à `currentUserId` (`GET /courses?teacherId=me`).
   List<Course> get teacherCourses =>
       _courses.where((c) => c.teacherId == currentUserId).toList(growable: false);
 
-  /// Inscriptions de l'étudiant connecté (`GET /enrollments/me`)
+  /// Liste des inscriptions associées à l'étudiant connecté (`GET /enrollments/me`).
   List<Enrollment> get myEnrollments =>
       _enrollments.where((e) => e.studentId == currentUserId).toList(growable: false);
 
-  /// Cours suivis par l'étudiant connecté
+  /// Objets [Course] résolus à partir des inscriptions de l'étudiant connecté.
   List<Course> get enrolledCourses => myEnrollments
       .map((e) => courseById(e.courseId))
       .whereType<Course>()
       .toList(growable: false);
 
+  /// Recherche un cours par son identifiant unique ; retourne `null` s'il n'existe plus.
   Course? courseById(String courseId) {
     for (final c in _courses) {
       if (c.id == courseId) return c;
@@ -86,15 +91,15 @@ class CoursesController extends ChangeNotifier {
     return null;
   }
 
-  /// Chapitres d'un cours triés par ordre (`GET /courses/:id/chapters`)
+  /// Retourne la liste ordonnée et non modifiable des chapitres rattachés à [courseId].
   List<Chapter> chaptersOf(String courseId) =>
       List.unmodifiable(_chaptersByCourse[courseId] ?? const []);
 
-  /// Durée totale du cours en minutes (somme des chapitres)
+  /// Calcule la durée cumulée en minutes de tous les chapitres d'un cours.
   int totalDurationMin(String courseId) => chaptersOf(courseId)
       .fold(0, (total, chapter) => total + chapter.durationMin);
 
-  /// Inscription de l'utilisateur courant à un cours donné
+  /// Récupère l'inscription de l'utilisateur courant pour [courseId], ou `null` s'il n'est pas inscrit.
   Enrollment? enrollmentFor(String courseId) {
     for (final e in myEnrollments) {
       if (e.courseId == courseId) return e;
@@ -102,21 +107,23 @@ class CoursesController extends ChangeNotifier {
     return null;
   }
 
+  /// Vérifie si l'utilisateur courant possède une inscription active sur [courseId].
   bool isEnrolled(String courseId) => enrollmentFor(courseId) != null;
 
-  /// Inscriptions à un cours (`GET /courses/:id/students` — enseignant)
+  /// Retourne toutes les inscriptions enregistrées sur un cours donné (`GET /courses/:id/students`).
   List<Enrollment> enrollmentsOf(String courseId) => _enrollments
       .where((e) => e.courseId == courseId)
       .toList(growable: false);
 
-  /// Progression d'une inscription (0.0 → 1.0) d'après les chapitres terminés
+  /// Calcule le taux d'avancement (`0.0` à `1.0`) d'une inscription en rapportant
+  /// le nombre de chapitres terminés au nombre total de chapitres du cours.
   double progressOf(Enrollment enrollment) {
     final chapters = chaptersOf(enrollment.courseId);
     if (chapters.isEmpty) return 0;
     return enrollment.completedChapterIds.length / chapters.length;
   }
 
-  /// Progression moyenne d'un cours (vue enseignant)
+  /// Calcule la moyenne des progressions individuelles de tous les inscrits à [courseId].
   double courseAverageProgress(String courseId) {
     final enrollments = enrollmentsOf(courseId);
     if (enrollments.isEmpty) return 0;
@@ -127,9 +134,10 @@ class CoursesController extends ChangeNotifier {
         enrollments.length;
   }
 
-  // --- Métier 1 : assistant de création de cours (enseignant) ----------------
+  // Opérations d'écriture enseignant : cycle de vie des cours et de leurs chapitres.
 
-  /// Crée un cours en brouillon (`POST /courses`)
+  /// Instancie un nouveau cours à l'état de brouillon (`isPublished: false`),
+  /// prépare sa liste de chapitres vide et notifie les écouteurs (`POST /courses`).
   Course createCourse({
     required String title,
     required String subject,
@@ -155,7 +163,8 @@ class CoursesController extends ChangeNotifier {
     return course;
   }
 
-  /// Modifie un cours existant (`PATCH /courses/:id`)
+  /// Met à jour les métadonnées descriptives d'un cours existant puis déclenche
+  /// `notifyListeners()` pour synchroniser les cartes et fiches ouvertes (`PATCH /courses/:id`).
   void updateCourse(
     String courseId, {
     required String title,
@@ -174,7 +183,8 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Supprime un cours et ses chapitres / inscriptions (`DELETE /courses/:id`)
+  /// Supprime en cascade le cours, ses chapitres associés et toutes ses inscriptions,
+  /// puis notifie les vues abonnées (`DELETE /courses/:id`).
   void deleteCourse(String courseId) {
     _courses.removeWhere((c) => c.id == courseId);
     _chaptersByCourse.remove(courseId);
@@ -182,8 +192,8 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Publie ou masque un cours (`PATCH /courses/:id/publish`).
-  /// Retourne false si la publication est refusée (aucun chapitre).
+  /// Bascule la visibilité publique d'un cours dans le catalogue (`PATCH /courses/:id/publish`).
+  /// Refuse la publication et retourne `false` si le cours ne comporte encore aucun chapitre.
   bool setPublished(String courseId, bool published) {
     final course = courseById(courseId);
     if (course == null) return false;
@@ -193,7 +203,8 @@ class CoursesController extends ChangeNotifier {
     return true;
   }
 
-  /// Ajoute un chapitre (`POST /courses/:id/chapters`)
+  /// Ajoute un chapitre en fin de séquence sur [courseId], met à jour le compteur
+  /// `chaptersCount` du cours et appelle `notifyListeners()` (`POST /courses/:id/chapters`).
   Chapter addChapter(
     String courseId, {
     required String title,
@@ -217,7 +228,8 @@ class CoursesController extends ChangeNotifier {
     return chapter;
   }
 
-  /// Modifie un chapitre (`PATCH /courses/:id/chapters/:chapterId`)
+  /// Modifie le titre, la durée estimée et éventuellement le contenu d'un chapitre existant,
+  /// puis notifie les vues abonnées (`PATCH /courses/:id/chapters/:chapterId`).
   void updateChapter(
     String courseId,
     String chapterId, {
@@ -238,7 +250,8 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Supprime un chapitre et réindexe les suivants (`DELETE /courses/:id/chapters/:id`)
+  /// Retire un chapitre de la séquence, réindexe les positions `order` suivantes et nettoie
+  /// les références dans les inscriptions existantes avant d'appeler `notifyListeners()`.
   void deleteChapter(String courseId, String chapterId) {
     final chapters = _chaptersByCourse[courseId];
     if (chapters == null) return;
@@ -248,7 +261,7 @@ class CoursesController extends ChangeNotifier {
     }
     final course = courseById(courseId);
     if (course != null) course.chaptersCount = chapters.length;
-    // Retire le chapitre des progressions et corrige la reprise de lecture
+    // Nettoie les progressions étudiants et réajuste le pointeur de reprise si nécessaire.
     for (final e in _enrollments.where((e) => e.courseId == courseId)) {
       e.completedChapterIds.remove(chapterId);
       if (e.lastChapterId == chapterId) {
@@ -258,10 +271,10 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Réordonne les chapitres après un glisser-déposer
-  /// (`PATCH /courses/:id/chapters/reorder`).
-  /// [newIndex] est déjà ajusté par `ReorderableListView.onReorderItem`
-  /// (position finale d'insertion après retrait de l'élément déplacé).
+  /// Déplace un chapitre de [oldIndex] vers [newIndex] suite à un glisser-déposer,
+  /// met à jour l'attribut `order` de toute la liste et notifie les écouteurs.
+  /// L'indice [newIndex] transmis par `ReorderableListView.onReorderItem` correspond
+  /// déjà à la position finale d'insertion après extraction de l'élément.
   void reorderChapters(String courseId, int oldIndex, int newIndex) {
     final chapters = _chaptersByCourse[courseId];
     if (chapters == null ||
@@ -279,9 +292,10 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Métier 2 : catalogue, inscription et lecteur de chapitres (étudiant) --
+  // Opérations étudiant : inscription au cours et suivi d'avancement par chapitre.
 
-  /// Inscrit l'étudiant courant (`POST /enrollments`)
+  /// Enregistre l'inscription de l'étudiant connecté sur [courseId], incrémente le
+  /// compteur `enrollmentsCount` du cours et appelle `notifyListeners()` (`POST /enrollments`).
   void enroll(String courseId) {
     if (isEnrolled(courseId)) return;
     final course = courseById(courseId);
@@ -299,8 +313,9 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Marque un chapitre comme terminé / à refaire
-  /// (`PATCH /enrollments/:id/progress` — déclenche les badges L2 côté backend)
+  /// Ajoute ou retire [chapterId] des chapitres terminés de l'inscription courante,
+  /// actualise le pointeur de reprise `lastChapterId` ainsi que `lastAccess`,
+  /// puis appelle `notifyListeners()` (`PATCH /enrollments/:id/progress`).
   void setChapterCompleted(
     String courseId,
     String chapterId,
@@ -320,7 +335,8 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Prochain chapitre à lire : le premier non terminé, sinon le dernier lu
+  /// Détermine le prochain chapitre à proposer à la lecture : retourne le premier
+  /// chapitre non terminé dans l'ordre du cours, ou le dernier si tout est achevé.
   Chapter? nextChapterToRead(String courseId) {
     final enrollment = enrollmentFor(courseId);
     final chapters = chaptersOf(courseId);
@@ -334,20 +350,23 @@ class CoursesController extends ChangeNotifier {
     return chapters.last;
   }
 
-  // --- Métier 3 : suivi de progression & tableau de bord enseignant ----------
+  // Agrégats analytiques pour le tableau de bord de suivi enseignant.
 
+  /// Nombre de cours publiés appartenant à l'enseignant connecté.
   int get teacherPublishedCount =>
       teacherCourses.where((c) => c.isPublished).length;
 
+  /// Nombre de cours encore à l'état de brouillon pour l'enseignant connecté.
   int get teacherDraftCount =>
       teacherCourses.where((c) => !c.isPublished).length;
 
+  /// Somme des inscriptions sur l'ensemble des cours de l'enseignant connecté.
   int get teacherEnrollmentsTotal => teacherCourses.fold<int>(
         0,
         (total, course) => total + course.enrollmentsCount,
       );
 
-  /// Progression moyenne sur tous les cours de l'enseignant
+  /// Moyenne des progressions sur tous les cours de l'enseignant comptant au moins un inscrit.
   double get teacherAverageProgress {
     final courses = teacherCourses
         .where((c) => enrollmentsOf(c.id).isNotEmpty)
@@ -360,7 +379,8 @@ class CoursesController extends ChangeNotifier {
         courses.length;
   }
 
-  /// Chapitres les moins terminés, tous cours confondus (pédagogie ciblée)
+  /// Classe les chapitres des cours de l'enseignant par taux de complétion croissant
+  /// et retourne les [limit] premiers afin d'identifier les points de blocage pédagogique.
   List<ChapterCompletionStat> leastCompletedChapters({int limit = 5}) {
     final stats = <ChapterCompletionStat>[];
     for (final course in teacherCourses) {
@@ -384,7 +404,7 @@ class CoursesController extends ChangeNotifier {
     return stats.take(limit).toList(growable: false);
   }
 
-  // --- Données de démonstration ---------------------------------------------
+  // Initialisation du jeu de données local au démarrage du contrôleur.
 
   void _seedInitialData() {
     final algo = Course(
@@ -801,11 +821,11 @@ class CoursesController extends ChangeNotifier {
           ['algo_c1', 'algo_c2'], 'algo_c2'),
       enr('course_algo_1', 'student_rania', 'Rania Khelifi',
           ['algo_c1', 'algo_c3', 'algo_c4', 'algo_c5'], 'algo_c5'),
-      // Bases de Données L2 (2 inscrits)
+      // Bases de Données — Licence 2 (2 inscrits)
       enr('course_bdd_1', 'user_me', 'Yasmine Ben Ali', ['bdd1_c1'], 'bdd1_c1'),
       enr('course_bdd_1', 'student_sara', 'Sara Gharbi',
           ['bdd1_c1', 'bdd1_c2', 'bdd1_c3'], 'bdd1_c3'),
-      // SQL Avancé M1 (1 inscrit)
+      // SQL Avancé — Master 1 (1 inscrit)
       enr('course_bdd_2', 'student_mehdi', 'Mehdi Jelassi', [], null),
       // Réseaux & Sécurité (1 inscrit)
       enr('course_reseau_1', 'student_rania', 'Rania Khelifi',

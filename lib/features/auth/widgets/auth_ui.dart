@@ -1,14 +1,7 @@
 import 'package:flutter/material.dart';
 
-// ============================================================================
-// KIT UI PARTAGÉ — AUTHENTIFICATION (connexion, inscription, mot de passe)
-// Palette et primitives conformes à la charte graphique EduLink
-// (MARKETPLACE_GUIDE.md). Interface de démonstration : toute saisie valide
-// ouvre l'application ; la connexion réelle (Firebase Authentication) sera
-// branchée par le module Comptes & Profils.
-// ============================================================================
-
-/// Palette de la charte graphique EduLink
+/// Palette de couleurs commune aux écrans d'authentification (`SignInScreen`,
+/// `SignUpScreen`, `ForgotPasswordScreen`), alignée sur la charte graphique EduLink.
 class AuthColors {
   static const Color primary = Color(0xFF2563EB);
   static const Color primaryDark = Color(0xFF1E3A8A);
@@ -23,7 +16,8 @@ class AuthColors {
   static const Color neutralBg = Color(0xFFF1F5F9);
 }
 
-/// Décoration standard des champs de saisie (cohérente avec les modules)
+/// Construit une `InputDecoration` uniforme pour tous les `TextFormField`
+/// des formulaires de connexion, d'inscription et de récupération.
 InputDecoration authInputDecoration({
   required String label,
   String? hint,
@@ -51,7 +45,8 @@ InputDecoration authInputDecoration({
   );
 }
 
-/// En-tête de marque : logo en dégradé EduLink + nom + slogan
+/// En-tête d'identité visuelle regroupant le logo en dégradé, le titre EduLink
+/// et un sous-titre contextuel propre à chaque écran d'authentification.
 class AuthHeader extends StatelessWidget {
   final String subtitle;
 
@@ -102,7 +97,8 @@ class AuthHeader extends StatelessWidget {
   }
 }
 
-/// Bouton d'action principal (hauteur 50, radius 14 — charte)
+/// Bouton d'action principal pleine largeur (`FilledButton`) utilisé pour
+/// soumettre les formulaires d'authentification.
 class AuthPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -131,7 +127,8 @@ class AuthPrimaryButton extends StatelessWidget {
   }
 }
 
-/// Bouton social (Google / Apple) — fond blanc, bordure fine, logo de marque
+/// Bouton secondaire à contour fin (`OutlinedButton.icon`) pour la connexion
+/// via un fournisseur d'identité externe (Google ou Apple).
 class AuthSocialButton extends StatelessWidget {
   final Widget logo;
   final String label;
@@ -168,7 +165,7 @@ class AuthSocialButton extends StatelessWidget {
   }
 }
 
-/// Logo « G » de Google (lettre colorée sur pastille blanche)
+/// Pastille circulaire affichant le monogramme coloré de Google.
 class GoogleLogo extends StatelessWidget {
   const GoogleLogo({super.key});
 
@@ -195,7 +192,7 @@ class GoogleLogo extends StatelessWidget {
   }
 }
 
-/// Logo Apple (glyphe blanc sur pastille noire)
+/// Pastille sombre affichant le glyphe Apple pour le bouton de connexion sociale.
 class AppleLogo extends StatelessWidget {
   const AppleLogo({super.key});
 
@@ -214,7 +211,7 @@ class AppleLogo extends StatelessWidget {
   }
 }
 
-/// Séparateur « ou » centré entre deux filets
+/// Séparateur horizontal centrant un texte entre deux `Divider` extensibles (`Expanded`).
 class AuthDivider extends StatelessWidget {
   final String label;
 

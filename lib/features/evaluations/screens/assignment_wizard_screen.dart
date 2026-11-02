@@ -4,6 +4,8 @@ import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
 import '../widgets/eval_ui.dart';
 
+/// Assistant enseignant en deux étapes permettant de créer ou de modifier un [Assignment].
+/// Étape 0 : cours rattaché, titre et consignes. Étape 1 : barème, échéance, tolérance au retard et PDF joint.
 class AssignmentWizardScreen extends StatefulWidget {
   final Assignment? existing;
   const AssignmentWizardScreen({super.key, this.existing});
@@ -14,7 +16,11 @@ class AssignmentWizardScreen extends StatefulWidget {
 
 class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
   final _controller = EvaluationsController.instance;
+
+  /// Clé globale de validation associée au [Form] englobant les étapes de l'assistant.
   final _formKey = GlobalKey<FormState>();
+
+  /// Indice de l'étape active (`0` pour les informations générales, `1` pour le barème et les pièces jointes).
   int _step = 0;
 
   late final TextEditingController _title;
@@ -29,9 +35,11 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
   @override
   void initState() {
     super.initState();
+    // Garde d'accès : referme immédiatement l'écran si l'utilisateur courant n'est pas enseignant.
     if (!_controller.isTeacher) {
       WidgetsBinding.instance.addPostFrameCallback((_) => Navigator.pop(context));
     }
+    // Initialise les contrôleurs avec les valeurs du devoir existant en édition ou des valeurs par défaut.
     final e = widget.existing;
     _title = TextEditingController(text: e?.title ?? '');
     _instructions = TextEditingController(text: e?.instructions ?? '');
@@ -52,6 +60,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
     super.dispose();
   }
 
+  /// Valide à la fois les champs du [Form] et la présence d'au moins un support de consigne joint.
   bool _validate() {
     final ok = _formKey.currentState?.validate() ?? false;
     if (_attachments.isEmpty) {
@@ -69,6 +78,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
     return ok;
   }
 
+  /// Persiste le devoir créé ou modifié dans [EvaluationsController.upsertAssignment] puis revient à l'écran précédent.
   void _save() {
     if (!_validate()) return;
     final course = _controller.courses.firstWhere((c) => c.id == _courseId);
@@ -112,12 +122,14 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
       ),
       body: Column(
         children: [
+          // Barre de progression linéaire indiquant l'avancement sur les 2 étapes du wizard.
           LinearProgressIndicator(
             value: (_step + 1) / 2,
             color: EduColors.primary,
             backgroundColor: EduColors.border,
             minHeight: 6,
           ),
+          // Zone centrale extensible accueillant le formulaire déroulant.
           Expanded(
             child: Form(
               key: _formKey,
@@ -126,6 +138,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   if (_step == 0) ...[
+                    // Sélecteur déroulant rattachant le devoir à l'un des cours de l'enseignant.
                     DropdownButtonFormField<String>(
                       initialValue: _courseId,
                       decoration: evalInputDecoration(label: 'Cours (L4)'),
@@ -140,6 +153,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                       onChanged: (v) => setState(() => _courseId = v!),
                     ),
                     const SizedBox(height: 12),
+                    // Saisie du titre avec contrôle de longueur minimale et maximale.
                     TextFormField(
                       controller: _title,
                       maxLength: 80,
@@ -151,6 +165,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
+                    // Saisie multiligne des consignes détaillées du travail demandé.
                     TextFormField(
                       controller: _instructions,
                       maxLines: 5,
@@ -168,6 +183,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                       },
                     ),
                   ] else ...[
+                    // Champ numérique restreint aux chiffres définissant le barème maximal (1 à 20).
                     TextFormField(
                       controller: _maxGrade,
                       keyboardType: TextInputType.number,
@@ -185,6 +201,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
+                    // Sélecteur de date limite ouvrant un DatePicker et fixant l'heure à 23h59.
                     ListTile(
                       tileColor: Colors.white,
                       shape: RoundedRectangleBorder(
@@ -207,6 +224,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                         );
                       },
                     ),
+                    // Interrupteur contrôlant la politique `allowLate` pour les remises après échéance.
                     SwitchListTile(
                       value: _allowLate,
                       title: const Text('Autoriser les rendus en retard'),
@@ -216,6 +234,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                       onChanged: (v) => setState(() => _allowLate = v),
                     ),
                     const SizedBox(height: 8),
+                    // Ajout simulé de fichiers PDF d'énoncé rattachés au devoir.
                     OutlinedButton.icon(
                       onPressed: () {
                         setState(() {
@@ -248,6 +267,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
               ),
             ),
           ),
+          // Barre d'actions inférieure permettant de revenir à l'étape 0 ou de valider l'étape courante.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Row(

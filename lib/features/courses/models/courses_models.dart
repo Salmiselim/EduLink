@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 
-// ============================================================================
-// MODÈLES DE DONNÉES — MODULE M2 : COURS
-// Correspondent aux collections Firestore du plan d'équipe (page 5) :
-// courses · courses/{id}/chapters (sous-collection) · enrollments
-// ============================================================================
+// Modèles de données du module Cours.
+// Représentent les documents des collections Firestore `courses`,
+// `courses/{id}/chapters` et `enrollments`, ainsi que les agrégats de suivi.
 
-/// Type de contenu d'un chapitre (`chapters.type` : text | pdf | video | link)
+/// Format du support pédagogique associé à un chapitre (`text`, `pdf`, `video`, `link`).
+/// Détermine le mode de rendu dans `ChapterReaderScreen` et le type de champ
+/// affiché dans `ChapterEditSheet`.
 enum ChapterType { text, pdf, video, link }
 
+/// Propriétés d'affichage et de sérialisation rattachées à [ChapterType].
 extension ChapterTypeX on ChapterType {
-  /// Libellé affichable dans l'interface
+  /// Libellé lisible affiché sur les badges et puces de sélection.
   String get label {
     switch (this) {
       case ChapterType.text:
@@ -24,7 +25,7 @@ extension ChapterTypeX on ChapterType {
     }
   }
 
-  /// Valeur stockée dans Firestore
+  /// Identifiant brut enregistré dans le champ `type` du document Firestore.
   String get firestoreValue {
     switch (this) {
       case ChapterType.text:
@@ -38,7 +39,7 @@ extension ChapterTypeX on ChapterType {
     }
   }
 
-  /// Icône Material (variantes `_rounded` — charte graphique)
+  /// Icône Material associée au format du support dans les listes et en-têtes.
   IconData get icon {
     switch (this) {
       case ChapterType.text:
@@ -52,7 +53,7 @@ extension ChapterTypeX on ChapterType {
     }
   }
 
-  /// Couleur sémantique du type (badge à 10 % d'opacité)
+  /// Couleur principale associée au type de support pour les icônes et textes de badge.
   Color get color {
     switch (this) {
       case ChapterType.text:
@@ -66,9 +67,11 @@ extension ChapterTypeX on ChapterType {
     }
   }
 
+  /// Teinte d'arrière-plan atténuée (opacité 10 %) utilisée par `ChapterTypeBadge`.
   Color get background => color.withValues(alpha: 0.1);
 
-  /// Parse la valeur Firestore vers l'enum (fallback : texte)
+  /// Convertit une chaîne issue de Firestore vers la valeur correspondante de [ChapterType].
+  /// Retourne [ChapterType.text] par défaut si la valeur n'est pas reconnue.
   static ChapterType fromFirestore(String value) {
     switch (value) {
       case 'pdf':
@@ -83,10 +86,14 @@ extension ChapterTypeX on ChapterType {
   }
 }
 
-/// Rôle de l'utilisateur connecté (simulation du `users.role` géré par M1)
+/// Profil actif dans le module Cours, utilisé par `CoursesController` pour
+/// basculer entre l'interface étudiant (catalogue, progression) et l'interface
+/// enseignant (création, gestion des chapitres, statistiques).
 enum CourseRole { student, teacher }
 
-/// Un cours de la collection `courses`
+/// Modèle principal d'un cours stocké dans la collection `courses`.
+/// Regroupe les métadonnées descriptives, les compteurs dénormalisés
+/// (`chaptersCount`, `enrollmentsCount`) et l'état de publication.
 class Course {
   final String id;
   final String teacherId;
@@ -118,6 +125,8 @@ class Course {
     required this.createdAt,
   });
 
+  /// Retourne une copie du cours en remplaçant uniquement les champs fournis,
+  /// tout en conservant l'identifiant, l'auteur et la date de création d'origine.
   Course copyWith({
     String? title,
     String? subject,
@@ -146,14 +155,16 @@ class Course {
   }
 }
 
-/// Un chapitre de la sous-collection `courses/{id}/chapters`
+/// Modèle d'un chapitre appartenant à la sous-collection `courses/{id}/chapters`.
+/// Le champ [order] définit sa position d'affichage et est recalculé lors des
+/// suppressions ou des réordonnancements dans `CoursesController`.
 class Chapter {
   final String id;
   String title;
   final ChapterType type;
 
-  /// Contenu selon le type : texte brut (`text`), URL du fichier (`pdf`),
-  /// URL YouTube (`video`) ou URL externe (`link`)
+  /// Corps du chapitre selon [type] : texte rédigé (`text`), URI du document (`pdf`),
+  /// lien YouTube (`video`) ou URL web externe (`link`).
   String? content;
   int durationMin;
   int order;
@@ -168,15 +179,16 @@ class Chapter {
   });
 }
 
-/// Une inscription de la collection `enrollments`
-/// (id Firestore = `courseId_studentId`, donc unique)
+/// Modèle d'inscription reliant un étudiant à un cours (`courseId` + `studentId`).
+/// Mémorise la liste des chapitres validés pour le calcul du taux d'avancement
+/// ainsi que le dernier chapitre ouvert pour la reprise directe de lecture.
 class Enrollment {
   final String courseId;
   final String studentId;
   final String studentName;
   final List<String> completedChapterIds;
 
-  /// Dernier chapitre consulté — « reprise là où l'on s'est arrêté »
+  /// Identifiant du dernier chapitre consulté, utilisé pour reprendre la lecture.
   String? lastChapterId;
   DateTime lastAccess;
 
@@ -190,7 +202,8 @@ class Enrollment {
   });
 }
 
-/// Statistique de complétion d'un chapitre (tableau de bord enseignant — Métier 3)
+/// Agrégat statistique mesurant l'achèvement d'un chapitre donné parmi les
+/// inscrits du cours correspondant, exploité dans la vue analytique enseignant.
 class ChapterCompletionStat {
   final Course course;
   final Chapter chapter;
@@ -204,6 +217,6 @@ class ChapterCompletionStat {
     required this.enrolledCount,
   });
 
-  /// Taux de complétion du chapitre (0.0 → 1.0)
+  /// Ratio d'étudiants inscrits ayant terminé ce chapitre, compris entre `0.0` et `1.0`.
   double get rate => enrolledCount == 0 ? 0 : completedCount / enrolledCount;
 }

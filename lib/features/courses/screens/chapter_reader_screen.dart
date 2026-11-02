@@ -5,15 +5,12 @@ import '../models/courses_models.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
 
-// ============================================================================
-// LECTEUR DE CHAPITRES (ChapterReaderScreen) — ROUTE POUSSÉE, plein écran
-// Métier 2 : lecture des chapitres selon leur type (texte, PDF, vidéo, lien)
-// et « reprise là où l'on s'est arrêté ».
-// Signature du module : la barre coulissante (DraggableScrollableSheet) —
-// un coup d'œil montre la progression, un glissement vers le haut révèle
-// la liste complète des chapitres avec leur état de complétion.
-// ============================================================================
+// Écran plein écran de lecture d'un chapitre (`ChapterReaderScreen`).
+// Adapte la zone principale au format du chapitre (`text`, `pdf`, `video`, `link`)
+// et superpose un volet inférieur coulissant (`DraggableScrollableSheet`) permettant
+// de suivre la progression globale, valider le chapitre courant et naviguer dans le sommaire.
 
+/// Lecteur interactif de chapitres ouvert via la route nommée `CoursesRoutes.chapterReader`.
 class ChapterReaderScreen extends StatefulWidget {
   final String courseId;
   final String chapterId;
@@ -31,15 +28,19 @@ class ChapterReaderScreen extends StatefulWidget {
 class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
   final CoursesController _controller = CoursesController.instance;
 
-  /// Hauteur d'accueil de la barre coulissante (fraction de l'écran)
+  /// Hauteur minimale du volet coulissant replié, exprimée en fraction de la hauteur d'écran.
   static const double _peekSize = 0.22;
 
+  /// Identifiant du chapitre actuellement affiché dans la zone de lecture.
   late String _currentChapterId = widget.chapterId;
 
+  /// Change le chapitre actif dans l'état local sans empiler de nouvelle route.
   void _selectChapter(String chapterId) {
     setState(() => _currentChapterId = chapterId);
   }
 
+  /// Se déplace vers le chapitre précédent (`offset = -1`) ou suivant (`offset = 1`)
+  /// tout en vérifiant les bornes de la liste des chapitres du cours.
   void _goToRelativeChapter(List<Chapter> chapters, int offset) {
     final index = chapters.indexWhere((c) => c.id == _currentChapterId);
     final target = index + offset;
@@ -48,8 +49,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     }
   }
 
-  /// Marque le chapitre comme terminé / non terminé et célèbre la fin du cours
-  /// (les badges seront attribués prochainement).
+  /// Inverse l'état de complétion du chapitre auprès de `CoursesController` et ouvre
+  /// la boîte de dialogue de félicitations lorsque le dernier chapitre restant est validé.
   void _toggleCompleted(Chapter chapter, bool currentlyCompleted) {
     final enrollment = _controller.enrollmentFor(widget.courseId);
     final before = enrollment?.completedChapterIds.length ?? 0;
@@ -68,6 +69,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     }
   }
 
+  /// Affiche un `AlertDialog` confirmant que l'intégralité des chapitres du cours a été validée.
   void _showCourseCompletedDialog() {
     showDialog<void>(
       context: context,
@@ -117,6 +119,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Écoute `CoursesController` afin de mettre à jour en direct l'anneau de progression,
+    // l'état du bouton de validation et les coches du sommaire.
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
@@ -189,7 +193,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
           body: Stack(
             fit: StackFit.expand,
             children: [
-              // --- Contenu du chapitre (sous la feuille coulissante) ---
+              // Zone principale de rendu du support, décalée en bas de `_peekSize`
+              // pour ne pas être masquée par le volet coulissant replié.
               Positioned.fill(
                 child: Padding(
                   padding: EdgeInsets.only(
@@ -198,7 +203,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                   child: _chapterContent(chapter, safeIndex),
                 ),
               ),
-              // --- Barre coulissante des chapitres (slide-up bar) ---
+              // Volet inférieur coulissant (`DraggableScrollableSheet`) avec paliers d'ancrage :
+              // affiche en permanence la progression et les contrôles, et dévoile le sommaire complet au glissement.
               DraggableScrollableSheet(
                 initialChildSize: _peekSize,
                 minChildSize: _peekSize,
@@ -218,7 +224,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                     ),
                     child: Column(
                       children: [
-                        // Poignée de glissement
+                        // Poignée visuelle indiquant que le panneau peut être étiré verticalement.
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Container(
@@ -230,7 +236,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                             ),
                           ),
                         ),
-                        // Aperçu fixe : progression + navigation
+                        // Bandeau supérieur fixe : anneau de progression, titre courant (`Expanded`) et boutons précédent/suivant.
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
                           child: Row(
@@ -298,7 +304,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                             ],
                           ),
                         ),
-                        // Action principale : marquer comme terminé
+                        // Bouton principal de validation ou d'annulation de complétion du chapitre actif.
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                           child: SizedBox(
@@ -355,7 +361,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                           ),
                         ),
                         const Divider(height: 1),
-                        // Liste complète des chapitres (zone déplaçable)
+                        // Sommaire déroulant relié au `scrollController` du `DraggableScrollableSheet`.
                         Expanded(
                           child: ListView(
                             controller: scrollController,
@@ -399,10 +405,9 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
   }
 
-  // ===========================================================================
-  // Rendu du contenu selon le type du chapitre
-  // ===========================================================================
+  // Sélection et construction du widget de lecture adapté au `ChapterType`.
 
+  /// Délègue le rendu de la zone centrale à la vue spécialisée selon `chapter.type`.
   Widget _chapterContent(Chapter chapter, int index) {
     switch (chapter.type) {
       case ChapterType.text:
@@ -416,6 +421,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     }
   }
 
+  /// Affiche un chapitre rédigé en découpant le texte brut en paragraphes espacés.
   Widget _textContent(Chapter chapter, int index) {
     final paragraphs =
         (chapter.content ?? '').split('\n\n').where((p) => p.isNotEmpty);
@@ -470,8 +476,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
   }
 
-  /// PDF : visionneuse simplifiée — le fichier est stocké en privé sur
-  /// Cloudinary (service média partagé).
+  /// Affiche la fiche d'un support PDF hébergé sur le stockage média avec action de téléchargement.
   Widget _pdfContent(Chapter chapter) {
     return Center(
       child: Padding(
@@ -570,8 +575,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
   }
 
-  /// Vidéo : lecteur intégré simulé — le titre et la miniature sont
-  /// récupérés via YouTube oEmbed (API externe n°2 de M2, sans clé).
+  /// Affiche l'aperçu 16:9 d'une vidéo YouTube ainsi que son URL copiable dans le presse-papiers.
   Widget _videoContent(Chapter chapter) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -691,7 +695,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
   }
 
-  /// Lien externe : ressource hébergée hors application
+  /// Affiche les informations d'une ressource web externe avec copie rapide ou ouverture du lien.
   Widget _linkContent(Chapter chapter) {
     return Center(
       child: Padding(

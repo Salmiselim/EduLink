@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Palette et helpers UI — charte graphique EduLink (MARKETPLACE_GUIDE.md)
+/// Palette de couleurs centralisée et composants visuels réutilisables
+/// partagés par l'ensemble des écrans du module Évaluations.
 class EduColors {
   static const Color primary = Color(0xFF2563EB);
   static const Color primaryDark = Color(0xFF1E3A8A);
@@ -18,6 +19,8 @@ class EduColors {
   static const Color neutralBg = Color(0xFFF1F5F9);
 }
 
+/// Construit une décoration homogène ([InputDecoration]) pour les champs `TextFormField`,
+/// `TextField` et `DropdownButtonFormField` des formulaires d'évaluation.
 InputDecoration evalInputDecoration({
   required String label,
   String? hint,
@@ -43,6 +46,8 @@ InputDecoration evalInputDecoration({
   );
 }
 
+/// Décoration standard de conteneur type carte (fond blanc, coins arrondis et bordure fine)
+/// utilisée pour encadrer les tuiles de quiz, devoirs, questions et documents.
 BoxDecoration evalCardDecoration() {
   return BoxDecoration(
     color: Colors.white,
@@ -51,6 +56,8 @@ BoxDecoration evalCardDecoration() {
   );
 }
 
+/// Badge compact affichant un état métier (type d'évaluation, retard, publication, dossier)
+/// avec couleur d'accentuation et icône optionnelle.
 class StatusChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -70,6 +77,7 @@ class StatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
+        // Utilise un fond teinté à 10 % d'opacité par défaut si aucun fond explicite n'est fourni.
         color: background ?? color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -94,6 +102,8 @@ class StatusChip extends StatelessWidget {
   }
 }
 
+/// Composant d'état vide centré affiché lorsqu'une liste filtrée (quiz, copies,
+/// carnet de notes ou documents) ne contient aucun élément à présenter.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -135,6 +145,8 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+/// En-tête de section structurant les listes de l'écran d'évaluations et des résultats,
+/// avec un titre principal gras et un sous-titre descriptif optionnel.
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -167,6 +179,8 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
+/// Bouton d'action principale pleine largeur (`FilledButton.icon`) utilisé en pied
+/// des formulaires de remise, de notation, de téléchargement et d'export CSV.
 class PrimaryCta extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -202,6 +216,8 @@ class PrimaryCta extends StatelessWidget {
   }
 }
 
+/// Formate un objet [DateTime] en date courte française suivie de l'heure (`JJ mois AAAA · HH:MM`)
+/// pour l'affichage homogène des dates d'ouverture, d'échéance et de dépôt.
 String formatDate(DateTime d) {
   const months = [
     'janv.',
@@ -222,6 +238,8 @@ String formatDate(DateTime d) {
   return '${d.day} ${months[d.month - 1]} ${d.year} · $hh:$mm';
 }
 
+/// Formate une note optionnelle par rapport à son barème maximal (`note / max`),
+/// en supprimant la décimale inutile lorsque la valeur est entière.
 String formatGrade(double? grade, double max) {
   if (grade == null) return '— / ${max.toStringAsFixed(0)}';
   final g = grade == grade.roundToDouble()
