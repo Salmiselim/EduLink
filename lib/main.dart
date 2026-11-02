@@ -22,6 +22,7 @@ import 'features/marketplace/models/marketplace_models.dart';
 import 'features/marketplace/routes/marketplace_routes.dart';
 import 'features/marketplace/services/marketplace_firestore_service.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
+import 'features/profil/screens/profile_screen.dart';
 import 'providers/forum_provider.dart';
 import 'routes/app_routes.dart';
 import 'screens/forum_feed_screen.dart';
@@ -113,7 +114,7 @@ class EduLinkRoutes {
 /// à 5 onglets et un [IndexedStack] qui conserve l'état de chaque module
 /// quand on change d'onglet.
 /// - Onglet 0 : Cours (live)
-/// - Onglet 1 : Forum (live)
+/// - Onglet 1 : placeholder (Forum) · Onglet 4 : Profil (live)
 /// - Onglet 2 : Évaluations (live)
 /// - Onglet 3 : Marketplace (live)
 /// - Onglet 4 : placeholder (Profil)
@@ -138,13 +139,7 @@ class _EduLinkShellState extends State<EduLinkShell> {
           ForumFeedScreen(),
           EvaluationsRoot(),
           MarketplaceRoot(),
-          _ModulePlaceholderTab(
-            icon: Icons.person_rounded,
-            title: 'Profil & Badges',
-            subtitle: 'Comptes, rôles, profils & badges',
-            ownerLabel: 'Intégration à venir',
-            branchLabel: 'Auth & Profils',
-          ),
+          ProfileScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -594,127 +589,5 @@ class EvaluationsRoot extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-/// Onglet placeholder d'un module pas encore intégré.
-/// Reprend le style d'AppBar des autres modules et indique l'intégration à venir du
-/// module.
-class _ModulePlaceholderTab extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final String ownerLabel;
-  final String branchLabel;
-
-  const _ModulePlaceholderTab({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.ownerLabel,
-    required this.branchLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2563EB),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'EduLink · ${_shortTitle(title)}',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: const BoxDecoration(
-                color: Color(0xFFDBEAFE),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 36, color: const Color(0xFF1D4ED8)),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$ownerLabel · $branchLabel',
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Module à venir — intégration prévue prochainement.',
-              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Retire un éventuel préfixe « module · » du titre.
-  String _shortTitle(String title) {
-    final parts = title.split('·');
-    return parts.length > 1 ? parts.last.trim() : title;
   }
 }

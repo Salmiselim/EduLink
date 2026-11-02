@@ -99,37 +99,45 @@ class OfferCard extends StatelessWidget {
               const SizedBox(height: 8),
 
               // Puces de métadonnées dynamiques (matière/niveau, modalité Jitsi ou ville, état et stock)
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  _MetaChip(
-                    icon: Icons.school_outlined,
-                    label: '${offer.subject} · ${offer.level}',
-                    bgColor: const Color(0xFFF1F5F9),
-                    textColor: const Color(0xFF334155),
+              // Puces de métadonnées sur une seule ligne (défilement horizontal
+              // si la carte est étroite) : hauteur de carte déterministe,
+              // zéro débordement dans les carrousels à hauteur fixe.
+              SizedBox(
+                height: 28,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  clipBehavior: Clip.none,
+                  child: Row(
+                    children: [
+                      _MetaChip(
+                        icon: Icons.school_outlined,
+                        label: '${offer.subject} · ${offer.level}',
+                        bgColor: const Color(0xFFF1F5F9),
+                        textColor: const Color(0xFF334155),
+                      ),
+                      if (offer.mode != null)
+                        _MetaChip(
+                          icon: offer.mode == DeliveryMode.online
+                              ? Icons.videocam_outlined
+                              : Icons.place_outlined,
+                          label: offer.mode == DeliveryMode.online
+                              ? 'En ligne (Jitsi)'
+                              : offer.location?.city ?? 'Présentiel',
+                          bgColor: const Color(0xFFEEF2FF),
+                          textColor: const Color(0xFF4338CA),
+                        ),
+                      if (offer.type == OfferType.resourcePhysical &&
+                          offer.condition != null)
+                        _MetaChip(
+                          icon: Icons.inventory_2_outlined,
+                          label:
+                              '${offer.condition!.label} (${offer.quantity ?? 0} disp.)',
+                          bgColor: const Color(0xFFFEF3C7),
+                          textColor: const Color(0xFFB45309),
+                        ),
+                    ],
                   ),
-                  if (offer.mode != null)
-                    _MetaChip(
-                      icon: offer.mode == DeliveryMode.online
-                          ? Icons.videocam_outlined
-                          : Icons.place_outlined,
-                      label: offer.mode == DeliveryMode.online
-                          ? 'En ligne (Jitsi)'
-                          : offer.location?.city ?? 'Présentiel',
-                      bgColor: const Color(0xFFEEF2FF),
-                      textColor: const Color(0xFF4338CA),
-                    ),
-                  if (offer.type == OfferType.resourcePhysical &&
-                      offer.condition != null)
-                    _MetaChip(
-                      icon: Icons.inventory_2_outlined,
-                      label:
-                          '${offer.condition!.label} (${offer.quantity ?? 0} disp.)',
-                      bgColor: const Color(0xFFFEF3C7),
-                      textColor: const Color(0xFFB45309),
-                    ),
-                ],
+                ),
               ),
 
               // Bandeau indiquant le cours académique rattaché (affiché uniquement hors mode compact)

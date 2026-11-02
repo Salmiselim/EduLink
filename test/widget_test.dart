@@ -125,4 +125,17 @@ void main() {
           findsOneWidget);
     });
   });
+
+  testWidgets(
+    "L'onglet Profil affiche le mode démonstration (déconnecté)",
+    (tester) async {
+      await skipAuth(tester);
+      await tester.tap(find.text('Profil'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('EduLink · Profil'), findsOneWidget);
+      expect(find.text('Mode démonstration'), findsOneWidget);
+      expect(find.text('Se connecter'), findsOneWidget);
+    },
+  );
 }
