@@ -899,7 +899,13 @@ class CoursesCloudController extends CoursesController {
   /// n'a plus d'effet (le chip correspondant est masqué par l'AppBar).
   @override
   void toggleCurrentUserRole() {
-    notifyListeners();
+    // En mode réel (données Firestore chargées), le rôle vient du compte
+    // Firebase ; en démonstration, la bascule simulée reste disponible.
+    if (_cloudReady) {
+      notifyListeners();
+      return;
+    }
+    super.toggleCurrentUserRole();
   }
 
   // ── Connexion & chargement ────────────────────────────────────────────────

@@ -3,6 +3,8 @@
 // sans importer toute la couche graphique UI dans la couche de gestion des données.
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 // Liaison vers la couche Modèles (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`, `OfferReview`, `ChatMessage`)
@@ -30,6 +32,11 @@ class MarketplaceController extends ChangeNotifier {
   /// Bascule le profil actif entre étudiant et enseignant vérifié, puis notifie
   /// les vues abonnées via [notifyListeners] pour rafraîchir les badges dépendants du rôle.
   void toggleCurrentUserRole() {
+    // En mode réel (branché sur Firestore), le rôle vient du compte Firebase.
+    if (isOnline) {
+      notifyListeners();
+      return;
+    }
     if (currentUserRole == SellerRole.student) {
       currentUserRole = SellerRole.teacher;
       currentUserName = 'Pr. Karim Mansouri';
@@ -58,6 +65,9 @@ class MarketplaceController extends ChangeNotifier {
   /// Vrai quand les données proviennent de Cloud Firestore.
   bool get isOnline => _remote != null;
 
+  /// Mode démonstration : pas encore branché sur Firestore avec un compte réel.
+  bool get isDemoMode => !isOnline;
+
   /// Branche le contrôleur sur Firestore :
   /// 1. si la base est vide, on y injecte le jeu de données de démonstration ;
   /// 2. sinon on remplace la mémoire par le contenu distant ;
@@ -65,14 +75,42 @@ class MarketplaceController extends ChangeNotifier {
   ///    utilisateurs et le cache hors-ligne passent par ces flux).
   Future<void> connectFirestore([MarketplaceFirestoreService? service]) async {
     final remote = service ?? MarketplaceFirestoreService();
+    // Identité réelle : sans compte connecté, on reste en mode mémoire (les
+    // règles Firestore refusent les écritures avec un identifiant factice).
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
     try {
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      currentUserId = user.uid;
+      currentUserName = (userDoc.data()?['name'] as String?) ??
+          user.displayName ??
+          'Utilisateur EduLink';
+      currentUserRole = (userDoc.data()?['role'] == 'teacher')
+          ? SellerRole.teacher
+          : SellerRole.student;
       if (await remote.isOffersEmpty()) {
+        // Seed : les offres de démonstration sont réassignées au vendeur
+        // connecté (les règles exigent sellerId == uid réel) ; commandes,
+        // avis et messages démarrent proprement à zéro.
         await remote.seed(
-          offers: _offers,
-          slots: _slotsByOffer.values.expand((l) => l),
-          orders: _orders,
-          reviews: _reviews,
-          messages: _messagesByOrder.values.expand((l) => l),
+          offers: _offers
+              .map((o) => Offer.fromMap({
+                    ...o.toMap(),
+                    'sellerId': currentUserId,
+                    'sellerName': currentUserName,
+                    'sellerRole': currentUserRole.name,
+                  }))
+              .toList(),
+          slots: _slotsByOffer.values
+              .expand((l) => l)
+              .map((s) => AvailabilitySlot.fromMap({
+                    ...s.toMap(),
+                    'sellerId': currentUserId,
+                  })),
+          orders: const [],
+          reviews: const [],
+          messages: const [],
         );
       }
     } catch (e) {

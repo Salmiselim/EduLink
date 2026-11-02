@@ -48,6 +48,7 @@ Future<void> _initFirebase() async {
     CoursesController.firebaseReady = true;
     AuthService.onSignedIn = (user) async {
       await CoursesController.instance.connectCloud();
+      await MarketplaceController.instance.connectFirestore();
     };
     await CoursesController.instance.connectCloud();
   } catch (e) {
@@ -366,7 +367,9 @@ class MarketplaceRoot extends StatelessWidget {
               ],
             ),
             actions: [
-              // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+              // Bascule de rôle simulé — visible uniquement en mode démonstration
+              // (en mode réel, le rôle vient du compte Firebase).
+              if (controller.isDemoMode)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(

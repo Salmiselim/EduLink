@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 
 // Liaisons internes avec le contrôleur d'état, les modèles, le routeur et les widgets réutilisables :
+import '../../courses/data/courses_mock_data.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
@@ -755,9 +756,21 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   /// carrousel horizontal des offres rattachées aux cours suivis et liste principale de [OfferCard].
   Widget _buildExplorerView() {
     final catalogOffers = _getFilteredCatalogOffers();
+    // Liaison L6 réelle : les recommandations proviennent des cours suivis
+    // dans le module Cours (identifiants et matières partagés).
+    final enrolledCourseIds = CoursesController.instance.myEnrollments
+        .map((e) => e.courseId)
+        .toSet();
+    final enrolledSubjects = CoursesController.instance.enrolledCourses
+        .map((c) => c.subject)
+        .toSet();
     final recommendedOffers = _controller.allOffers
         .where(
-          (o) => o.status == OfferStatus.published && o.isRecommendedByCourse,
+          (o) =>
+              o.status == OfferStatus.published &&
+              (o.isRecommendedByCourse ||
+                  (o.courseId != null && enrolledCourseIds.contains(o.courseId)) ||
+                  enrolledSubjects.contains(o.subject)),
         )
         .toList();
 
@@ -885,7 +898,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
-                  'Recommandées d\'après vos cours suivis (L6)',
+                  'Recommandées d\'après vos cours suivis',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -900,7 +913,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'GET /offers/recommended',
+                  'Intégration Cours',
                   style: TextStyle(
                     fontSize: 10.5,
                     fontFamily: 'monospace',
@@ -913,7 +926,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 260,
+            height: 282,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: recommendedOffers.length,
