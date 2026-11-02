@@ -309,14 +309,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 // 5. Prix maximum en Dinars Tunisiens (TND)
                 Row(
                   children: [
-                    const Text(
-                      'Prix maximum (`maxPrice`)',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
+                    Expanded(
+                      child: Text(
+                        'Prix maximum',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       _maxPrice == 0
                           ? 'Gratuit uniquement (0 TND)'
@@ -958,24 +962,34 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         // 4. Liste principale des offres du Catalogue
         Row(
           children: [
-            Text(
-              'Catalogue des offres (${catalogOffers.length})',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
+            Expanded(
+              child: Text(
+                'Catalogue des offres (${catalogOffers.length})',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
               ),
             ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () {
-                Navigator.pushNamed(
-                  context,
-                  MarketplaceRoutes.offerWizard,
-                );
-              },
-              icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-              label: const Text('Vendre / Donner un cours'),
+            const SizedBox(width: 8),
+            Flexible(
+              child: TextButton.icon(
+                onPressed: () {
+                  Navigator.pushNamed(
+                    context,
+                    MarketplaceRoutes.offerWizard,
+                  );
+                },
+                icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+                label: const Text(
+                  'Vendre / Donner un cours',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ],
         ),
@@ -1221,15 +1235,19 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   children: [
                     Icon(offer.type.icon, size: 18, color: offer.type.color),
                     const SizedBox(width: 6),
-                    Text(
-                      offer.type.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: offer.type.color,
+                    Expanded(
+                      child: Text(
+                        offer.type.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: offer.type.color,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -1622,15 +1640,19 @@ class _OrderCard extends StatelessWidget {
             children: [
               Icon(order.offerType.icon, size: 17, color: order.offerType.color),
               const SizedBox(width: 6),
-              Text(
-                order.offerType.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: order.offerType.color,
+              Expanded(
+                child: Text(
+                  order.offerType.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: order.offerType.color,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(

@@ -4,6 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   Future<void> skipAuth(WidgetTester tester) async {
+    // Viewport téléphone (412×915) pour détecter tout débordement étroit.
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(const EduLinkApp());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Passer'));
