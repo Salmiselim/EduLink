@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../auth/services/auth_service.dart';
@@ -147,7 +148,7 @@ class ProfileScreen extends StatelessWidget {
 
   // ── Compte connecté : identité + informations + déconnexion ───────────────
 
-  Widget _buildSignedInBody(BuildContext context, dynamic user) {
+  Widget _buildSignedInBody(BuildContext context, User user) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
       builder: (context, snapshot) {
