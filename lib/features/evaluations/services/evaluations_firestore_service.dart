@@ -79,9 +79,11 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<Quiz> createQuiz(Map<String, dynamic> body) async {
     await _ensureIdentity();
     final id = 'quiz_${DateTime.now().millisecondsSinceEpoch}';
+    final courseTitle = await _courseTitle(body['courseId'] as String?);
     final doc = {
       ...body,
       'id': id,
+      'courseTitle': courseTitle,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
       'questions': _questionsWithIds(body['questions'] as List?),
@@ -96,6 +98,10 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     final safeBody = {...body};
     safeBody['questions'] =
         _questionsWithIds(safeBody['questions'] as List?);
+    if (safeBody['courseId'] != null) {
+      safeBody['courseTitle'] =
+          await _courseTitle(safeBody['courseId'] as String?);
+    }
     await _quizzes.doc(quizId).update(safeBody);
     final doc = await _quizzes.doc(quizId).get();
     return quizFromJsonPublic({'id': quizId, ...doc.data()!});
@@ -260,9 +266,11 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<Assignment> createAssignment(Map<String, dynamic> body) async {
     await _ensureIdentity();
     final id = 'assign_${DateTime.now().millisecondsSinceEpoch}';
+    final courseTitle = await _courseTitle(body['courseId'] as String?);
     final doc = {
       ...body,
       'id': id,
+      'courseTitle': courseTitle,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
     };
@@ -276,7 +284,12 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     Map<String, dynamic> body,
   ) async {
     await _ensureIdentity();
-    await _assignments.doc(assignmentId).update(body);
+    final enriched = {...body};
+    if (enriched['courseId'] != null) {
+      enriched['courseTitle'] =
+          await _courseTitle(enriched['courseId'] as String?);
+    }
+    await _assignments.doc(assignmentId).update(enriched);
     final doc = await _assignments.doc(assignmentId).get();
     return _assignmentFromDoc({'id': assignmentId, ...doc.data()!});
   }
@@ -363,9 +376,13 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   // ════════════════════════════════════════════════════════════════════════
 
   @override
-  Future<List<CourseDocument>> getDocuments(String courseId) async {
+  Future<List<CourseDocument>> getDocuments({String? courseId}) async {
     await _ensureIdentity();
-    final snap = await _documents.where('courseId', isEqualTo: courseId).get();
+    Query<Map<String, dynamic>> query = _documents;
+    if (courseId != null) {
+      query = query.where('courseId', isEqualTo: courseId);
+    }
+    final snap = await query.get();
     final docs = snap.docs
         .map((d) => _documentFromDoc({'id': d.id, ...d.data()}))
         .toList();
@@ -381,9 +398,11 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<CourseDocument> createDocument(Map<String, dynamic> body) async {
     await _ensureIdentity();
     final id = 'doc_${DateTime.now().millisecondsSinceEpoch}';
+    final courseTitle = await _courseTitle(body['courseId'] as String?);
     final doc = {
       ...body,
       'id': id,
+      'courseTitle': courseTitle,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
     };
@@ -397,7 +416,12 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     Map<String, dynamic> body,
   ) async {
     await _ensureIdentity();
-    await _documents.doc(documentId).update(body);
+    final enriched = {...body};
+    if (enriched['courseId'] != null) {
+      enriched['courseTitle'] =
+          await _courseTitle(enriched['courseId'] as String?);
+    }
+    await _documents.doc(documentId).update(enriched);
     final doc = await _documents.doc(documentId).get();
     return _documentFromDoc({'id': documentId, ...doc.data()!});
   }
@@ -509,6 +533,13 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
           'id': ((list[i] as Map<String, dynamic>)['id'] as String?) ?? 'q_$i',
         },
     ];
+  }
+
+  /// Complète `courseTitle` depuis la collection `courses` (liaison L4).
+  Future<String> _courseTitle(String? courseId) async {
+    if (courseId == null) return '';
+    final doc = await _db.collection('courses').doc(courseId).get();
+    return (doc.data()?['title'] as String?) ?? '';
   }
 
   Map<String, dynamic> _attemptMap(QuizAttempt a) => {

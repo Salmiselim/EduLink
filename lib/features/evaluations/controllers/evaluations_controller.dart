@@ -188,9 +188,7 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> _loadDocuments() async {
-    if (selectedCourseId != null) {
-      documents = await _repo.getDocuments(selectedCourseId!);
-    }
+    documents = await _repo.getDocuments(courseId: selectedCourseId);
   }
 
   Future<void> _loadUpcoming() async {

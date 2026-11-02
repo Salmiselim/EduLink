@@ -254,9 +254,12 @@ class EvaluationsApiService {
 
   /// Récupère tous les documents d'un cours.
   /// Enseignant : accède aux non-visibles ; étudiant : filtrés par `visibleFrom`.
-  Future<List<CourseDocument>> getDocuments(String courseId) =>
+  Future<List<CourseDocument>> getDocuments({String? courseId}) =>
       _safe(() async {
-        final resp = await _dio.get('/courses/$courseId/documents');
+        final path = courseId == null
+            ? '/documents'
+            : '/courses/$courseId/documents';
+        final resp = await _dio.get(path);
         return (resp.data as List)
             .map((j) => _documentFromJson(j as Map<String, dynamic>))
             .toList();

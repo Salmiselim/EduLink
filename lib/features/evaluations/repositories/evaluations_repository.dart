@@ -211,8 +211,8 @@ class EvaluationsRepository {
   // DOCUMENTS
   // ════════════════════════════════════════════════════════════════════════
 
-  Future<List<CourseDocument>> getDocuments(String courseId) =>
-      _api.getDocuments(courseId);
+  Future<List<CourseDocument>> getDocuments({String? courseId}) =>
+      _api.getDocuments(courseId: courseId);
 
   Future<CourseDocument> createDocument(Map<String, dynamic> body) =>
       _api.createDocument(body);

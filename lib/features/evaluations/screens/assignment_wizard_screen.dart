@@ -26,7 +26,7 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
   late final TextEditingController _title;
   late final TextEditingController _instructions;
   late final TextEditingController _maxGrade;
-  late String _courseId;
+  String? _courseId;
   late DateTime _dueDate;
   late bool _allowLate;
   final List<String> _attachments = [];
@@ -46,7 +46,8 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
     _maxGrade = TextEditingController(
       text: e?.maxGrade.toStringAsFixed(0) ?? '20',
     );
-    _courseId = e?.courseId ?? _controller.accessibleCourses.first.id;
+    _courseId = e?.courseId ??
+        (_controller.accessibleCourses.isEmpty ? null : _controller.accessibleCourses.first.id);
     _dueDate = e?.dueDate ?? DateTime.now().add(const Duration(days: 7));
     _allowLate = e?.allowLate ?? true;
     if (e != null) _attachments.addAll(e.attachments);
@@ -71,7 +72,9 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Titre, consignes (min. 20 car.) et note max sont requis.'),
+          content: Text(
+            'Donnez un titre, des consignes détaillées et la note maximum.',
+          ),
         ),
       );
     }
@@ -81,7 +84,18 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
   /// Persiste le devoir créé ou modifié dans [EvaluationsController.upsertAssignment] puis revient à l'écran précédent.
   void _save() {
     if (!_validate()) return;
-    final course = _controller.courses.firstWhere((c) => c.id == _courseId);
+    LinkedCourse? course;
+    for (final c in _controller.courses) {
+      if (c.id == _courseId) course = c;
+    }
+    if (course == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sélectionnez un cours valide dans l\'onglet Cours.'),
+        ),
+      );
+      return;
+    }
     _controller.upsertAssignment(
       Assignment(
         id: widget.existing?.id ??
@@ -150,7 +164,9 @@ class _AssignmentWizardScreenState extends State<AssignmentWizardScreen> {
                             ),
                           )
                           .toList(),
-                      onChanged: (v) => setState(() => _courseId = v!),
+                      onChanged: (v) => setState(() => _courseId = v),
+                      validator: (v) =>
+                          v == null ? 'Sélectionnez un cours.' : null,
                     ),
                     const SizedBox(height: 12),
                     // Saisie du titre avec contrôle de longueur minimale et maximale.
