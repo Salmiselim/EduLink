@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
+import 'features/auth/services/auth_service.dart';
 import 'features/auth/screens/sign_in_screen.dart';
 import 'features/courses/data/courses_mock_data.dart';
 import 'features/courses/models/courses_models.dart';
@@ -44,6 +45,11 @@ Future<void> _initFirebase() async {
     );
     MarketplaceFirestoreService.enableOfflinePersistence();
     await MarketplaceController.instance.connectFirestore();
+    CoursesController.firebaseReady = true;
+    AuthService.onSignedIn = (user) async {
+      await CoursesController.instance.connectCloud();
+    };
+    await CoursesController.instance.connectCloud();
   } catch (e) {
     debugPrint('Firebase non configuré, mode hors Firestore : $e');
   }
@@ -239,7 +245,9 @@ class CoursesRoot extends StatelessWidget {
               ],
             ),
             actions: [
-              // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+              // Bascule de rôle simulé — visible uniquement en mode démonstration
+              // (en mode réel, le rôle vient du compte Firebase).
+              if (controller.isDemoMode)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(
@@ -274,7 +282,7 @@ class CoursesRoot extends StatelessWidget {
               // réservé à l'enseignant (CoursesController.isTeacher)
               if (isTeacher)
                 IconButton(
-                  tooltip: 'Créer un cours (Assistant M2)',
+                  tooltip: 'Créer un cours (Assistant cours)',
                   onPressed: () {
                     Navigator.pushNamed(context, CoursesRoutes.courseWizard);
                   },

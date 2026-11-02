@@ -32,6 +32,10 @@ class AuthService {
 
   AuthService._();
 
+  /// Hook déclenché après une connexion ou inscription réussie — branché dans
+  /// `main.dart` pour connecter les modules à Firestore avec le vrai uid.
+  static Future<void> Function(User user)? onSignedIn;
+
   /// Vrai uniquement si Firebase a pu s'initialiser au démarrage.
   bool get isFirebaseReady => Firebase.apps.isNotEmpty;
 
@@ -56,6 +60,10 @@ class AuthService {
         email: email,
         password: password,
       );
+      final user = _auth!.currentUser;
+      if (user != null && onSignedIn != null) {
+        await onSignedIn!(user);
+      }
       return (outcome: AuthOutcome.success, error: null);
     } on FirebaseAuthException catch (e) {
       return (outcome: AuthOutcome.failure, error: _message(e.code));
@@ -93,6 +101,10 @@ class AuthService {
         'badges': [],
         'createdAt': FieldValue.serverTimestamp(),
       });
+      final user = credential.user!;
+      if (onSignedIn != null) {
+        await onSignedIn!(user);
+      }
       return (outcome: AuthOutcome.success, error: null);
     } on FirebaseAuthException catch (e) {
       return (outcome: AuthOutcome.failure, error: _message(e.code));
