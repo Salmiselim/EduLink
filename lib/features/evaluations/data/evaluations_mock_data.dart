@@ -1,4 +1,4 @@
-/// Barrel de compatibilité du module Évaluations.
+// Barrel de compatibilité du module Évaluations.
 ///
 /// Tous les écrans importent historiquement `../data/evaluations_mock_data.dart`.
 /// Ce fichier re-exporte le vrai [EvaluationsController] (couche HTTP + Hive)

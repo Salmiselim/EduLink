@@ -29,7 +29,9 @@ class EvaluationsRepository {
     required this.currentUserName,
     required this.currentUserRole,
   })  : _api = api,
-        _local = local;
+        _local = local {
+    // (constructeur inchangé — champs privés initialisés ci-dessous via this._api)
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // INITIALISATION

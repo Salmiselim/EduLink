@@ -106,9 +106,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
     // étape — son Form n'est plus monté à ce stade.
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
-    if (title.length < 5 ||
-        title.length > 80 ||
-        description.length < 20 ||
+    if (title.isEmpty ||
+        description.isEmpty ||
         _subject == null ||
         _level == null) {
       setState(() => _step = 0);
@@ -384,7 +383,6 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             const SizedBox(height: 14),
             TextFormField(
               controller: _titleController,
-              maxLength: 80,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: courseInputDecoration(
                 label: 'Titre du cours',
@@ -393,12 +391,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                 counterText: '',
               ),
               validator: (value) {
-                final v = value?.trim() ?? '';
-                if (v.length < 5 || v.length > 80) {
-                  return 'Le titre doit contenir entre 5 et 80 caractères.';
-                }
-                if (double.tryParse(v) != null) {
-                  return 'Le titre ne peut pas être un nombre.';
+                if ((value?.trim() ?? '').isEmpty) {
+                  return 'Donnez un titre à votre cours.';
                 }
                 return null;
               },
@@ -459,7 +453,6 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             TextFormField(
               controller: _descriptionController,
               maxLines: 5,
-              maxLength: 600,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: courseInputDecoration(
                 label: 'Description',
@@ -468,10 +461,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                 counterText: '',
               ),
               validator: (value) {
-                final v = value?.trim() ?? '';
-                if (v.length < 20 || v.length > 600) {
-                  return 'La description doit contenir entre 20 et 600 '
-                      'caractères.';
+                if ((value?.trim() ?? '').isEmpty) {
+                  return 'Décrivez votre cours (quelques mots suffisent).';
                 }
                 return null;
               },

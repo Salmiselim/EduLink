@@ -89,30 +89,8 @@ class MarketplaceController extends ChangeNotifier {
       currentUserRole = (userDoc.data()?['role'] == 'teacher')
           ? SellerRole.teacher
           : SellerRole.student;
-      if (await remote.isOffersEmpty()) {
-        // Seed : les offres de démonstration sont réassignées au vendeur
-        // connecté (les règles exigent sellerId == uid réel) ; commandes,
-        // avis et messages démarrent proprement à zéro.
-        await remote.seed(
-          offers: _offers
-              .map((o) => Offer.fromMap({
-                    ...o.toMap(),
-                    'sellerId': currentUserId,
-                    'sellerName': currentUserName,
-                    'sellerRole': currentUserRole.name,
-                  }))
-              .toList(),
-          slots: _slotsByOffer.values
-              .expand((l) => l)
-              .map((s) => AvailabilitySlot.fromMap({
-                    ...s.toMap(),
-                    'sellerId': currentUserId,
-                  })),
-          orders: const [],
-          reviews: const [],
-          messages: const [],
-        );
-      }
+      // Aucun seed de données de démonstration dans Firestore : la base
+      // ne contient que des données réellement créées par les comptes.
     } catch (e) {
       debugPrint('Firestore indisponible, mode mémoire conservé : $e');
       return;
