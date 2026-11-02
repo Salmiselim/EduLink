@@ -101,11 +101,20 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
   /// Finalise l'assistant à l'étape 4 : sauvegarde les métadonnées, publie éventuellement
   /// le cours via `CoursesController.setPublished` (si au moins un chapitre existe) et referme la route.
   void _finish({required bool publish}) {
-    if (!(_formKey.currentState?.validate() ?? false)) {
+    // Les valeurs vivent dans les contrôleurs (validées à l'étape 1) :
+    // inutile de revalider le formulaire de l'étape 1 depuis la dernière
+    // étape — son Form n'est plus monté à ce stade.
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+    if (title.length < 5 ||
+        title.length > 80 ||
+        description.length < 20 ||
+        _subject == null ||
+        _level == null) {
       setState(() => _step = 0);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Complétez les informations du cours (étape 1).'),
+          content: Text('Complétez d\'abord les informations du cours (étape 1).'),
         ),
       );
       return;

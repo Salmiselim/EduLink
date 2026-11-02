@@ -126,7 +126,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   validator: (value) {
                     final v = value?.trim() ?? '';
                     if (v.length < 3 || v.length > 60) {
-                      return 'Entre 3 et 60 caractères.';
+                      return 'Indiquez votre nom complet (entre 3 et 60 caractères).';
                     }
                     return null;
                   },
@@ -175,7 +175,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   validator: (value) {
                     final v = value ?? '';
-                    if (v.length < 6) return 'Au moins 6 caractères.';
+                    if (v.length < 6) {
+                      return 'Le mot de passe doit contenir au moins 6 caractères.';
+                    }
                     return null;
                   },
                 ),

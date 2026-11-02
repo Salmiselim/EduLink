@@ -1172,7 +1172,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Badges M5 débloqués : Vendeur (1re vente) · Mentor (5 cours particuliers) · Bien noté (≥ 4.5/5)',
+                        'Badges débloqués : Vendeur (1re vente) · Mentor (5 cours particuliers) · Bien noté (≥ 4.5/5)',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,

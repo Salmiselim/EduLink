@@ -162,7 +162,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     final v = value ?? '';
                     if (v.isEmpty) return 'Entrez votre mot de passe.';
                     if (v.length < 6) {
-                      return 'Au moins 6 caractères.';
+                      return 'Le mot de passe doit contenir au moins 6 caractères.';
                     }
                     return null;
                   },
