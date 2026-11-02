@@ -1,4 +1,4 @@
-package com.example.edulink
+package com.edulink.app
 
 import io.flutter.embedding.android.FlutterActivity
 
