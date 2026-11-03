@@ -1,5 +1,15 @@
+// `package:flutter/foundation.dart` est la bibliothèque légère de base de Flutter :
+// elle fournit la classe `ChangeNotifier` (patron de conception Observateur / Observer Pattern)
+// sans importer toute la couche graphique UI dans la couche de gestion des données.
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+
+// Liaison vers la couche Modèles (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`, `OfferReview`, `ChatMessage`)
 import '../models/marketplace_models.dart';
+import '../services/marketplace_firestore_service.dart';
 
 /// Contrôleur central de la Marketplace basé sur [ChangeNotifier].
 /// Expose un singleton partagé ([instance]) observé par les différents écrans
@@ -22,6 +32,11 @@ class MarketplaceController extends ChangeNotifier {
   /// Bascule le profil actif entre étudiant et enseignant vérifié, puis notifie
   /// les vues abonnées via [notifyListeners] pour rafraîchir les badges dépendants du rôle.
   void toggleCurrentUserRole() {
+    // En mode réel (branché sur Firestore), le rôle vient du compte Firebase.
+    if (isOnline) {
+      notifyListeners();
+      return;
+    }
     if (currentUserRole == SellerRole.student) {
       currentUserRole = SellerRole.teacher;
       currentUserName = 'Pr. Karim Mansouri';
@@ -41,6 +56,130 @@ class MarketplaceController extends ChangeNotifier {
   final List<OfferReview> _reviews = [];
   final Map<String, List<ChatMessage>> _messagesByOrder = {};
 
+  // ------------------------------------------------------------------ Firestore
+  // Tant que `connectFirestore()` n'est pas appelé (ou si Firebase n'est pas configuré),
+  // `_remote` reste nul et le contrôleur fonctionne uniquement en mémoire.
+  MarketplaceFirestoreService? _remote;
+  final List<StreamSubscription<dynamic>> _subs = [];
+
+  /// Vrai quand les données proviennent de Cloud Firestore.
+  bool get isOnline => _remote != null;
+
+  /// Mode démonstration : pas encore branché sur Firestore avec un compte réel.
+  bool get isDemoMode => !isOnline;
+
+  /// Branche le contrôleur sur Firestore :
+  /// 1. si la base est vide, on y injecte le jeu de données de démonstration ;
+  /// 2. sinon on remplace la mémoire par le contenu distant ;
+  /// 3. on écoute ensuite chaque collection en temps réel (les mises à jour des autres
+  ///    utilisateurs et le cache hors-ligne passent par ces flux).
+  Future<void> connectFirestore([MarketplaceFirestoreService? service]) async {
+    final remote = service ?? MarketplaceFirestoreService();
+    // Identité réelle : sans compte connecté, on reste en mode mémoire (les
+    // règles Firestore refusent les écritures avec un identifiant factice).
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      currentUserId = user.uid;
+      currentUserName = (userDoc.data()?['name'] as String?) ??
+          user.displayName ??
+          'Utilisateur EduLink';
+      currentUserRole = (userDoc.data()?['role'] == 'teacher')
+          ? SellerRole.teacher
+          : SellerRole.student;
+      // Aucun seed de données de démonstration dans Firestore : la base
+      // ne contient que des données réellement créées par les comptes.
+    } catch (e) {
+      debugPrint('Firestore indisponible, mode mémoire conservé : $e');
+      return;
+    }
+
+    _remote = remote;
+    _offers.clear();
+    _slotsByOffer.clear();
+    _orders.clear();
+    _reviews.clear();
+    _messagesByOrder.clear();
+    _favoriteOfferIds.clear();
+
+    void listen<T>(Stream<T> s, void Function(T) onData) {
+      _subs.add(s.listen((v) {
+        onData(v);
+        notifyListeners();
+      }, onError: (Object e) => debugPrint('Flux Firestore : $e')));
+    }
+
+    listen<List<Offer>>(remote.watchOffers(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _offers
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<AvailabilitySlot>>(remote.watchSlots(), (list) {
+      _slotsByOffer.clear();
+      for (final s in list) {
+        _slotsByOffer.putIfAbsent(s.offerId, () => []).add(s);
+      }
+      for (final l in _slotsByOffer.values) {
+        l.sort((a, b) => a.id.compareTo(b.id));
+      }
+    });
+    listen<List<MarketplaceOrder>>(remote.watchOrders(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _orders
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<OfferReview>>(remote.watchReviews(), (list) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _reviews
+        ..clear()
+        ..addAll(list);
+    });
+    listen<List<ChatMessage>>(remote.watchMessages(), (list) {
+      list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _messagesByOrder.clear();
+      for (final m in list) {
+        _messagesByOrder.putIfAbsent(m.orderId, () => []).add(m);
+      }
+    });
+    listen<Set<String>>(remote.watchFavorites(currentUserId), (ids) {
+      _favoriteOfferIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    super.dispose();
+  }
+
+  /// Une erreur réseau ne doit jamais faire planter l'interface.
+  void _guard(Future<void>? f) {
+    f?.catchError((Object e) => debugPrint('Écriture Firestore échouée : $e'));
+  }
+
+  void _pushOffer(String offerId) {
+    final i = _offers.indexWhere((o) => o.id == offerId);
+    if (i != -1) _guard(_remote?.saveOffer(_offers[i]));
+  }
+
+  void _pushOrder(String orderId) {
+    final i = _orders.indexWhere((o) => o.id == orderId);
+    if (i != -1) _guard(_remote?.saveOrder(_orders[i]));
+  }
+
+  void _pushSlots(String offerId) {
+    for (final s in _slotsByOffer[offerId] ?? const <AvailabilitySlot>[]) {
+      _guard(_remote?.saveSlot(s));
+    }
+  }
   // Accesseurs exposant des vues non modifiables (`unmodifiable`) pour préserver l'encapsulation.
   List<Offer> get allOffers => List.unmodifiable(_offers);
   Set<String> get favoriteOfferIds => Set.unmodifiable(_favoriteOfferIds);
@@ -111,6 +250,7 @@ class MarketplaceController extends ChangeNotifier {
     } else {
       _favoriteOfferIds.add(offerId);
     }
+    _guard(_remote?.setFavorite(currentUserId, offerId, _favoriteOfferIds.contains(offerId)));
     notifyListeners();
   }
 
@@ -148,6 +288,7 @@ class MarketplaceController extends ChangeNotifier {
       _offers[idx] = _offers[idx].copyWith(
         viewsCount: _offers[idx].viewsCount + 1,
       );
+      _pushOffer(offerId);
       notifyListeners();
     }
   }
@@ -158,6 +299,8 @@ class MarketplaceController extends ChangeNotifier {
     if (slots.isNotEmpty) {
       _slotsByOffer[offer.id] = List.from(slots);
     }
+    _pushOffer(offer.id);
+    _pushSlots(offer.id);
     notifyListeners();
   }
 
@@ -167,8 +310,14 @@ class MarketplaceController extends ChangeNotifier {
     if (idx != -1) {
       _offers[idx] = updatedOffer;
       if (slots != null) {
+        final keptIds = slots.map((s) => s.id).toSet();
+        for (final old in _slotsByOffer[updatedOffer.id] ?? const <AvailabilitySlot>[]) {
+          if (!keptIds.contains(old.id)) _guard(_remote?.deleteSlot(old.id));
+        }
         _slotsByOffer[updatedOffer.id] = List.from(slots);
+        _pushSlots(updatedOffer.id);
       }
+      _pushOffer(updatedOffer.id);
       notifyListeners();
     }
   }
@@ -178,6 +327,7 @@ class MarketplaceController extends ChangeNotifier {
     final idx = _offers.indexWhere((o) => o.id == offerId);
     if (idx != -1) {
       _offers[idx] = _offers[idx].copyWith(status: newStatus);
+      _pushOffer(offerId);
       notifyListeners();
     }
   }
@@ -186,6 +336,7 @@ class MarketplaceController extends ChangeNotifier {
   void deleteOffer(String offerId) {
     _offers.removeWhere((o) => o.id == offerId);
     _slotsByOffer.remove(offerId);
+    _guard(_remote?.deleteOffer(offerId));
     notifyListeners();
   }
 
@@ -202,12 +353,17 @@ class MarketplaceController extends ChangeNotifier {
         endTime: endTime,
       ),
     );
+    _pushSlots(offerId);
     notifyListeners();
   }
 
   /// Supprime un créneau horaire uniquement s'il n'est pas déjà verrouillé par une réservation (`!s.isBooked`).
   void removeAvailabilitySlot(String offerId, String slotId) {
+    final before = _slotsByOffer[offerId]?.length ?? 0;
     _slotsByOffer[offerId]?.removeWhere((s) => s.id == slotId && !s.isBooked);
+    if ((_slotsByOffer[offerId]?.length ?? 0) < before) {
+      _guard(_remote?.deleteSlot(slotId));
+    }
     notifyListeners();
   }
 
@@ -223,6 +379,7 @@ class MarketplaceController extends ChangeNotifier {
       reportsCount: newReportsCount,
       status: autoHidden ? OfferStatus.hidden : _offers[idx].status,
     );
+    _pushOffer(offerId);
     notifyListeners();
     return autoHidden;
   }
@@ -316,6 +473,11 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ];
 
+    _pushOrder(orderId);
+    _pushSlots(offer.id);
+    for (final m in _messagesByOrder[orderId]!) {
+      _guard(_remote?.saveMessage(m));
+    }
     notifyListeners();
     return newOrder;
   }
@@ -362,7 +524,7 @@ class MarketplaceController extends ChangeNotifier {
       if (slots != null) {
         final sIdx = slots.indexWhere((s) => s.id == order.slotId);
         if (sIdx != -1) {
-          slots[sIdx] = slots[sIdx].copyWith(isBooked: false, orderId: null);
+          slots[sIdx] = slots[sIdx].copyWith(isBooked: false, clearOrderId: true);
         }
       }
     }
@@ -418,10 +580,14 @@ class MarketplaceController extends ChangeNotifier {
       ),
     );
 
+    _pushOrder(orderId);
+    _pushOffer(order.offerId);
+    _pushSlots(order.offerId);
+    _guard(_remote?.saveMessage(msgs.last));
     notifyListeners();
   }
 
-  /// Ajoute un message utilisateur (avec pièce jointe optionnelle hébergée sur Cloudinary)
+  /// Ajoute un message utilisateur (avec pièce jointe optionnelle).
   /// dans le fil de discussion de la commande [orderId], puis notifie les écouteurs.
   void sendMessage(String orderId, String text, {String? attachmentLabel}) {
     final list = _messagesByOrder.putIfAbsent(orderId, () => []);
@@ -433,7 +599,7 @@ class MarketplaceController extends ChangeNotifier {
         senderName: currentUserName,
         text: text,
         attachmentUrl: attachmentLabel != null
-            ? 'https://res.cloudinary.com/edulink/upload/$attachmentLabel'
+            ? '/fichiers/edulink/upload/$attachmentLabel'
             : null,
         attachmentLabel: attachmentLabel,
         readAt: DateTime.now(),
@@ -447,6 +613,8 @@ class MarketplaceController extends ChangeNotifier {
         unreadCount: 0,
       );
     }
+    _guard(_remote?.saveMessage(list.last));
+    _pushOrder(orderId);
     notifyListeners();
   }
 
@@ -455,6 +623,7 @@ class MarketplaceController extends ChangeNotifier {
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx != -1 && _orders[idx].unreadCount > 0) {
       _orders[idx] = _orders[idx].copyWith(unreadCount: 0);
+      _pushOrder(orderId);
       notifyListeners();
     }
   }
@@ -499,8 +668,11 @@ class MarketplaceController extends ChangeNotifier {
         ratingAvg: totalScore / newCount,
         ratingCount: newCount,
       );
+      _pushOffer(order.offerId);
     }
 
+    _pushOrder(order.id);
+    _guard(_remote?.saveReview(_reviews.first));
     notifyListeners();
   }
 
@@ -523,7 +695,7 @@ class MarketplaceController extends ChangeNotifier {
         description:
             'Pack complet de révision en Algorithmique et Structures de Données : arbres AVL, graphes (Dijkstra, Bellman-Ford), programmation dynamique et analyse de complexité amortie. Inclut 25 sujets d\'examens corrigés étape par étape.',
         price: 12,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_algo_l2.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_algo_l2.pdf',
         fileSizeLabel: 'PDF haute qualité · 6.4 Mo · 54 pages',
         courseId: 'course_algo_1',
         courseTitle: 'Algorithmique & Structures de Données (Chapitres 1–6)',
@@ -607,7 +779,7 @@ class MarketplaceController extends ChangeNotifier {
         description:
             'Support synthétique gratuit couvrant l\'optimisation des requêtes SQL, la conception de schémas NoSQL (collections, sous-collections et index composites Firestore) et des cas pratiques.',
         price: 0,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/sql_firestore_sheet.pdf',
+        fileUrl: '/fichiers/edulink/private/sql_firestore_sheet.pdf',
         fileSizeLabel: 'PDF · 2.1 Mo · 18 pages',
         courseId: 'course_bdd_2',
         courseTitle: 'Bases de Données Relationnelles & SQL Avancé',
@@ -666,7 +838,7 @@ class MarketplaceController extends ChangeNotifier {
         description:
             'Fiches illustrées avec exercices de découpage VLSM/CIDR, analyse de trames Wireshark et protocole de routage OSPF.',
         price: 10,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_reseaux_vlsm.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_reseaux_vlsm.pdf',
         fileSizeLabel: 'PDF · 3.8 Mo · 32 pages',
         status: OfferStatus.published,
         viewsCount: 146,
@@ -844,7 +1016,7 @@ class MarketplaceController extends ChangeNotifier {
         sellerName: 'Amine Trabelsi',
         sellerRole: SellerRole.student,
         amount: 12,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_algo_l2.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_algo_l2.pdf',
         status: OrderStatus.completed,
         note: 'Je te règle les 12 TND demain matin devant le département Info !',
         createdAt: DateTime(2026, 10, 21, 10, 30),
@@ -884,7 +1056,7 @@ class MarketplaceController extends ChangeNotifier {
         sellerName: 'Yasmine Ben Ali',
         sellerRole: SellerRole.student,
         amount: 10,
-        fileUrl: 'https://res.cloudinary.com/edulink/private/fiches_reseaux_vlsm.pdf',
+        fileUrl: '/fichiers/edulink/private/fiches_reseaux_vlsm.pdf',
         status: OrderStatus.accepted,
         note: 'Merci beaucoup, je passe à la pause de 13h pour le règlement hors-app.',
         createdAt: DateTime(2026, 10, 24, 09, 40),
@@ -971,7 +1143,7 @@ class MarketplaceController extends ChangeNotifier {
         senderName: 'Dr. Salma Khelifi',
         text:
             'Bonjour Yasmine ! C\'est noté, je vous ai préparé la série d\'exercices corrigés en pièce jointe pour mardi.',
-        attachmentUrl: 'https://res.cloudinary.com/edulink/upload/serie_graphes_avl.pdf',
+        attachmentUrl: '/fichiers/edulink/upload/serie_graphes_avl.pdf',
         attachmentLabel: 'serie_graphes_avl.pdf',
         createdAt: DateTime(2026, 10, 24, 15, 02),
       ),
@@ -1002,7 +1174,7 @@ class MarketplaceController extends ChangeNotifier {
         senderId: 'buyer_skander',
         senderName: 'Skander Haddad',
         text: 'Je t\'envoie l\'énoncé du DS en pièce jointe.',
-        attachmentUrl: 'https://res.cloudinary.com/edulink/upload/ds_logique_2025.pdf',
+        attachmentUrl: '/fichiers/edulink/upload/ds_logique_2025.pdf',
         attachmentLabel: 'ds_logique_2025.pdf',
         createdAt: DateTime(2026, 10, 25, 11, 12),
       ),

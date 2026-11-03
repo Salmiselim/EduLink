@@ -1,6 +1,12 @@
+// Bibliothèque officielle Material Design de Flutter : fournit MaterialApp, Scaffold,
+// AppBar, NavigationBar, ActionChip, IconButton, SnackBar, ThemeData et ColorScheme.
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+
 import 'package:provider/provider.dart';
 
+import 'firebase_options.dart';
+import 'features/auth/services/auth_service.dart';
 import 'features/auth/screens/sign_in_screen.dart';
 import 'features/courses/data/courses_mock_data.dart';
 import 'features/courses/models/courses_models.dart';
@@ -14,7 +20,9 @@ import 'features/evaluations/widgets/eval_ui.dart';
 import 'features/marketplace/data/marketplace_mock_data.dart';
 import 'features/marketplace/models/marketplace_models.dart';
 import 'features/marketplace/routes/marketplace_routes.dart';
+import 'features/marketplace/services/marketplace_firestore_service.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
+import 'features/profil/screens/profile_screen.dart';
 import 'providers/forum_provider.dart';
 import 'routes/app_routes.dart';
 import 'screens/forum_feed_screen.dart';
@@ -22,8 +30,32 @@ import 'screens/forum_feed_screen.dart';
 /// Point d'entrée principal de l'application EduLink.
 /// Le shell intégré [EduLinkShell] est ouvert après la connexion (ou via le
 /// bouton « Passer » de l'écran de démonstration).
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _initFirebase();
   runApp(const EduLinkApp());
+}
+
+/// Initialise Firebase puis branche la Marketplace sur Cloud Firestore.
+/// Si Firebase n'est pas encore configuré (pas de google-services.json), l'appli
+/// reste utilisable avec les données en mémoire.
+Future<void> _initFirebase() async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    MarketplaceFirestoreService.enableOfflinePersistence();
+    await MarketplaceController.instance.connectFirestore();
+    CoursesController.firebaseReady = true;
+    AuthService.onSignedIn = (user) async {
+      await CoursesController.instance.connectCloud();
+      await MarketplaceController.instance.connectFirestore();
+      await EvaluationsController.instance.connectCloud();
+    };
+    await CoursesController.instance.connectCloud();
+  } catch (e) {
+    debugPrint('Firebase non configuré, mode hors Firestore : $e');
+  }
 }
 
 /// Widget racine de l'application qui configure :
@@ -82,7 +114,7 @@ class EduLinkRoutes {
 /// à 5 onglets et un [IndexedStack] qui conserve l'état de chaque module
 /// quand on change d'onglet.
 /// - Onglet 0 : Cours (live)
-/// - Onglet 1 : Forum (live)
+/// - Onglet 1 : placeholder (Forum) · Onglet 4 : Profil (live)
 /// - Onglet 2 : Évaluations (live)
 /// - Onglet 3 : Marketplace (live)
 /// - Onglet 4 : placeholder (Profil)
@@ -107,13 +139,7 @@ class _EduLinkShellState extends State<EduLinkShell> {
           ForumFeedScreen(),
           EvaluationsRoot(),
           MarketplaceRoot(),
-          _ModulePlaceholderTab(
-            icon: Icons.person_rounded,
-            title: 'Profil & Badges',
-            subtitle: 'Comptes, rôles, profils & badges',
-            ownerLabel: 'Intégration à venir',
-            branchLabel: 'Auth & Profils',
-          ),
+          ProfileScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -216,7 +242,9 @@ class CoursesRoot extends StatelessWidget {
               ],
             ),
             actions: [
-              // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+              // Bascule de rôle simulé — visible uniquement en mode démonstration
+              // (en mode réel, le rôle vient du compte Firebase).
+              if (controller.isDemoMode)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(
@@ -251,7 +279,7 @@ class CoursesRoot extends StatelessWidget {
               // réservé à l'enseignant (CoursesController.isTeacher)
               if (isTeacher)
                 IconButton(
-                  tooltip: 'Créer un cours (Assistant M2)',
+                  tooltip: 'Créer un cours (Assistant cours)',
                   onPressed: () {
                     Navigator.pushNamed(context, CoursesRoutes.courseWizard);
                   },
@@ -280,12 +308,15 @@ class MarketplaceRoot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = MarketplaceController.instance;
-
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final isTeacher = controller.currentUserRole == SellerRole.teacher;
 
+        // `Scaffold` : structure visuelle Material 3 standard fournissant :
+        // - `appBar` (en-tête fixe en haut)
+        // - `body` (contenu principal : `MarketplaceScreen`)
+        // - `bottomNavigationBar` (barre de navigation à 5 onglets de l'application EduLink)
         return Scaffold(
           appBar: AppBar(
             backgroundColor: Colors.white,
@@ -332,7 +363,9 @@ class MarketplaceRoot extends StatelessWidget {
               ],
             ),
             actions: [
-              // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+              // Bascule de rôle simulé — visible uniquement en mode démonstration
+              // (en mode réel, le rôle vient du compte Firebase).
+              if (controller.isDemoMode)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(
@@ -453,7 +486,7 @@ class EvaluationsRoot extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(
                   tooltip: 'Changer de rôle simulé (RoleAware)',
-                  onPressed: controller.toggleCurrentUserRole,
+                  onPressed: controller.toggleRole,
                   backgroundColor:
                       isTeacher ? EduColors.infoBg : EduColors.neutralBg,
                   avatar: Icon(
@@ -556,127 +589,5 @@ class EvaluationsRoot extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-/// Onglet placeholder d'un module pas encore intégré.
-/// Reprend le style d'AppBar des autres modules et indique l'intégration à venir du
-/// module.
-class _ModulePlaceholderTab extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final String ownerLabel;
-  final String branchLabel;
-
-  const _ModulePlaceholderTab({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.ownerLabel,
-    required this.branchLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2563EB),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'EduLink · ${_shortTitle(title)}',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: const BoxDecoration(
-                color: Color(0xFFDBEAFE),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 36, color: const Color(0xFF1D4ED8)),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$ownerLabel · $branchLabel',
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Module à venir — intégration prévue prochainement.',
-              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Retire un éventuel préfixe « module · » du titre.
-  String _shortTitle(String title) {
-    final parts = title.split('·');
-    return parts.length > 1 ? parts.last.trim() : title;
   }
 }

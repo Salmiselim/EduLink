@@ -101,11 +101,19 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
   /// Finalise l'assistant à l'étape 4 : sauvegarde les métadonnées, publie éventuellement
   /// le cours via `CoursesController.setPublished` (si au moins un chapitre existe) et referme la route.
   void _finish({required bool publish}) {
-    if (!(_formKey.currentState?.validate() ?? false)) {
+    // Les valeurs vivent dans les contrôleurs (validées à l'étape 1) :
+    // inutile de revalider le formulaire de l'étape 1 depuis la dernière
+    // étape — son Form n'est plus monté à ce stade.
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+    if (title.isEmpty ||
+        description.isEmpty ||
+        _subject == null ||
+        _level == null) {
       setState(() => _step = 0);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Complétez les informations du cours (étape 1).'),
+          content: Text('Complétez d\'abord les informations du cours (étape 1).'),
         ),
       );
       return;
@@ -375,7 +383,6 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             const SizedBox(height: 14),
             TextFormField(
               controller: _titleController,
-              maxLength: 80,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: courseInputDecoration(
                 label: 'Titre du cours',
@@ -384,12 +391,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                 counterText: '',
               ),
               validator: (value) {
-                final v = value?.trim() ?? '';
-                if (v.length < 5 || v.length > 80) {
-                  return 'Le titre doit contenir entre 5 et 80 caractères.';
-                }
-                if (double.tryParse(v) != null) {
-                  return 'Le titre ne peut pas être un nombre.';
+                if ((value?.trim() ?? '').isEmpty) {
+                  return 'Donnez un titre à votre cours.';
                 }
                 return null;
               },
@@ -450,7 +453,6 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             TextFormField(
               controller: _descriptionController,
               maxLines: 5,
-              maxLength: 600,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: courseInputDecoration(
                 label: 'Description',
@@ -459,10 +461,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                 counterText: '',
               ),
               validator: (value) {
-                final v = value?.trim() ?? '';
-                if (v.length < 20 || v.length > 600) {
-                  return 'La description doit contenir entre 20 et 600 '
-                      'caractères.';
+                if ((value?.trim() ?? '').isEmpty) {
+                  return 'Décrivez votre cours (quelques mots suffisent).';
                 }
                 return null;
               },
@@ -479,7 +479,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                       duration: Duration(seconds: 2),
                       content: Text(
                         'Image de couverture via le service média '
-                        '(Cloudinary) — intégration à venir.',
+                        '— intégration à venir.',
                       ),
                     ),
                   );

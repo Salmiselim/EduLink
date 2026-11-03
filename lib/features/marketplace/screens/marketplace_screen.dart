@@ -1,4 +1,10 @@
+// Bibliothèque Material Design 3 de Flutter : fournit SegmentedButton, IndexedStack,
+// FloatingActionButton.extended, TextField, Badge, IconButton.filledTonal, FilterChip,
+// ChoiceChip, Slider, DraggableScrollableSheet, ModalBottomSheet, AlertDialog et Form.
 import 'package:flutter/material.dart';
+
+// Liaisons internes avec le contrôleur d'état, les modèles, le routeur et les widgets réutilisables :
+import '../../courses/data/courses_mock_data.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
@@ -303,14 +309,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 // 5. Prix maximum en Dinars Tunisiens (TND)
                 Row(
                   children: [
-                    const Text(
-                      'Prix maximum (`maxPrice`)',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
+                    Expanded(
+                      child: Text(
+                        'Prix maximum',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       _maxPrice == 0
                           ? 'Gratuit uniquement (0 TND)'
@@ -750,9 +760,21 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   /// carrousel horizontal des offres rattachées aux cours suivis et liste principale de [OfferCard].
   Widget _buildExplorerView() {
     final catalogOffers = _getFilteredCatalogOffers();
+    // Liaison L6 réelle : les recommandations proviennent des cours suivis
+    // dans le module Cours (identifiants et matières partagés).
+    final enrolledCourseIds = CoursesController.instance.myEnrollments
+        .map((e) => e.courseId)
+        .toSet();
+    final enrolledSubjects = CoursesController.instance.enrolledCourses
+        .map((c) => c.subject)
+        .toSet();
     final recommendedOffers = _controller.allOffers
         .where(
-          (o) => o.status == OfferStatus.published && o.isRecommendedByCourse,
+          (o) =>
+              o.status == OfferStatus.published &&
+              (o.isRecommendedByCourse ||
+                  (o.courseId != null && enrolledCourseIds.contains(o.courseId)) ||
+                  enrolledSubjects.contains(o.subject)),
         )
         .toList();
 
@@ -880,7 +902,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               const SizedBox(width: 6),
               const Expanded(
                 child: Text(
-                  'Recommandées d\'après vos cours suivis (L6)',
+                  'Recommandées d\'après vos cours suivis',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -895,7 +917,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'GET /offers/recommended',
+                  'Intégration Cours',
                   style: TextStyle(
                     fontSize: 10.5,
                     fontFamily: 'monospace',
@@ -908,7 +930,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 260,
+            height: 282,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: recommendedOffers.length,
@@ -940,24 +962,34 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         // 4. Liste principale des offres du Catalogue
         Row(
           children: [
-            Text(
-              'Catalogue des offres (${catalogOffers.length})',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0F172A),
+            Expanded(
+              child: Text(
+                'Catalogue des offres (${catalogOffers.length})',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
               ),
             ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () {
-                Navigator.pushNamed(
-                  context,
-                  MarketplaceRoutes.offerWizard,
-                );
-              },
-              icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-              label: const Text('Vendre / Donner un cours'),
+            const SizedBox(width: 8),
+            Flexible(
+              child: TextButton.icon(
+                onPressed: () {
+                  Navigator.pushNamed(
+                    context,
+                    MarketplaceRoutes.offerWizard,
+                  );
+                },
+                icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+                label: const Text(
+                  'Vendre / Donner un cours',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ],
         ),
@@ -1140,7 +1172,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Badges M5 débloqués : Vendeur (1re vente) · Mentor (5 cours particuliers) · Bien noté (≥ 4.5/5)',
+                        'Badges débloqués : Vendeur (1re vente) · Mentor (5 cours particuliers) · Bien noté (≥ 4.5/5)',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -1203,15 +1235,19 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   children: [
                     Icon(offer.type.icon, size: 18, color: offer.type.color),
                     const SizedBox(width: 6),
-                    Text(
-                      offer.type.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: offer.type.color,
+                    Expanded(
+                      child: Text(
+                        offer.type.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: offer.type.color,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -1604,15 +1640,19 @@ class _OrderCard extends StatelessWidget {
             children: [
               Icon(order.offerType.icon, size: 17, color: order.offerType.color),
               const SizedBox(width: 6),
-              Text(
-                order.offerType.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: order.offerType.color,
+              Expanded(
+                child: Text(
+                  order.offerType.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: order.offerType.color,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(

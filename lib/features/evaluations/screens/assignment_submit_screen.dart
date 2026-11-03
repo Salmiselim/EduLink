@@ -120,7 +120,7 @@ class _AssignmentSubmitScreenState extends State<AssignmentSubmitScreen> {
                 });
               },
               icon: const Icon(Icons.upload_file_rounded),
-              label: const Text('Ajouter un fichier (Cloudinary L10, simulé)'),
+              label: const Text('Ajouter un fichier'),
             ),
             if (_fileError != null)
               Padding(
@@ -177,7 +177,7 @@ class _AssignmentSubmitScreenState extends State<AssignmentSubmitScreen> {
                 }
                 _controller.submitAssignment(
                   assignmentId: assignment.id,
-                  files: List.of(_files),
+                  fileUrls: List.of(_files),
                   comment: _comment.text.trim(),
                 );
                 Navigator.pop(context);

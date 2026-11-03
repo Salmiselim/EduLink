@@ -1,4 +1,9 @@
+// Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, ListenableBuilder,
+// ListView.builder, ScrollController, TextField, ModalBottomSheet, Align et CircleBorder.
 import 'package:flutter/material.dart';
+
+// Liaisons avec le contrôleur (`sendMessage`, `updateOrderStatus`, `markConversationRead`, `submitReview`),
+// les modèles (`MarketplaceOrder`, `ChatMessage`) et la feuille modale `ReviewBottomSheet` :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../widgets/review_dialog.dart';

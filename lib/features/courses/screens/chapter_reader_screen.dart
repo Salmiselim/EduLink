@@ -542,7 +542,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                       duration: Duration(seconds: 2),
                       content: Text(
                         'Téléchargement via le service média '
-                        '(Cloudinary) — intégration à venir.',
+                        '— intégration à venir.',
                       ),
                     ),
                   );

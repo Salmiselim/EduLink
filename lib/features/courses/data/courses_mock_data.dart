@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/courses_models.dart';
 
@@ -12,11 +14,23 @@ import '../models/courses_models.dart';
 /// Contrôleur central gérant le catalogue de cours, les chapitres, les
 /// inscriptions étudiants et le calcul des indicateurs de progression.
 class CoursesController extends ChangeNotifier {
-  /// Instance unique partagée entre tous les écrans et feuilles du module Cours.
-  static final CoursesController instance = CoursesController._internal();
+  /// Instance active : contrôleur cloud (Firestore) si Firebase est initialisé,
+  /// sinon contrôleur mock — même API pour tous les écrans du module.
+  static CoursesController? _mockInstance;
+  static CoursesController? _cloudInstance;
 
-  /// Constructeur privé initialisant en mémoire le jeu de cours, chapitres et inscriptions.
-  CoursesController._internal() {
+  static CoursesController get instance {
+    if (firebaseReady) {
+      return _cloudInstance ??= CoursesCloudController.cloud();
+    }
+    return _mockInstance ??= CoursesController.internal();
+  }
+
+  /// Défini à `true` par `main.dart` une fois Firebase initialisé avec succès.
+  static bool firebaseReady = false;
+
+  /// Constructeur initialisant en mémoire le jeu de cours, chapitres et inscriptions.
+  CoursesController.internal() {
     _seedInitialData();
   }
 
@@ -24,6 +38,14 @@ class CoursesController extends ChangeNotifier {
   String currentUserId = 'user_me';
   String currentUserName = 'Yasmine Ben Ali';
   CourseRole currentUserRole = CourseRole.student;
+
+  /// Mode démonstration : Firebase absent ou utilisateur non connecté.
+  /// Surchargé par la variante cloud ([CoursesCloudController.isDemoMode]).
+  bool get isDemoMode => true;
+
+  /// Connecte le contrôleur à Firestore (implémenté par la variante cloud) ;
+  /// sans effet sur la variante mock.
+  Future<void> connectCloud() async {}
 
   /// Indique si le profil actif dispose des droits enseignant sur l'interface.
   bool get isTeacher => currentUserRole == CourseRole.teacher;
@@ -577,7 +599,7 @@ class CoursesController extends ChangeNotifier {
         'algo_c5',
         'Tables de hachage — Fiche de révision',
         ChapterType.pdf,
-        'https://cdn.cloudinary.com/edulink/chapters/hachage.pdf',
+        '/documents/edulink/chapters/hachage.pdf',
         30,
         4,
       ),
@@ -605,7 +627,7 @@ class CoursesController extends ChangeNotifier {
         'bdd1_c2',
         'SQL : requêtes & jointures',
         ChapterType.pdf,
-        'https://cdn.cloudinary.com/edulink/chapters/sql-jointures.pdf',
+        '/documents/edulink/chapters/sql-jointures.pdf',
         45,
         1,
       ),
@@ -659,7 +681,7 @@ class CoursesController extends ChangeNotifier {
         'res_c4',
         'TP : analyse de trames avec Wireshark',
         ChapterType.pdf,
-        'https://cdn.cloudinary.com/edulink/chapters/tp-wireshark.pdf',
+        '/documents/edulink/chapters/tp-wireshark.pdf',
         30,
         3,
       ),
@@ -679,7 +701,7 @@ class CoursesController extends ChangeNotifier {
         'bdd2_c2',
         'Index & plans d\'exécution',
         ChapterType.pdf,
-        'https://cdn.cloudinary.com/edulink/chapters/index-sql.pdf',
+        '/documents/edulink/chapters/index-sql.pdf',
         40,
         1,
       ),
@@ -762,7 +784,7 @@ class CoursesController extends ChangeNotifier {
         'fl_c4',
         'TP : application EduLink',
         ChapterType.pdf,
-        'https://cdn.cloudinary.com/edulink/chapters/tp-edulink.pdf',
+        '/documents/edulink/chapters/tp-edulink.pdf',
         60,
         3,
       ),
@@ -839,5 +861,455 @@ class CoursesController extends ChangeNotifier {
       enr('course_flutter_4', 'student_sara', 'Sara Gharbi',
           ['fl_c1', 'fl_c2', 'fl_c3', 'fl_c4'], 'fl_c4'),
     ]);
+  }
+}
+
+
+// ============================================================================
+// CONTRÔLEUR CLOUD — MODULE COURS
+// Étend le contrôleur mock : mêmes données en mémoire (les écrans ne changent
+// pas), mais connecté à Cloud Firestore dès qu'un compte Firebase est
+// connecté. Les écritures respectent firestore.rules : identifiant réel de
+// l'utilisateur, rôle lu dans le document `users/{uid}`.
+// Repli automatique : en cas d'échec réseau, les données en mémoire restent
+// affichées et l'application reste utilisable.
+// ============================================================================
+
+class CoursesCloudController extends CoursesController {
+  CoursesCloudController.cloud() : super.internal();
+
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// Vrai dès que les données réelles ont été chargées pour un compte connecté.
+  bool _cloudReady = false;
+
+  @override
+  bool get isDemoMode => !_cloudReady;
+
+  CollectionReference<Map<String, dynamic>> get _coursesRef =>
+      _db.collection('courses');
+
+  CollectionReference<Map<String, dynamic>> get _enrollmentsRef =>
+      _db.collection('enrollments');
+
+  CollectionReference<Map<String, dynamic>> _chaptersRef(String courseId) =>
+      _coursesRef.doc(courseId).collection('chapters');
+
+  /// En mode réel, le rôle vient du compte Firebase : la bascule simulée
+  /// n'a plus d'effet (le chip correspondant est masqué par l'AppBar).
+  @override
+  void toggleCurrentUserRole() {
+    // En mode réel (données Firestore chargées), le rôle vient du compte
+    // Firebase ; en démonstration, la bascule simulée reste disponible.
+    if (_cloudReady) {
+      notifyListeners();
+      return;
+    }
+    super.toggleCurrentUserRole();
+  }
+
+  // ── Connexion & chargement ────────────────────────────────────────────────
+
+  @override
+  Future<void> connectCloud() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final db = _db;
+
+      // Identité : document users/{uid} (créé à l'inscription par AuthService).
+      final userDoc = await db.collection('users').doc(user.uid).get();
+      if (!userDoc.exists) {
+        await db.collection('users').doc(user.uid).set({
+          'name': user.displayName ?? 'Utilisateur EduLink',
+          'email': user.email,
+          'role': 'student',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      currentUserId = user.uid;
+      currentUserName = (userDoc.data()?['name'] as String?) ??
+          user.displayName ??
+          'Utilisateur EduLink';
+      currentUserRole =
+          (userDoc.data()?['role'] == 'teacher') ? CourseRole.teacher : CourseRole.student;
+
+      // Cours : les miens + tous les cours publiés.
+      final mine = await _coursesRef.where('teacherId', isEqualTo: user.uid).get();
+      final published =
+          await _coursesRef.where('isPublished', isEqualTo: true).get();
+      final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final d in mine.docs) {
+        byId[d.id] = d;
+      }
+      for (final d in published.docs) {
+        byId[d.id] = d;
+      }
+      _courses
+        ..clear()
+        ..addAll(byId.values.map(_courseFromDoc));
+
+      // Chapitres de chaque cours chargé.
+      _chaptersByCourse.clear();
+      for (final course in _courses) {
+        final snap = await _chaptersRef(course.id).get();
+        final chapters = snap.docs.map(_chapterFromDoc).toList()
+          ..sort((a, b) => a.order.compareTo(b.order));
+        _chaptersByCourse[course.id] = chapters;
+      }
+
+      // Inscriptions : les miennes (étudiant) ou celles de mes cours (enseignant).
+      _enrollments.clear();
+      if (isTeacher) {
+        final ids =
+            _courses.where((c) => c.teacherId == user.uid).map((c) => c.id).toList();
+        for (var i = 0; i < ids.length; i += 10) {
+          final chunk = ids.skip(i).take(10).toList();
+          if (chunk.isEmpty) continue;
+          final snap = await _enrollmentsRef.where('courseId', whereIn: chunk).get();
+          _enrollments.addAll(snap.docs.map(_enrollmentFromDoc));
+        }
+      } else {
+        final snap =
+            await _enrollmentsRef.where('studentId', isEqualTo: user.uid).get();
+        _enrollments.addAll(snap.docs.map(_enrollmentFromDoc));
+      }
+
+      _cloudReady = true;
+      notifyListeners();
+
+      // Un enseignant sans cours reçoit le jeu de démonstration.
+      if (isTeacher && _courses.where((c) => c.teacherId == user.uid).isEmpty) {
+        await seedDemoCourses();
+      }
+    } catch (e) {
+      debugPrint('[CoursesCloud] Échec du chargement Firestore — mock conservé : $e');
+    }
+  }
+
+  /// Écrit le jeu de démonstration dans Firestore (une seule fois) : tous les
+  /// cours du seed deviennent la propriété du compte enseignant connecté.
+  Future<void> seedDemoCourses() async {
+    try {
+      final uid = currentUserId;
+      final batch = _db.batch();
+      for (final course in _courses) {
+        course.teacherName = currentUserName;
+        course.teacherVerified = true;
+        batch.set(
+          _coursesRef.doc(course.id),
+          {..._courseToMap(course), 'teacherId': uid},
+        );
+        for (final chapter in chaptersOf(course.id)) {
+          batch.set(
+            _chaptersRef(course.id).doc(chapter.id),
+            _chapterToMap(chapter),
+          );
+        }
+      }
+      await batch.commit();
+      notifyListeners();
+      debugPrint('[CoursesCloud] Seed de démonstration écrit (${_courses.length} cours).');
+    } catch (e) {
+      debugPrint('[CoursesCloud] Échec du seed : $e');
+    }
+  }
+
+  // ── Écritures : cours ─────────────────────────────────────────────────────
+
+  @override
+  Course createCourse({
+    required String title,
+    required String subject,
+    required String level,
+    required String description,
+    String? coverImageUrl,
+  }) {
+    final course = super.createCourse(
+      title: title,
+      subject: subject,
+      level: level,
+      description: description,
+      coverImageUrl: coverImageUrl,
+    );
+    _coursesRef.doc(course.id).set(_courseToMap(course)).catchError((e) {
+      debugPrint('[CoursesCloud] createCourse : $e');
+    });
+    return course;
+  }
+
+  @override
+  void updateCourse(
+    String courseId, {
+    required String title,
+    required String subject,
+    required String level,
+    required String description,
+    String? coverImageUrl,
+  }) {
+    super.updateCourse(
+      courseId,
+      title: title,
+      subject: subject,
+      level: level,
+      description: description,
+      coverImageUrl: coverImageUrl,
+    );
+    final course = courseById(courseId);
+    if (course != null) {
+      _coursesRef.doc(courseId).set(_courseToMap(course)).catchError((e) {
+        debugPrint('[CoursesCloud] updateCourse : $e');
+      });
+    }
+  }
+
+  @override
+  void deleteCourse(String courseId) {
+    super.deleteCourse(courseId);
+    _deleteCourseCascade(courseId);
+  }
+
+  /// Supprime le cours, ses chapitres et ses inscriptions en un seul batch.
+  Future<void> _deleteCourseCascade(String courseId) async {
+    try {
+      final batch = _db.batch();
+      batch.delete(_coursesRef.doc(courseId));
+      final chapters = await _chaptersRef(courseId).get();
+      for (final d in chapters.docs) {
+        batch.delete(d.reference);
+      }
+      final enrollments =
+          await _enrollmentsRef.where('courseId', isEqualTo: courseId).get();
+      for (final d in enrollments.docs) {
+        batch.delete(d.reference);
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[CoursesCloud] deleteCourse : $e');
+    }
+  }
+
+  @override
+  bool setPublished(String courseId, bool published) {
+    final ok = super.setPublished(courseId, published);
+    if (ok) {
+      _coursesRef.doc(courseId).update({'isPublished': published}).catchError((e) {
+        debugPrint('[CoursesCloud] setPublished : $e');
+      });
+    }
+    return ok;
+  }
+
+  // ── Écritures : chapitres ─────────────────────────────────────────────────
+
+  @override
+  Chapter addChapter(
+    String courseId, {
+    required String title,
+    required ChapterType type,
+    String? content,
+    required int durationMin,
+  }) {
+    final chapter = super.addChapter(
+      courseId,
+      title: title,
+      type: type,
+      content: content,
+      durationMin: durationMin,
+    );
+    _writeChapter(courseId, chapter);
+    return chapter;
+  }
+
+  @override
+  void updateChapter(
+    String courseId,
+    String chapterId, {
+    required String title,
+    required int durationMin,
+    String? content,
+  }) {
+    super.updateChapter(
+      courseId,
+      chapterId,
+      title: title,
+      durationMin: durationMin,
+      content: content,
+    );
+    final chapter =
+        chaptersOf(courseId).where((c) => c.id == chapterId).firstOrNull;
+    if (chapter != null) _writeChapter(courseId, chapter);
+  }
+
+  @override
+  void deleteChapter(String courseId, String chapterId) {
+    super.deleteChapter(courseId, chapterId);
+    _deleteChapterOnCloud(courseId, chapterId);
+  }
+
+  @override
+  void reorderChapters(String courseId, int oldIndex, int newIndex) {
+    super.reorderChapters(courseId, oldIndex, newIndex);
+    _reorderChaptersOnCloud(courseId);
+  }
+
+  Future<void> _writeChapter(String courseId, Chapter chapter) async {
+    try {
+      final course = courseById(courseId);
+      final batch = _db.batch();
+      batch.set(_chaptersRef(courseId).doc(chapter.id), _chapterToMap(chapter));
+      if (course != null) {
+        batch.update(
+          _coursesRef.doc(courseId),
+          {'chaptersCount': course.chaptersCount},
+        );
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[CoursesCloud] _writeChapter : $e');
+    }
+  }
+
+  Future<void> _deleteChapterOnCloud(String courseId, String chapterId) async {
+    try {
+      final course = courseById(courseId);
+      final batch = _db.batch();
+      batch.delete(_chaptersRef(courseId).doc(chapterId));
+      if (course != null) {
+        batch.update(
+          _coursesRef.doc(courseId),
+          {'chaptersCount': course.chaptersCount},
+        );
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[CoursesCloud] _deleteChapterOnCloud : $e');
+    }
+  }
+
+  Future<void> _reorderChaptersOnCloud(String courseId) async {
+    try {
+      final batch = _db.batch();
+      for (final chapter in chaptersOf(courseId)) {
+        batch.update(_chaptersRef(courseId).doc(chapter.id), {'order': chapter.order});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[CoursesCloud] reorderChapters : $e');
+    }
+  }
+
+  // ── Écritures : inscriptions & progression ────────────────────────────────
+
+  @override
+  void enroll(String courseId) {
+    final already = isEnrolled(courseId);
+    super.enroll(courseId);
+    if (already) return;
+    final enrollment = enrollmentFor(courseId);
+    if (enrollment == null) return;
+    _enrollmentsRef
+        .doc('${courseId}_$currentUserId')
+        .set(_enrollmentToMap(enrollment))
+        .catchError((e) => debugPrint('[CoursesCloud] enroll : $e'));
+    _coursesRef
+        .doc(courseId)
+        .update({'enrollmentsCount': FieldValue.increment(1)})
+        .catchError((e) => debugPrint('[CoursesCloud] enroll counter : $e'));
+  }
+
+  @override
+  void setChapterCompleted(
+    String courseId,
+    String chapterId,
+    bool completed,
+  ) {
+    super.setChapterCompleted(courseId, chapterId, completed);
+    final enrollment = enrollmentFor(courseId);
+    if (enrollment == null) return;
+    _enrollmentsRef.doc('${courseId}_$currentUserId').update({
+      'completedChapterIds': enrollment.completedChapterIds,
+      'lastChapterId': enrollment.lastChapterId,
+      'lastAccess': Timestamp.fromDate(enrollment.lastAccess),
+    }).catchError((e) => debugPrint('[CoursesCloud] setChapterCompleted : $e'));
+  }
+
+  // ── Mapping Firestore ↔ modèles ───────────────────────────────────────────
+
+  Map<String, dynamic> _courseToMap(Course c) => {
+        'teacherId': c.teacherId,
+        'teacherName': c.teacherName,
+        'teacherVerified': c.teacherVerified,
+        'title': c.title,
+        'subject': c.subject,
+        'level': c.level,
+        'description': c.description,
+        'coverImageUrl': c.coverImageUrl,
+        'chaptersCount': c.chaptersCount,
+        'isPublished': c.isPublished,
+        'enrollmentsCount': c.enrollmentsCount,
+        'createdAt': Timestamp.fromDate(c.createdAt),
+      };
+
+  Course _courseFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    return Course(
+      id: doc.id,
+      teacherId: (d['teacherId'] as String?) ?? '',
+      teacherName: (d['teacherName'] as String?) ?? 'Enseignant',
+      teacherVerified: (d['teacherVerified'] as bool?) ?? false,
+      title: (d['title'] as String?) ?? 'Sans titre',
+      subject: (d['subject'] as String?) ?? 'Général',
+      level: (d['level'] as String?) ?? 'L1',
+      description: (d['description'] as String?) ?? '',
+      coverImageUrl: d['coverImageUrl'] as String?,
+      chaptersCount: (d['chaptersCount'] as num?)?.toInt() ?? 0,
+      isPublished: (d['isPublished'] as bool?) ?? false,
+      enrollmentsCount: (d['enrollmentsCount'] as num?)?.toInt() ?? 0,
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> _chapterToMap(Chapter c) => {
+        'title': c.title,
+        'type': c.type.firestoreValue,
+        'content': c.content,
+        'durationMin': c.durationMin,
+        'order': c.order,
+      };
+
+  Chapter _chapterFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    return Chapter(
+      id: doc.id,
+      title: (d['title'] as String?) ?? 'Sans titre',
+      type: ChapterTypeX.fromFirestore((d['type'] as String?) ?? 'text'),
+      content: d['content'] as String?,
+      durationMin: (d['durationMin'] as num?)?.toInt() ?? 30,
+      order: (d['order'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> _enrollmentToMap(Enrollment e) => {
+        'courseId': e.courseId,
+        'studentId': e.studentId,
+        'studentName': e.studentName,
+        'completedChapterIds': e.completedChapterIds,
+        'lastChapterId': e.lastChapterId,
+        'lastAccess': Timestamp.fromDate(e.lastAccess),
+      };
+
+  Enrollment _enrollmentFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    return Enrollment(
+      courseId: (d['courseId'] as String?) ?? '',
+      studentId: (d['studentId'] as String?) ?? '',
+      studentName: (d['studentName'] as String?) ?? 'Étudiant',
+      completedChapterIds: ((d['completedChapterIds'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+      lastChapterId: d['lastChapterId'] as String?,
+      lastAccess: (d['lastAccess'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
   }
 }

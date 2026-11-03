@@ -438,12 +438,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        course.teacherName,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: CourseColors.textSecondary,
+                      Expanded(
+                        child: Text(
+                          course.teacherName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: CourseColors.textSecondary,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),

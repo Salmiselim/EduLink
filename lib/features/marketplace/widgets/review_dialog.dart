@@ -1,4 +1,8 @@
+// Bibliothèque Material Design de Flutter : fournit StatefulWidget, Form, GlobalKey<FormState>,
+// TextFormField, TextEditingController, MediaQuery, IconButton et FilledButton.icon.
 import 'package:flutter/material.dart';
+
+// Liaison avec le modèle `MarketplaceOrder` pour afficher le titre de l'offre et le nom du vendeur
 import '../models/marketplace_models.dart';
 
 /// Feuille modale (`ModalBottomSheet`) dédiée à la saisie d'un avis vérifié

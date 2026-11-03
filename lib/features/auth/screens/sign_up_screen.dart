@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../main.dart';
+import '../services/auth_service.dart';
 import '../widgets/auth_ui.dart';
 import 'sign_in_screen.dart';
 
@@ -45,7 +46,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   /// Valide le formulaire et l'acceptation des conditions générales, affiche un
   /// retour par `SnackBar` puis remplace toute la pile de navigation vers `EduLinkShell`.
-  void _submit() {
+  Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (!_acceptTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -56,11 +57,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
       );
       return;
     }
+    final result = await AuthService.instance.signUp(
+      name: _nameController.text.trim(),
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+      isTeacher: _role == _AccountRole.teacher,
+      teacherCode:
+          _role == _AccountRole.teacher ? _codeController.text.trim() : null,
+    );
+    if (!mounted) return;
+    final message = switch (result.outcome) {
+      AuthOutcome.failure => result.error ?? 'Inscription impossible.',
+      AuthOutcome.success => 'Bienvenue sur EduLink !',
+      AuthOutcome.demo => 'Compte créé — bienvenue ! (mode démonstration)',
+    };
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        content: Text('Compte créé — bienvenue ! (mode démonstration)'),
-      ),
+      SnackBar(duration: const Duration(seconds: 3), content: Text(message)),
     );
     Navigator.pushAndRemoveUntil(
       context,
@@ -114,7 +126,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   validator: (value) {
                     final v = value?.trim() ?? '';
                     if (v.length < 3 || v.length > 60) {
-                      return 'Entre 3 et 60 caractères.';
+                      return 'Indiquez votre nom complet (entre 3 et 60 caractères).';
                     }
                     return null;
                   },
@@ -163,7 +175,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   validator: (value) {
                     final v = value ?? '';
-                    if (v.length < 6) return 'Au moins 6 caractères.';
+                    if (v.length < 6) {
+                      return 'Le mot de passe doit contenir au moins 6 caractères.';
+                    }
                     return null;
                   },
                 ),

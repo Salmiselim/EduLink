@@ -27,7 +27,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
   late final TextEditingController _time;
   late final TextEditingController _attempts;
   late final TextEditingController _geminiHint;
-  late String _courseId;
+  String? _courseId;
   late DateTime _availableFrom;
   late DateTime _dueDate;
   late List<QuizQuestion> _questions;
@@ -41,12 +41,22 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     // Sécurité d'accès : renvoie immédiatement en arrière si l'utilisateur actif n'est pas enseignant.
     if (!_controller.isTeacher) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Espace enseignant — connectez-vous avec un compte enseignant.',
+            ),
+          ),
+        );
         Navigator.pop(context);
       });
     }
-    // Préremplit les champs et clone la liste de questions lorsqu'un quiz existant est modifié.
+    // Préremplit les champs et clone la liste de questions lorsqu'un quiz
+    // existant est modifié. La liste des cours peut être vide (compte sans
+    // cours publiés) : la présélection n'a lieu que si un cours existe.
     final existing = widget.existing;
-    final firstCourse = _controller.accessibleCourses.first;
+    final availableCourses = _controller.accessibleCourses;
+    final firstCourse = availableCourses.isEmpty ? null : availableCourses.first;
     _title = TextEditingController(text: existing?.title ?? '');
     _time = TextEditingController(
       text: '${existing?.timeLimitMin ?? 15}',
@@ -55,7 +65,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
       text: '${existing?.attemptsAllowed ?? 1}',
     );
     _geminiHint = TextEditingController(text: 'Chapitre listes et piles');
-    _courseId = existing?.courseId ?? firstCourse.id;
+    _courseId = existing?.courseId ?? firstCourse?.id;
     _availableFrom = existing?.availableFrom ?? DateTime.now();
     _dueDate = existing?.dueDate ?? DateTime.now().add(const Duration(days: 7));
     _questions = existing?.questions.map((q) => q.copyWith()).toList() ?? [];
@@ -123,18 +133,28 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
-  /// Résout l'objet [LinkedCourse] correspondant à l'identifiant sélectionné `_courseId`.
-  LinkedCourse get _course =>
-      _controller.courses.firstWhere((c) => c.id == _courseId);
+  /// Résout l'objet [LinkedCourse] correspondant à l'identifiant sélectionné
+  /// `_courseId`, ou null si la liste n'est pas encore chargée.
+  LinkedCourse? get _courseOrNull {
+    for (final c in _controller.courses) {
+      if (c.id == _courseId) return c;
+    }
+    return null;
+  }
 
   /// Construit l'instance finale de [Quiz] et l'enregistre dans [EvaluationsController.upsertQuiz]
   /// soit en brouillon (`publish: false`), soit directement publiée (`publish: true`).
   void _save({required bool publish}) {
     if (!_validate()) return;
+    final course = _courseOrNull;
+    if (course == null) {
+      _snack('Sélectionnez un cours valide (créez-en un dans l\'onglet Cours).');
+      return;
+    }
     final quiz = Quiz(
       id: widget.existing?.id ?? 'quiz_${DateTime.now().millisecondsSinceEpoch}',
-      courseId: _course.id,
-      courseTitle: _course.title,
+      courseId: course.id,
+      courseTitle: course.title,
       teacherId: _controller.currentUserId,
       teacherName: _controller.currentUserName,
       title: _title.text.trim(),
@@ -270,19 +290,26 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           // Choix du cours auquel rattacher l'évaluation parmi les cours gérés par l'enseignant.
           DropdownButtonFormField<String>(
             initialValue: _courseId,
+            isExpanded: true,
             decoration: evalInputDecoration(
-              label: 'Cours lié (L4)',
+              label: 'Cours lié',
               icon: Icons.menu_book_rounded,
             ),
             items: _controller.accessibleCourses
                 .map(
                   (c) => DropdownMenuItem(
                     value: c.id,
-                    child: Text('${c.title} · ${c.level}'),
+                    child: Text(
+                      '${c.title} · ${c.level}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 )
                 .toList(),
-            onChanged: (v) => setState(() => _courseId = v!),
+            onChanged: (v) => setState(() => _courseId = v),
+            validator: (v) =>
+                v == null ? 'Sélectionnez le cours rattaché.' : null,
           ),
           const SizedBox(height: 12),
           // Saisie du titre rejetant les chaînes trop courtes ou purement numériques.
@@ -584,7 +611,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            '${_course.title} · ${_time.text} min · ${_attempts.text} tentative(s) · ${_questions.length} question(s)',
+            '${_courseOrNull?.title ?? 'Aucun cours sélectionné'} · ${_time.text} min · ${_attempts.text} tentative(s) · ${_questions.length} question(s)',
             style: const TextStyle(color: EduColors.textSecondary),
           ),
           const SizedBox(height: 8),

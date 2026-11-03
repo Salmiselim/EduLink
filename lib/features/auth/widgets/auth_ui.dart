@@ -11,6 +11,7 @@ class AuthColors {
   static const Color textSecondary = Color(0xFF334155);
   static const Color muted = Color(0xFF64748B);
   static const Color success = Color(0xFF16A34A);
+  static const Color danger = Color(0xFFDC2626);
   static const Color successBg = Color(0xFFDCFCE7);
   static const Color infoBg = Color(0xFFDBEAFE);
   static const Color neutralBg = Color(0xFFF1F5F9);

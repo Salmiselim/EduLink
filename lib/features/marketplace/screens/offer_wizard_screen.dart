@@ -1,4 +1,9 @@
+// Bibliothèque Material Design de Flutter : fournit Form, GlobalKey<FormState>, TextFormField,
+// DropdownButtonFormField, SwitchListTile, SegmentedButton, ChoiceChip, Chip, ActionChip,
+// RadioGroup, RadioListTile, AlertDialog, OutlinedButton et FilledButton.
 import 'package:flutter/material.dart';
+
+// Liaisons avec le contrôleur d'état (`addOffer` / `updateOffer`) et les modèles de données :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 
@@ -40,8 +45,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
   String _selectedLevel = 'L2';
   OfferCondition _selectedCondition = OfferCondition.bon;
   int _stockQuantity = 1;
-  String? _uploadedFileName = 'support_revision_edulink.pdf';
-  final List<String> _uploadedPhotos = ['photo_couverture_1.jpg'];
+  String? _uploadedFileName;
+  final List<String> _uploadedPhotos = [];
   String? _mediaValidationError;
 
   // --- ÉTAPE 3 : Prix en TND (0 = offre gratuite) ---
@@ -70,7 +75,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     '2. Infos & Médias',
     '3. Prix (TND)',
     '4. Mode, Lieu & Créneaux',
-    '5. Cours lié (L6)',
+    '5. Cours lié',
     '6. Aperçu & Publication',
   ];
 
@@ -137,43 +142,57 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
   /// Exécute les règles de validation propres à l'étape [step] (formulaires [GlobalKey<FormState>],
   /// présence des médias obligatoires, bornes tarifaires en TND et existence d'au moins un créneau libre).
+  /// Valide une étape à partir des VALEURS saisies (contrôleurs texte) et
+  /// non des formulaires montés : depuis la dernière étape, les étapes
+  /// précédentes restent vérifiables même si leurs formulaires ne sont plus
+  /// à l'écran (c'était la cause du faux échec de titre à la publication).
   bool _validateStep(int step) {
     if (step == 1) {
-      final formValid = _step2FormKey.currentState?.validate() ?? false;
+      final title = _titleController.text.trim();
+      final desc = _descController.text.trim();
+      if (title.length < 5 || title.length > 80) {
+        _showValidationSnackBar(
+          'Donnez un titre clair à votre offre (entre 5 et 80 caractères).',
+        );
+        return false;
+      }
+      if (desc.length < 20 || desc.length > 600) {
+        _showValidationSnackBar(
+          'Décrivez votre offre en quelques phrases (entre 20 et 600 caractères).',
+        );
+        return false;
+      }
       if (_selectedType == OfferType.resourceDigital &&
           _uploadedFileName == null) {
         setState(() {
-          _mediaValidationError =
-              'Veuillez sélectionner un fichier PDF à téléverser.';
+          _mediaValidationError = 'Ajoutez le fichier PDF de votre ressource.';
         });
+        _showValidationSnackBar('Il manque le fichier PDF de votre ressource.');
         return false;
       }
       if (_selectedType == OfferType.resourcePhysical &&
           _uploadedPhotos.isEmpty) {
         setState(() {
-          _mediaValidationError =
-              'Veuillez ajouter au moins une photo de la ressource physique.';
+          _mediaValidationError = 'Ajoutez au moins une photo de l\'article.';
         });
+        _showValidationSnackBar('Il manque au moins une photo de l\'article.');
         return false;
       }
       setState(() => _mediaValidationError = null);
-      if (!formValid) {
-        _showValidationSnackBar(
-          'Veuillez renseigner un titre (min. 5 caractères) et une description (min. 20 caractères).',
-        );
-      }
-      return formValid;
+      return true;
     }
 
     if (step == 2) {
       if (_isFree) return true;
-      final formValid = _step3FormKey.currentState?.validate() ?? false;
-      if (!formValid) {
+      final price =
+          double.tryParse(_priceController.text.trim().replaceAll(',', '.'));
+      if (price == null || price < 1 || price > 500) {
         _showValidationSnackBar(
-          'Veuillez saisir un prix valide en TND (entre 1 et 500 TND) ou activer la gratuité.',
+          'Indiquez un prix entre 1 et 500 TND, ou activez l\'offre gratuite.',
         );
+        return false;
       }
-      return formValid;
+      return true;
     }
 
     if (step == 3) {
@@ -181,27 +200,25 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       final needsAddress = _selectedType == OfferType.resourcePhysical ||
           (_selectedType == OfferType.privateLesson &&
               _selectedMode == DeliveryMode.onsite);
-      bool addressValid = true;
-      if (needsAddress) {
-        addressValid = _step4FormKey.currentState?.validate() ?? false;
+      final address = _addressController.text.trim();
+      if (needsAddress && address.length < 6) {
+        _showValidationSnackBar(
+          'Précisez l\'adresse de rencontre (au moins 6 caractères).',
+        );
+        return false;
       }
       if (_selectedType == OfferType.privateLesson && _draftSlots.isEmpty) {
         setState(() {
           _slotsValidationError =
-              'Au moins un créneau de disponibilité est obligatoire pour un cours particulier.';
+              'Ajoutez au moins un créneau pour votre cours particulier.';
         });
         _showValidationSnackBar(
-          'Veuillez ajouter au moins un créneau horaire de disponibilité.',
+          'Ajoutez au moins un créneau pour votre cours particulier.',
         );
         return false;
       }
       setState(() => _slotsValidationError = null);
-      if (!addressValid) {
-        _showValidationSnackBar(
-          'Veuillez saisir une adresse de rencontre valide (min. 6 caractères).',
-        );
-      }
-      return addressValid;
+      return true;
     }
 
     return true;
@@ -345,8 +362,10 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
     final title = _titleController.text.trim();
     final desc = _descController.text.trim();
-    final parsedPrice =
-        _isFree ? 0.0 : (double.tryParse(_priceController.text.trim()) ?? 15.0);
+    final parsedPrice = _isFree
+        ? 0.0
+        : double.tryParse(_priceController.text.trim().replaceAll(',', '.')) ??
+            0.0;
 
     final linkedCourse = _selectedCourseId == null
         ? null
@@ -366,15 +385,19 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       id: offerId,
       sellerId: _controller.currentUserId,
       sellerName: _controller.currentUserName,
-      sellerAvatar: _controller.currentUserRole == SellerRole.teacher
-          ? 'KM'
-          : 'YB',
+      sellerAvatar: _controller.currentUserName
+          .split(' ')
+          .where((part) => part.isNotEmpty)
+          .map((part) => part[0])
+          .take(2)
+          .join()
+          .toUpperCase(),
       sellerSubtitle: _controller.currentUserRole == SellerRole.teacher
-          ? 'Enseignant vérifié · INSAT Tunis'
-          : 'L3 Génie Logiciel · FST Tunis',
+          ? 'Enseignant vérifié'
+          : 'Étudiant vendeur',
       sellerBadges: _controller.currentUserRole == SellerRole.teacher
-          ? const ['Enseignant vérifié', 'Mentor']
-          : const ['Vendeur', 'Bien noté'],
+          ? const ['Enseignant vérifié']
+          : const ['Vendeur'],
       sellerRole: _controller.currentUserRole,
       type: _selectedType,
       title: title,
@@ -384,7 +407,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       images: _uploadedPhotos,
       price: parsedPrice,
       fileUrl: _selectedType == OfferType.resourceDigital
-          ? 'https://res.cloudinary.com/edulink/private/${_uploadedFileName ?? "document.pdf"}'
+          ? '/fichiers/edulink/private/${_uploadedFileName ?? "document.pdf"}'
           : null,
       fileSizeLabel: _selectedType == OfferType.resourceDigital
           ? 'PDF privé · ${_uploadedFileName ?? "document.pdf"}'
@@ -443,10 +466,10 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       SnackBar(
         content: Text(
           _isEditing
-              ? 'Offre modifiée avec succès (PATCH /offers/:id) !'
+              ? 'Offre modifiée !'
               : status == OfferStatus.published
-                  ? 'Offre publiée avec succès sur la Marketplace !'
-                  : 'Offre enregistrée en brouillon dans « Mes offres ».',
+                  ? 'Offre publiée — elle est maintenant visible dans le catalogue !'
+                  : 'Brouillon enregistré — retrouvez-le dans « Mes offres ».',
         ),
       ),
     );
@@ -518,15 +541,19 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text(
-                      _stepTitles[_currentStep],
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1E3A8A),
+                    Expanded(
+                      child: Text(
+                        _stepTitles[_currentStep],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E3A8A),
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       'Étape ${_currentStep + 1} sur ${_stepTitles.length}',
                       style: TextStyle(
@@ -569,45 +596,72 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
               child: Row(
                 children: [
                   if (_currentStep > 0)
-                    OutlinedButton.icon(
-                      onPressed: () => setState(() => _currentStep--),
-                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                      label: const Text('Précédent'),
+                    Flexible(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() => _currentStep--),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                        label: const Text(
+                          'Précédent',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
                   const Spacer(),
                   if (_currentStep < _stepTitles.length - 1)
-                    FilledButton.icon(
-                      onPressed: _goToNextStep,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
+                    Flexible(
+                      child: FilledButton.icon(
+                        onPressed: _goToNextStep,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        icon: const Icon(Icons.arrow_forward_rounded,
+                            size: 18),
+                        label: const Text(
+                          'Étape suivante',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                      label: const Text('Étape suivante'),
                     )
                   else ...[
-                    OutlinedButton(
-                      onPressed: () =>
-                          _submitOffer(status: OfferStatus.draft),
-                      child: const Text('Brouillon'),
-                    ),
-                    const SizedBox(width: 10),
-                    FilledButton.icon(
-                      onPressed: () =>
-                          _submitOffer(status: OfferStatus.published),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF16A34A),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
+                    Flexible(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            _submitOffer(status: OfferStatus.draft),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        child: const Text(
+                          'Brouillon',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      icon: const Icon(Icons.rocket_launch_rounded, size: 18),
-                      label: Text(
-                        _isEditing ? 'Enregistrer' : 'Publier l\'offre',
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            _submitOffer(status: OfferStatus.published),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 12,
+                          ),
+                        ),
+                        icon: const Icon(Icons.rocket_launch_rounded,
+                            size: 18),
+                        label: Text(
+                          _isEditing ? 'Enregistrer' : 'Publier l\'offre',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
@@ -787,10 +841,10 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
               validator: (val) {
                 final text = val?.trim() ?? '';
                 if (text.isEmpty) {
-                  return 'Le titre de l\'offre est obligatoire.';
+                  return 'Donnez un titre à votre offre.';
                 }
                 if (text.length < 5) {
-                  return 'Le titre doit contenir au moins 5 caractères (${text.length}/5).';
+                  return 'Un titre un peu plus long aidera les étudiants à trouver votre offre (au moins 5 caractères).';
                 }
                 if (RegExp(r'^\d+$').hasMatch(text)) {
                   return 'Le titre ne peut pas contenir uniquement des chiffres.';
@@ -816,6 +870,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   flex: 2,
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedSubject,
+                    isExpanded: true,
                     decoration: InputDecoration(
                       labelText: 'Matière *',
                       border: OutlineInputBorder(
@@ -823,7 +878,16 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                       ),
                     ),
                     items: MarketplaceController.subjects
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(
+                              s,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => _selectedSubject = val);
@@ -834,6 +898,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedLevel,
+                    isExpanded: true,
                     decoration: InputDecoration(
                       labelText: 'Niveau *',
                       border: OutlineInputBorder(
@@ -860,10 +925,10 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
               validator: (val) {
                 final text = val?.trim() ?? '';
                 if (text.isEmpty) {
-                  return 'La description détaillée est obligatoire.';
+                  return 'Décrivez votre offre pour les étudiants.';
                 }
                 if (text.length < 20) {
-                  return 'Veuillez détailler davantage votre offre (min. 20 caractères, actuel : ${text.length}).';
+                  return 'Ajoutez quelques détails : pour qui, quoi, comment (au moins 20 caractères).';
                 }
                 return null;
               },
@@ -977,7 +1042,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
             const SizedBox(height: 14),
             const Text(
-              'Photos d\'illustration (`images[]`)',
+              'Photos d\'illustration',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
             ),
             const SizedBox(height: 8),
@@ -1072,7 +1137,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   if (_isFree) return null;
                   final text = val?.trim() ?? '';
                   if (text.isEmpty) {
-                    return 'Veuillez indiquer un prix en TND (ou activer l\'offre gratuite).';
+                    return 'Indiquez un prix en TND, ou activez l\'offre gratuite.';
                   }
                   final parsed = double.tryParse(text);
                   if (parsed == null) {
@@ -1265,10 +1330,10 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                     validator: (val) {
                       final text = val?.trim() ?? '';
                       if (text.isEmpty) {
-                        return 'L\'adresse ou le point de rencontre est obligatoire.';
+                        return 'Indiquez le lieu de rencontre.';
                       }
                       if (text.length < 6) {
-                        return 'Veuillez préciser l\'adresse (min. 6 caractères).';
+                        return 'Précisez l\'adresse (au moins 6 caractères).';
                       }
                       return null;
                     },
@@ -1395,9 +1460,11 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const Text(
             'Rattacher l\'offre à un cours (Optionnel)',
             style: TextStyle(
@@ -1408,7 +1475,9 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Une offre rattachée à un cours (`offers.courseId`) apparaît directement sur la page de ce cours et dans les recommandations des étudiants inscrits.',
+            'Une offre rattachée à un cours (offers.courseId) apparaît '
+            'directement sur la page de ce cours et dans les recommandations '
+            'des étudiants inscrits.',
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 14),
@@ -1444,13 +1513,16 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
   /// Étape 6 : récapitulatif complet en lecture seule avant sauvegarde en brouillon ou publication immédiate.
   Widget _buildStep6Preview() {
-    final parsedPrice =
-        _isFree ? 0.0 : (double.tryParse(_priceController.text.trim()) ?? 15.0);
+    final parsedPrice = _isFree
+        ? 0.0
+        : double.tryParse(_priceController.text.trim().replaceAll(',', '.')) ??
+            0.0;
     final linkedCourse = _selectedCourseId == null
         ? null
         : MarketplaceController.availableCoursesL6.firstWhere(
@@ -1472,12 +1544,16 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             children: [
               const Icon(Icons.verified_outlined, color: Color(0xFF16A34A)),
               const SizedBox(width: 8),
-              const Text(
-                'Aperçu avant publication',
-                style: TextStyle(
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+              const Expanded(
+                child: Text(
+                  'Aperçu avant publication',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
               ),
               const Spacer(),

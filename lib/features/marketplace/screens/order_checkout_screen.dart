@@ -1,4 +1,8 @@
+// Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, Form, GlobalKey<FormState>,
+// TextFormField, ListTile, IconButton.outlined, SafeArea, FilledButton.icon et SnackBar.
 import 'package:flutter/material.dart';
+
+// Liaisons avec le contrôleur (`createOrder`), les modèles et la table des routes (`pushReplacementNamed`) :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';

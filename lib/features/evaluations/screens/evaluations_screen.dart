@@ -479,7 +479,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                       ),
                       FilledButton(
                         onPressed: () =>
-                            _controller.publishQuiz(quiz.id, !quiz.isPublished),
+                            _controller.publishQuizToggle(quiz.id, !quiz.isPublished),
                         child: Text(quiz.isPublished ? 'Masquer' : 'Publier'),
                       ),
                       IconButton(
@@ -600,23 +600,26 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             decoration: evalCardDecoration(),
-            child: ListTile(
-              title: Text(
-                sub.studentName,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+            child: Material(
+              type: MaterialType.transparency,
+              child: ListTile(
+                title: Text(
+                  sub.studentName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${asg?.title ?? ''} · ${formatDate(sub.submittedAt)}'
+                  '${sub.isLate ? ' · retard' : ''}',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    EvaluationsRoutes.submissionGrade,
+                    arguments: SubmissionGradeArgs(submissionId: sub.id),
+                  );
+                },
               ),
-              subtitle: Text(
-                '${asg?.title ?? ''} · ${formatDate(sub.submittedAt)}'
-                '${sub.isLate ? ' · retard' : ''}',
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                Navigator.pushNamed(
-                  context,
-                  EvaluationsRoutes.submissionGrade,
-                  arguments: SubmissionGradeArgs(submissionId: sub.id),
-                );
-              },
             ),
           );
         }),
@@ -657,11 +660,19 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
         // Filtre déroulant par cours mettant à jour à la fois l'affichage et l'export CSV.
         DropdownButtonFormField<String?>(
           initialValue: _courseFilter,
+          isExpanded: true,
           decoration: evalInputDecoration(label: 'Filtrer par cours'),
           items: [
             const DropdownMenuItem(value: null, child: Text('Tous les cours')),
             ..._controller.accessibleCourses.map(
-              (c) => DropdownMenuItem(value: c.id, child: Text(c.title)),
+              (c) => DropdownMenuItem(
+                value: c.id,
+                child: Text(
+                  c.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ],
           onChanged: (v) => setState(() => _courseFilter = v),
@@ -742,7 +753,14 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           items: [
             const DropdownMenuItem(value: null, child: Text('Tous les cours')),
             ..._controller.accessibleCourses.map(
-              (c) => DropdownMenuItem(value: c.id, child: Text(c.title)),
+              (c) => DropdownMenuItem(
+                value: c.id,
+                child: Text(
+                  c.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ],
           onChanged: (v) => setState(() => _courseFilter = v),

@@ -1,4 +1,9 @@
+// Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, ListView, Wrap,
+// ChoiceChip, CircleAvatar, AlertDialog, RadioGroup, RadioListTile, Form, TextFormField,
+// SafeArea et FilledButton.icon.
 import 'package:flutter/material.dart';
+
+// Liaisons internes avec le contrôleur Singleton, les modèles et la table des routes nommées :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';

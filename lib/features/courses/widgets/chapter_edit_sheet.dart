@@ -130,8 +130,8 @@ class ChapterEditSheet {
                         ),
                         validator: (value) {
                           final v = value?.trim() ?? '';
-                          if (v.length < 3 || v.length > 60) {
-                            return 'Entre 3 et 60 caractères.';
+                          if (v.trim().isEmpty) {
+                            return 'Donnez un titre au chapitre.';
                           }
                           return null;
                         },
@@ -257,8 +257,8 @@ class ChapterEditSheet {
           ),
           validator: (value) {
             final v = value?.trim() ?? '';
-            if (v.length < 20) {
-              return 'Le contenu doit contenir au moins 20 caractères.';
+            if (v.trim().isEmpty) {
+              return 'Rédigez le contenu du chapitre.';
             }
             return null;
           },
@@ -276,14 +276,14 @@ class ChapterEditSheet {
                   // Génère une URI de stockage média pour illustrer le rattachement d'un document PDF.
                   setSheetState(() {
                     controller.text =
-                        'cloudinary://edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
+                        '/documents/edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
                   });
                   ScaffoldMessenger.of(sheetContext).showSnackBar(
                     const SnackBar(
                       duration: Duration(seconds: 2),
                       content: Text(
                         'Fichier simulé — upload via le service média '
-                        '(Cloudinary) — intégration à venir.',
+                        '— intégration à venir.',
                       ),
                     ),
                   );

@@ -1,4 +1,7 @@
+// Bibliothèque Material Design de Flutter : fournit Route, RouteSettings et MaterialPageRoute.
 import 'package:flutter/material.dart';
+
+// Liaisons avec les modèles de données et les 4 écrans secondaires (routes poussées) du module M5 :
 import '../models/marketplace_models.dart';
 import '../screens/offer_detail_screen.dart';
 import '../screens/offer_wizard_screen.dart';

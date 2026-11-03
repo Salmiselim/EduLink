@@ -20,7 +20,7 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _title;
   late final TextEditingController _description;
-  late String _courseId;
+  String? _courseId;
   late DocumentFolder _folder;
   String? _fileUrl;
   String? _fileError;
@@ -35,7 +35,8 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
     final e = widget.existing;
     _title = TextEditingController(text: e?.title ?? '');
     _description = TextEditingController(text: e?.description ?? '');
-    _courseId = e?.courseId ?? _controller.accessibleCourses.first.id;
+    _courseId = e?.courseId ??
+        (_controller.accessibleCourses.isEmpty ? null : _controller.accessibleCourses.first.id);
     _folder = e?.folder ?? DocumentFolder.polycopies;
     _fileUrl = e?.fileUrl;
   }
@@ -72,13 +73,22 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
             // Liste déroulante associant le document à l'un des cours gérés par l'enseignant.
             DropdownButtonFormField<String>(
               initialValue: _courseId,
+              isExpanded: true,
               decoration: evalInputDecoration(label: 'Cours'),
               items: _controller.accessibleCourses
                   .map(
-                    (c) => DropdownMenuItem(value: c.id, child: Text(c.title)),
+                    (c) => DropdownMenuItem(
+                      value: c.id,
+                      child: Text(
+                        c.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   )
                   .toList(),
-              onChanged: (v) => setState(() => _courseId = v!),
+              onChanged: (v) => setState(() => _courseId = v),
+              validator: (v) => v == null ? 'Sélectionnez un cours.' : null,
             ),
             const SizedBox(height: 12),
             // Sélection exclusive du dossier thématique (Polycopiés, Corrigés, Annales) via Wrap et ChoiceChip.
@@ -146,8 +156,20 @@ class _DocumentWizardScreenState extends State<DocumentWizardScreen> {
                   return;
                 }
                 if (!(_formKey.currentState?.validate() ?? false)) return;
-                final course =
-                    _controller.courses.firstWhere((c) => c.id == _courseId);
+                LinkedCourse? course;
+                for (final c in _controller.courses) {
+                  if (c.id == _courseId) course = c;
+                }
+                if (course == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Sélectionnez un cours valide dans l\'onglet Cours.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 _controller.upsertDocument(
                   CourseDocument(
                     id: widget.existing?.id ??
