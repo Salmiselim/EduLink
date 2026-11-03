@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/post.dart';
+import '../models/reaction.dart';
+import '../providers/forum_provider.dart';
 import '../routes/app_routes.dart';
 import '../utils/time_format.dart';
 import 'forum_ui.dart';
 import 'role_badge.dart';
 
-/// Carte synthétique représentant une question (`Post`) dans `ForumFeedScreen`
-/// et `TeacherInboxScreen`. Un appui ouvre `QuestionDetailScreen` via route nommée.
 class PostCard extends StatelessWidget {
   final Post post;
 
@@ -14,6 +15,9 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<ForumProvider>();
+    final reactions = provider.reactionCount(ReactionTarget.post, post.id);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Container(
@@ -21,7 +25,6 @@ class PostCard extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(16),
-          // Zone cliquable naviguant vers `ForumRoutes.forumQuestion` avec l'identifiant du post.
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () => Navigator.pushNamed(
@@ -34,7 +37,7 @@ class PostCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Ligne d'en-tête : avatar, nom de l'auteur, badge de rôle et date relative.
+                  // Auteur + horodatage
                   Row(
                     children: [
                       ForumAvatar(name: post.authorName, isTeacher: post.isTeacher),
@@ -63,7 +66,9 @@ class PostCard extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              formatTimeAgo(post.createdAt),
+                              post.isEdited
+                                  ? '${formatTimeAgo(post.createdAt)} · modifiée'
+                                  : formatTimeAgo(post.createdAt),
                               style: const TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
@@ -78,20 +83,30 @@ class PostCard extends StatelessWidget {
 
                   const SizedBox(height: 10),
 
-                  // Puce indiquant le cours auquel la question est rattachée.
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ForumPill(
-                      label: post.courseName,
-                      color: ForumColors.primary,
-                      background: ForumColors.infoBg,
-                      icon: Icons.sell_outlined,
-                    ),
+                  // Cours concerné + état
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      ForumPill(
+                        label: post.courseName,
+                        color: ForumColors.primary,
+                        background: ForumColors.infoBg,
+                        icon: Icons.sell_outlined,
+                      ),
+                      if (post.isResolved)
+                        const ForumPill(
+                          label: 'Résolue',
+                          color: ForumColors.success,
+                          background: ForumColors.successBg,
+                          icon: Icons.check_circle_rounded,
+                        ),
+                    ],
                   ),
 
                   const SizedBox(height: 10),
 
-                  // Titre principal de la question.
+                  // Titre
                   Text(
                     post.title,
                     style: const TextStyle(
@@ -103,7 +118,7 @@ class PostCard extends StatelessWidget {
 
                   const SizedBox(height: 4),
 
-                  // Extrait du corps limité à deux lignes avec points de suspension.
+                  // Aperçu du corps
                   Text(
                     post.body,
                     maxLines: 2,
@@ -115,9 +130,24 @@ class PostCard extends StatelessWidget {
                     ),
                   ),
 
+                  // Tags (un toucher filtre le fil)
+                  if (post.tags.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: post.tags
+                          .map((tag) => ForumTag(
+                                label: tag,
+                                onTap: () => provider.setTagFilter(tag),
+                              ))
+                          .toList(),
+                    ),
+                  ],
+
                   const SizedBox(height: 10),
 
-                  // Pied de carte affichant le compteur de réponses accordé en nombre.
+                  // Réponses, code, réactions
                   Row(
                     children: [
                       const Icon(
@@ -134,6 +164,40 @@ class PostCard extends StatelessWidget {
                           color: ForumColors.muted,
                         ),
                       ),
+                      if (post.hasCode) ...[
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.code_rounded,
+                          size: 15,
+                          color: ForumColors.muted,
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Code',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: ForumColors.muted,
+                          ),
+                        ),
+                      ],
+                      if (reactions > 0) ...[
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.favorite_border_rounded,
+                          size: 15,
+                          color: ForumColors.muted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$reactions',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: ForumColors.muted,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

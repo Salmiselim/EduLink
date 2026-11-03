@@ -6,9 +6,7 @@ import '../routes/app_routes.dart';
 import '../widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
 
-/// Écran principal de l'onglet Forum affiché dans `EduLinkShell`.
-/// Regroupe l'`AppBar` avec sélecteur de rôle, la recherche textuelle, le filtrage
-/// par cours et la liste réactive des questions.
+/// Onglet Forum (M3) : AppBar du module + fil de questions.
 class ForumFeedScreen extends StatefulWidget {
   const ForumFeedScreen({super.key});
 
@@ -17,13 +15,11 @@ class ForumFeedScreen extends StatefulWidget {
 }
 
 class _ForumFeedScreenState extends State<ForumFeedScreen> {
-  /// Contrôleur synchronisé avec la requête de recherche stockée dans `ForumProvider`.
   late final TextEditingController _searchController;
 
   @override
   void initState() {
     super.initState();
-    // Restaure la saisie de recherche existante via `context.read` sans déclencher d'écoute.
     _searchController =
         TextEditingController(text: context.read<ForumProvider>().searchQuery);
   }
@@ -34,7 +30,6 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
     super.dispose();
   }
 
-  /// Efface le champ de recherche et réinitialise les filtres dans `ForumProvider`.
   void _resetFilters() {
     _searchController.clear();
     context.read<ForumProvider>().resetFilters();
@@ -42,9 +37,8 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Abonnement à `ForumProvider` pour reconstruire le fil dès qu'un post, un filtre ou le rôle change.
     final provider = context.watch<ForumProvider>();
-    final posts = provider.filteredPosts;
+    final posts = provider.visiblePosts;
     final pendingCount = provider.pendingPosts.length;
     final isTeacher = provider.isTeacher;
 
@@ -60,9 +54,23 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
           subtitle: 'Questions, réponses & réactions',
         ),
         actions: [
-          // ActionChip permettant d'alterner entre la vue étudiant et la vue enseignant.
+          // État de la synchronisation REST (visible seulement si elle est activée)
+          if (provider.remoteEnabled)
+            Tooltip(
+              message: provider.lastSyncError ?? 'Synchronisé avec le serveur',
+              child: Icon(
+                provider.lastSyncError == null
+                    ? Icons.cloud_done_outlined
+                    : Icons.cloud_off_outlined,
+                size: 20,
+                color: provider.lastSyncError == null
+                    ? ForumColors.success
+                    : ForumColors.warning,
+              ),
+            ),
+          // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(left: 8, right: 8),
             child: ActionChip(
               tooltip:
                   'Changer de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)',
@@ -90,7 +98,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
               ),
             ),
           ),
-          // Accès à `TeacherInboxScreen` via route nommée avec badge du nombre de questions en attente.
+          // Boîte « questions à traiter » : réservée à l'enseignant
           if (isTeacher)
             IconButton(
               tooltip: 'Questions à traiter',
@@ -110,13 +118,12 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
       ),
       body: Column(
         children: [
-          // Bandeau fixe regroupant la barre de recherche et les puces de filtrage par cours.
+          // Recherche + filtres (cours, état, tag)
           Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Column(
               children: [
-                // Champ de recherche filtrant dynamiquement les questions via `provider.setSearchQuery`.
                 TextField(
                   controller: _searchController,
                   textInputAction: TextInputAction.search,
@@ -171,7 +178,7 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
 
                 const SizedBox(height: 10),
 
-                // Liste horizontale de `ChoiceChip` sélectionnant le cours actif dans le provider.
+                // Filtre par cours
                 SizedBox(
                   height: 34,
                   child: ListView.separated(
@@ -180,40 +187,74 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
                     separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final course = provider.courses[index];
-                      final isSelected = provider.selectedCourse == course;
-                      return ChoiceChip(
-                        label: Text(
-                          course,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected
-                                ? Colors.white
-                                : ForumColors.textSecondary,
-                          ),
-                        ),
-                        selected: isSelected,
-                        selectedColor: ForumColors.primary,
-                        backgroundColor: Colors.white,
-                        side: BorderSide(
-                          color: isSelected
-                              ? ForumColors.primary
-                              : ForumColors.border,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        showCheckmark: false,
-                        onSelected: (_) => provider.setSelectedCourse(course),
+                      return _FilterChip(
+                        label: course,
+                        selected: provider.selectedCourse == course,
+                        onSelected: () => provider.setSelectedCourse(course),
                       );
                     },
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Filtre par état + tag actif
+                SizedBox(
+                  height: 34,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      _FilterChip(
+                        label: 'Toutes',
+                        selected:
+                            provider.statusFilter == ForumStatusFilter.all,
+                        onSelected: () =>
+                            provider.setStatusFilter(ForumStatusFilter.all),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Sans réponse',
+                        selected: provider.statusFilter ==
+                            ForumStatusFilter.unanswered,
+                        onSelected: () => provider
+                            .setStatusFilter(ForumStatusFilter.unanswered),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Résolues',
+                        selected:
+                            provider.statusFilter == ForumStatusFilter.resolved,
+                        onSelected: () => provider
+                            .setStatusFilter(ForumStatusFilter.resolved),
+                      ),
+                      if (provider.tagFilter != null) ...[
+                        const SizedBox(width: 8),
+                        InputChip(
+                          label: Text(
+                            '#${provider.tagFilter}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: ForumColors.primary,
+                            ),
+                          ),
+                          backgroundColor: ForumColors.infoBg,
+                          side: const BorderSide(color: ForumColors.primary),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          deleteIconColor: ForumColors.primary,
+                          onDeleted: () => provider.setTagFilter(null),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
           ),
 
-          // Zone extensible contenant le fil de questions avec rafraîchissement par glissement (`RefreshIndicator`).
+          // Liste des questions (tirer vers le bas pour rafraîchir)
           Expanded(
             child: RefreshIndicator(
               color: ForumColors.primary,
@@ -250,16 +291,31 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
                   : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.only(top: 12, bottom: 88),
-                      itemCount: posts.length,
-                      itemBuilder: (context, index) =>
-                          PostCard(post: posts[index]),
+                      itemCount: posts.length + (provider.hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= posts.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 4),
+                            child: OutlinedButton.icon(
+                              onPressed: provider.loadMore,
+                              icon: const Icon(Icons.expand_more_rounded),
+                              label: const Text(
+                                'Charger plus de questions',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          );
+                        }
+                        return PostCard(post: posts[index]);
+                      },
                     ),
             ),
           ),
         ],
       ),
 
-      // Bouton flottant ouvrant l'écran de publication via la route `ForumRoutes.forumAsk`.
+      // FAB : Poser une question
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(context, ForumRoutes.forumAsk),
         backgroundColor: ForumColors.primary,
@@ -267,6 +323,42 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('Poser une question'),
       ),
+    );
+  }
+}
+
+/// Puce de filtre : bleue quand sélectionnée, blanche avec bordure sinon.
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: selected ? Colors.white : ForumColors.textSecondary,
+        ),
+      ),
+      selected: selected,
+      selectedColor: ForumColors.primary,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? ForumColors.primary : ForumColors.border,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      showCheckmark: false,
+      onSelected: (_) => onSelected(),
     );
   }
 }

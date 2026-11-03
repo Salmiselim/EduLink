@@ -298,3 +298,81 @@ class ForumPrimaryCta extends StatelessWidget {
     );
   }
 }
+
+/// Tag cliquable d'une question (`#flutter`) : puce neutre, 11 / w700.
+class ForumTag extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+
+  const ForumTag({super.key, required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: ForumColors.neutralBg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          '#$label',
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: ForumColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Boîte de confirmation avant une suppression ; renvoie true si l'utilisateur confirme.
+Future<bool> confirmForumDelete(
+  BuildContext context, {
+  required String title,
+  required String message,
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+          color: ForumColors.text,
+        ),
+      ),
+      content: Text(
+        message,
+        style: const TextStyle(
+          fontSize: 13.5,
+          color: ForumColors.textSecondary,
+          height: 1.5,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          style: FilledButton.styleFrom(backgroundColor: ForumColors.danger),
+          child: const Text(
+            'Supprimer',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}

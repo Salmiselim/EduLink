@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Requise pour le HTTP en release (Forum : REST + exécution de code) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="edulink"
         android:name="${applicationName}"

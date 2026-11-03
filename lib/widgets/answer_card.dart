@@ -1,40 +1,86 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/answer.dart';
+import '../models/post.dart';
+import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
 import '../utils/time_format.dart';
+import 'code_block.dart';
 import 'forum_ui.dart';
+import 'reaction_bar.dart';
+import 'reply_edit_dialog.dart';
 import 'role_badge.dart';
 
-/// Carte représentant une réponse (`Answer`) au sein de `QuestionDetailScreen`.
-/// Permet à tout utilisateur de voter positivement et à un enseignant de marquer
-/// la réponse d'un étudiant comme vérifiée.
+/// Carte d'une réponse : texte, extrait de code exécutable, réactions et actions
+/// (accepter pour l'auteur de la question, vérifier pour l'enseignant,
+/// modifier/supprimer pour l'auteur de la réponse).
 class AnswerCard extends StatelessWidget {
   final Answer answer;
+  final Post post;
 
-  const AnswerCard({super.key, required this.answer});
+  const AnswerCard({super.key, required this.answer, required this.post});
+
+  Future<void> _edit(BuildContext context) async {
+    final provider = context.read<ForumProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await showReplyEditDialog(context, answer: answer);
+    if (result == null) return;
+
+    final ok = provider.updateAnswer(
+      answer.id,
+      body: result.body,
+      codeSnippet: result.codeSnippet,
+      codeLanguage: result.codeLanguage,
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Réponse modifiée' : 'Modification impossible'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _delete(BuildContext context) async {
+    final provider = context.read<ForumProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await confirmForumDelete(
+      context,
+      title: 'Supprimer la réponse ?',
+      message: 'Cette action est définitive.',
+    );
+    if (!confirmed) return;
+
+    final ok = provider.deleteAnswer(answer.id);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Réponse supprimée' : 'Suppression impossible'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Écoute `ForumProvider` pour refléter l'état du rôle courant et des votes.
     final provider = context.watch<ForumProvider>();
-    // L'action de vérification est réservée aux enseignants sur les réponses rédigées par des étudiants.
+    final isAccepted = post.acceptedReplyId == answer.id;
+    // L'auteur d'une question ne peut pas accepter sa propre réponse.
+    final canAccept =
+        provider.canAcceptAnswer(post) && answer.authorId != post.authorId;
+    // Seul un enseignant peut vérifier la réponse d'un autre utilisateur.
     final canVerify = provider.isTeacher && !answer.isTeacher;
+    final canModify = provider.canModifyAnswer(answer);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.all(14),
-        // Met en valeur la bordure en vert lorsque la réponse porte la mention vérifiée.
         decoration: forumCardDecoration(
-          borderColor: answer.isTeacherVerified
-              ? ForumColors.success
-              : ForumColors.border,
+          borderColor: isAccepted ? ForumColors.success : ForumColors.border,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // En-tête : avatar, identité de l'auteur avec badge de rôle et bouton de vote positif.
+            // Auteur, horodatage et menu
             Row(
               children: [
                 ForumAvatar(
@@ -67,7 +113,9 @@ class AnswerCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        formatTimeAgo(answer.createdAt),
+                        answer.isEdited
+                            ? '${formatTimeAgo(answer.createdAt)} · modifiée'
+                            : formatTimeAgo(answer.createdAt),
                         style: const TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w600,
@@ -77,53 +125,51 @@ class AnswerCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                // Bouton interactif incrémentant ou retirant le vote positif via `ForumProvider`.
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => provider.toggleVoteAnswer(answer.id),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: answer.isUpvoted
-                          ? ForumColors.infoBg
-                          : ForumColors.neutralBg,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          answer.isUpvoted
-                              ? Icons.thumb_up_rounded
-                              : Icons.thumb_up_alt_outlined,
-                          size: 14,
-                          color: answer.isUpvoted
-                              ? ForumColors.primary
-                              : ForumColors.muted,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${answer.votesCount}',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: answer.isUpvoted
-                                ? ForumColors.primary
-                                : ForumColors.muted,
-                          ),
-                        ),
-                      ],
-                    ),
+                if (canModify)
+                  PopupMenuButton<String>(
+                    tooltip: 'Options de la réponse',
+                    icon: const Icon(Icons.more_vert_rounded,
+                        size: 20, color: ForumColors.muted),
+                    onSelected: (value) {
+                      if (value == 'edit') _edit(context);
+                      if (value == 'delete') _delete(context);
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Modifier')),
+                      PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                    ],
                   ),
-                ),
               ],
             ),
 
+            // États : acceptée / vérifiée
+            if (isAccepted || answer.isTeacherVerified) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (isAccepted)
+                    const ForumPill(
+                      label: 'Réponse acceptée',
+                      color: ForumColors.success,
+                      background: ForumColors.successBg,
+                      icon: Icons.check_circle_rounded,
+                    ),
+                  if (answer.isTeacherVerified)
+                    const ForumPill(
+                      label: 'Réponse vérifiée',
+                      color: ForumColors.primary,
+                      background: ForumColors.infoBg,
+                      icon: Icons.verified_rounded,
+                    ),
+                ],
+              ),
+            ],
+
             const SizedBox(height: 10),
 
-            // Contenu textuel de la réponse.
+            // Texte de la réponse
             Text(
               answer.body,
               style: const TextStyle(
@@ -133,19 +179,47 @@ class AnswerCard extends StatelessWidget {
               ),
             ),
 
-            // Pied de carte conditionnel affichant le badge de validation et le bouton enseignant.
-            if (answer.isTeacherVerified || canVerify) ...[
-              const SizedBox(height: 8),
-              Row(
+            // Extrait de code (exécutable)
+            if (answer.hasCode) ...[
+              const SizedBox(height: 10),
+              ForumCodeBlock(
+                code: answer.codeSnippet!,
+                language: answer.codeLanguage,
+              ),
+            ],
+
+            const SizedBox(height: 10),
+            ReactionBar(target: ReactionTarget.reply, targetId: answer.id),
+
+            // Actions : accepter (auteur de la question), vérifier (enseignant)
+            if (canAccept || canVerify) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
                 children: [
-                  if (answer.isTeacherVerified)
-                    const ForumPill(
-                      label: 'Réponse vérifiée',
-                      color: ForumColors.success,
-                      background: ForumColors.successBg,
-                      icon: Icons.verified_rounded,
+                  if (canAccept)
+                    TextButton.icon(
+                      onPressed: () =>
+                          provider.toggleAcceptAnswer(post.id, answer.id),
+                      style: TextButton.styleFrom(
+                        foregroundColor: ForumColors.success,
+                      ),
+                      icon: Icon(
+                        isAccepted
+                            ? Icons.cancel_outlined
+                            : Icons.check_circle_outline_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        isAccepted
+                            ? "Retirer l'acceptation"
+                            : 'Accepter cette réponse',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
-                  const Spacer(),
                   if (canVerify)
                     TextButton.icon(
                       onPressed: () => provider.toggleVerifyAnswer(answer.id),

@@ -38,7 +38,7 @@ class EduLinkApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         // Forum (M3)
-        ChangeNotifierProvider(create: (_) => ForumProvider()),
+        ChangeNotifierProvider(create: (_) => ForumProvider()..init()),
       ],
       child: MaterialApp(
         title: 'EduLink',
