@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:edulink/models/answer.dart';
 import 'package:edulink/models/post.dart';
+import 'package:edulink/models/rating.dart';
 import 'package:edulink/models/reaction.dart';
 import 'package:edulink/models/user.dart';
 import 'package:edulink/services/forum_marketplace_bridge.dart';
 import 'package:edulink/services/forum_store.dart';
 import 'package:edulink/utils/content_filter.dart';
+import 'package:edulink/utils/rating_utils.dart';
 import 'package:edulink/utils/tag_utils.dart';
 import 'package:edulink/utils/time_format.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -145,6 +147,42 @@ void main() {
       expect(copy.id, reaction.id);
     });
 
+    test('Rating : identifiant unique, aller-retour et étoiles bornées', () {
+      const rating = Rating(
+        targetType: ReactionTarget.post,
+        targetId: 'p1',
+        userId: 'u1',
+        stars: 4,
+      );
+      expect(rating.id, 'post_p1_u1');
+      final copy = Rating.fromJson(
+          jsonDecode(jsonEncode(rating.toJson())) as Map<String, dynamic>);
+      expect(copy.stars, 4);
+      expect(copy.id, rating.id);
+
+      // Une valeur hors limites venue du serveur est ramenée entre 1 et 5.
+      expect(Rating.fromJson({'stars': 99}).stars, 5);
+      expect(Rating.fromJson({'stars': -3}).stars, 1);
+    });
+
+    test('Réactions : chaque type a un emoji et un libellé distincts', () {
+      expect(ReactionType.values.length, 5);
+      expect(ReactionType.values.map((t) => t.emoji).toSet().length, 5);
+      expect(ReactionType.values.map((t) => t.label).toSet().length, 5);
+      expect(ReactionType.like.label, "J'aime");
+    });
+
+    test('ForumSnapshot : un ancien enregistrement sans notes reste lisible',
+        () {
+      final snapshot = ForumSnapshot.fromJson({
+        'role': 'student',
+        'posts': <dynamic>[],
+        'answers': <dynamic>[],
+        'reactions': <dynamic>[],
+      });
+      expect(snapshot.ratings, isEmpty);
+    });
+
     test('ForumSnapshot : aller-retour avec le rôle courant', () {
       final snapshot = ForumSnapshot(
         posts: [
@@ -165,6 +203,26 @@ void main() {
           jsonDecode(jsonEncode(snapshot.toJson())) as Map<String, dynamic>);
       expect(copy.role, ForumRole.teacher);
       expect(copy.posts.single.id, 'p1');
+    });
+  });
+
+  group('Calcul des notes', () {
+    test('RatingStats : moyenne simple', () {
+      expect(RatingStats.empty.average, 0);
+      final stats = RatingStats.empty.add(5).add(4);
+      expect(stats.count, 2);
+      expect(stats.average, 4.5);
+    });
+
+    test('score bayésien : sans note, on retrouve la moyenne a priori', () {
+      expect(bayesianScore(0, 0), kRatingPriorMean);
+    });
+
+    test('score bayésien : une seule note parfaite ne bat pas 20 bonnes notes',
+        () {
+      final single = bayesianScore(5, 1); // 1 note de 5 étoiles
+      final many = bayesianScore(96, 20); // 20 notes, moyenne 4,8
+      expect(many, greaterThan(single));
     });
   });
 

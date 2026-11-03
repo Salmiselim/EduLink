@@ -1,5 +1,6 @@
 import '../models/answer.dart';
 import '../models/post.dart';
+import '../models/rating.dart';
 import '../models/reaction.dart';
 
 /// Fournit les données initiales en mémoire utilisées par `ForumProvider`
@@ -159,6 +160,26 @@ print(quick_sort([5, 2, 9, 1, 7]))''',
       r(ReactionTarget.post, 'post_1', 'user_nour', ReactionType.like),
       r(ReactionTarget.post, 'post_1', 'user_amine', ReactionType.insightful),
       r(ReactionTarget.post, 'post_4', 'user_selim', ReactionType.like),
+    ];
+  }
+
+  /// Notes initiales (1 à 5 étoiles, une par utilisateur et par cible).
+  static List<Rating> getInitialRatings() {
+    Rating n(ReactionTarget target, String id, String user, int stars) {
+      return Rating(targetType: target, targetId: id, userId: user, stars: stars);
+    }
+
+    return [
+      n(ReactionTarget.reply, 'ans_1', 'user_yassine', 5),
+      n(ReactionTarget.reply, 'ans_1', 'user_nour', 5),
+      n(ReactionTarget.reply, 'ans_1', 'user_amine', 4),
+      n(ReactionTarget.reply, 'ans_1', 'user_lina', 5),
+      n(ReactionTarget.reply, 'ans_2', 'user_yassine', 4),
+      n(ReactionTarget.reply, 'ans_2', 'user_sarah', 4),
+      n(ReactionTarget.reply, 'ans_4', 'user_nour', 5),
+      n(ReactionTarget.post, 'post_1', 'user_nour', 4),
+      n(ReactionTarget.post, 'post_1', 'user_amine', 5),
+      n(ReactionTarget.post, 'post_3', 'user_sarah', 3),
     ];
   }
 }

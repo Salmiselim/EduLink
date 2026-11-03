@@ -4,41 +4,14 @@ import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
 import 'forum_ui.dart';
 
-/// Barre des 3 réactions (J'aime, Utile, Instructif) d'une question ou d'une réponse.
+/// Barre des réactions emoji (👍 J'aime, ✅ Utile, 💡 Instructif, 👏 Bravo,
+/// 🎯 Pertinent) d'une question ou d'une réponse.
 /// Une seule réaction par utilisateur : toucher la même la retire, une autre la remplace.
 class ReactionBar extends StatelessWidget {
   final ReactionTarget target;
   final String targetId;
 
   const ReactionBar({super.key, required this.target, required this.targetId});
-
-  IconData _icon(ReactionType type, bool active) {
-    switch (type) {
-      case ReactionType.like:
-        return active
-            ? Icons.favorite_rounded
-            : Icons.favorite_border_rounded;
-      case ReactionType.helpful:
-        return active
-            ? Icons.thumb_up_rounded
-            : Icons.thumb_up_alt_outlined;
-      case ReactionType.insightful:
-        return active
-            ? Icons.lightbulb_rounded
-            : Icons.lightbulb_outline_rounded;
-    }
-  }
-
-  String _label(ReactionType type) {
-    switch (type) {
-      case ReactionType.like:
-        return "J'aime";
-      case ReactionType.helpful:
-        return 'Utile';
-      case ReactionType.insightful:
-        return 'Instructif';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,14 +34,17 @@ class ReactionBar extends StatelessWidget {
             decoration: BoxDecoration(
               color: active ? ForumColors.infoBg : ForumColors.neutralBg,
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: active ? ForumColors.primary : Colors.transparent,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(_icon(type, active), size: 14, color: color),
+                Text(type.emoji, style: const TextStyle(fontSize: 14)),
                 const SizedBox(width: 4),
                 Text(
-                  count > 0 ? '${_label(type)} · $count' : _label(type),
+                  count > 0 ? '${type.label} · $count' : type.label,
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,

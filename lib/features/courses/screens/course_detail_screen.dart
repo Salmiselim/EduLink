@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../marketplace/data/marketplace_mock_data.dart';
 import '../../marketplace/models/marketplace_models.dart';
 import '../../marketplace/routes/marketplace_routes.dart';
+import '../../../routes/app_routes.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
 import '../routes/courses_routes.dart';
@@ -572,17 +573,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               _actionButton(
                 icon: Icons.forum_outlined,
                 label: 'Poser une question (forum du cours)',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      duration: Duration(seconds: 2),
-                      content: Text(
-                        'Forum du cours — '
-                        'intégration à venir.',
-                      ),
-                    ),
-                  );
-                },
+                // Liaison Forum (M3) : ouvre le formulaire avec ce cours présélectionné.
+                onPressed: () => Navigator.pushNamed(
+                  context,
+                  ForumRoutes.forumAsk,
+                  arguments: ForumAskArgs(courseName: course.title),
+                ),
               ),
               const SizedBox(height: 8),
               _actionButton(

@@ -12,7 +12,10 @@ class AskQuestionScreen extends StatefulWidget {
   /// Identifiant de la question à modifier (null = nouvelle question).
   final String? postId;
 
-  const AskQuestionScreen({super.key, this.postId});
+  /// Cours à présélectionner pour une nouvelle question (ex. depuis un cours).
+  final String? initialCourse;
+
+  const AskQuestionScreen({super.key, this.postId, this.initialCourse});
 
   @override
   State<AskQuestionScreen> createState() => _AskQuestionScreenState();
@@ -43,10 +46,17 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
     final courses =
         provider.courses.where((c) => c != ForumProvider.allCourses).toList();
 
-    // Pré-sélectionne le cours filtré dans le fil, sinon le premier de la liste.
-    _selectedCourse = courses.contains(provider.selectedCourse)
-        ? provider.selectedCourse
-        : courses.first;
+    // Pré-sélectionne le cours demandé (fiche d'un cours), sinon le cours filtré
+    // dans le fil, sinon le premier de la liste.
+    final requested = widget.initialCourse;
+    if (requested != null && requested.isNotEmpty && !courses.contains(requested)) {
+      courses.insert(0, requested);
+    }
+    _selectedCourse = (requested != null && courses.contains(requested))
+        ? requested
+        : courses.contains(provider.selectedCourse)
+            ? provider.selectedCourse
+            : courses.first;
 
     // Mode modification : préremplit les champs avec la question existante.
     final existing =
@@ -163,6 +173,8 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
     final courses = provider.courses
         .where((c) => c != ForumProvider.allCourses)
         .toList();
+    // Le cours choisi doit toujours figurer dans la liste du menu déroulant.
+    if (!courses.contains(_selectedCourse)) courses.insert(0, _selectedCourse);
     final suggestions = provider.popularTags.take(8).toList();
 
     return Scaffold(

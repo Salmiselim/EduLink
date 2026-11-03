@@ -10,6 +10,7 @@ import '../widgets/answer_card.dart';
 import '../widgets/code_block.dart';
 import '../widgets/code_editor.dart';
 import '../widgets/forum_ui.dart';
+import '../widgets/rating_bar.dart';
 import '../widgets/reaction_bar.dart';
 import '../widgets/resource_suggestions_sheet.dart';
 import '../widgets/role_badge.dart';
@@ -368,6 +369,8 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
 
           const SizedBox(height: 12),
           ReactionBar(target: ReactionTarget.post, targetId: post.id),
+          const SizedBox(height: 6),
+          RatingBar(target: ReactionTarget.post, targetId: post.id),
         ],
       ),
     );

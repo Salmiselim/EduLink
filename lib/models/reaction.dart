@@ -3,8 +3,43 @@ import 'json_helpers.dart';
 /// Cible d'une réaction : une question ou une réponse.
 enum ReactionTarget { post, reply }
 
-/// Types de réaction proposés par le Forum.
-enum ReactionType { like, helpful, insightful }
+/// Types de réaction proposés par le Forum (emojis sobres et professionnels).
+/// Les trois premiers existaient déjà : leurs noms sont conservés pour que les
+/// données enregistrées restent lisibles.
+enum ReactionType { like, helpful, insightful, applause, relevant }
+
+/// Emoji et libellé affichés pour chaque type de réaction.
+extension ReactionTypeDisplay on ReactionType {
+  String get emoji {
+    switch (this) {
+      case ReactionType.like:
+        return '👍';
+      case ReactionType.helpful:
+        return '✅';
+      case ReactionType.insightful:
+        return '💡';
+      case ReactionType.applause:
+        return '👏';
+      case ReactionType.relevant:
+        return '🎯';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case ReactionType.like:
+        return "J'aime";
+      case ReactionType.helpful:
+        return 'Utile';
+      case ReactionType.insightful:
+        return 'Instructif';
+      case ReactionType.applause:
+        return 'Bravo';
+      case ReactionType.relevant:
+        return 'Pertinent';
+    }
+  }
+}
 
 /// Réaction d'un utilisateur sur une question ou une réponse.
 /// L'identifiant `targetType_targetId_userId` garantit une seule réaction

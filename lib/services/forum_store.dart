@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/answer.dart';
 import '../models/post.dart';
+import '../models/rating.dart';
 import '../models/reaction.dart';
 import '../models/user.dart';
 
@@ -15,12 +16,14 @@ class ForumSnapshot {
   final List<Post> posts;
   final List<Answer> answers;
   final List<Reaction> reactions;
+  final List<Rating> ratings;
   final ForumRole role;
 
   const ForumSnapshot({
     required this.posts,
     required this.answers,
     required this.reactions,
+    this.ratings = const [],
     this.role = ForumRole.student,
   });
 
@@ -30,6 +33,7 @@ class ForumSnapshot {
         'posts': posts.map((p) => p.toJson()).toList(),
         'answers': answers.map((a) => a.toJson()).toList(),
         'reactions': reactions.map((r) => r.toJson()).toList(),
+        'ratings': ratings.map((r) => r.toJson()).toList(),
       };
 
   factory ForumSnapshot.fromJson(Map<String, dynamic> json) {
@@ -38,6 +42,7 @@ class ForumSnapshot {
       posts: _readList(json['posts'], Post.fromJson),
       answers: _readList(json['answers'], Answer.fromJson),
       reactions: _readList(json['reactions'], Reaction.fromJson),
+      ratings: _readList(json['ratings'], Rating.fromJson),
       role: roleName == ForumRole.teacher.name
           ? ForumRole.teacher
           : ForumRole.student,

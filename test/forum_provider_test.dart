@@ -1,15 +1,181 @@
-import 'dart:convert';
+import 'dart:async';
 
+import 'package:edulink/models/answer.dart';
 import 'package:edulink/models/post.dart';
+import 'package:edulink/models/rating.dart';
 import 'package:edulink/models/reaction.dart';
 import 'package:edulink/models/user.dart';
 import 'package:edulink/providers/forum_provider.dart';
-import 'package:edulink/services/forum_api_client.dart';
-import 'package:edulink/services/forum_config.dart';
+import 'package:edulink/services/forum_remote.dart';
 import 'package:edulink/services/forum_store.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
+
+/// Fausse base distante en mémoire (remplace Firestore dans les tests) :
+/// émet la liste complète à chaque changement, comme les flux Firestore.
+class FakeForumRemote implements ForumRemote {
+  final Map<String, Post> posts = {};
+  final Map<String, Answer> replies = {};
+  final Map<String, Reaction> reactions = {};
+  final Map<String, Rating> ratings = {};
+  final List<String> calls = [];
+
+  /// Si défini, la prochaine écriture échoue avec cette erreur.
+  ForumRemoteException? failNext;
+
+  final _postsCtrl = StreamController<List<Post>>.broadcast();
+  final _repliesCtrl = StreamController<List<Answer>>.broadcast();
+  final _reactionsCtrl = StreamController<List<Reaction>>.broadcast();
+  final _ratingsCtrl = StreamController<List<Rating>>.broadcast();
+
+  // Chaque émission renvoie des copies : le serveur et l'appli ne partagent
+  // jamais les mêmes objets (comme avec un vrai réseau).
+  List<Post> _postList() =>
+      posts.values.map((p) => Post.fromJson(p.toJson())).toList();
+  List<Answer> _replyList() =>
+      replies.values.map((a) => Answer.fromJson(a.toJson())).toList();
+
+  @override
+  Stream<List<Post>> watchPosts() async* {
+    yield _postList();
+    yield* _postsCtrl.stream;
+  }
+
+  @override
+  Stream<List<Answer>> watchReplies() async* {
+    yield _replyList();
+    yield* _repliesCtrl.stream;
+  }
+
+  @override
+  Stream<List<Reaction>> watchReactions() async* {
+    yield reactions.values.toList();
+    yield* _reactionsCtrl.stream;
+  }
+
+  @override
+  Stream<List<Rating>> watchRatings() async* {
+    yield ratings.values.toList();
+    yield* _ratingsCtrl.stream;
+  }
+
+  void _emit() {
+    _postsCtrl.add(_postList());
+    _repliesCtrl.add(_replyList());
+    _reactionsCtrl.add(reactions.values.toList());
+    _ratingsCtrl.add(ratings.values.toList());
+  }
+
+  void _check() {
+    final error = failNext;
+    if (error != null) {
+      failNext = null;
+      throw error;
+    }
+  }
+
+  /// Simule une écriture faite par un autre utilisateur.
+  void seed({Post? post, Answer? reply, Reaction? reaction, Rating? rating}) {
+    if (post != null) posts[post.id] = Post.fromJson(post.toJson());
+    if (reply != null) replies[reply.id] = Answer.fromJson(reply.toJson());
+    if (reaction != null) reactions[reaction.id] = reaction;
+    if (rating != null) ratings[rating.id] = rating;
+    _emit();
+  }
+
+  @override
+  Future<void> savePost(Post post) async {
+    calls.add('savePost ${post.id}');
+    _check();
+    posts[post.id] = Post.fromJson(post.toJson());
+    _emit();
+  }
+
+  @override
+  Future<void> deletePost(String postId) async {
+    calls.add('deletePost $postId');
+    _check();
+    posts.remove(postId);
+    replies.removeWhere((_, a) => a.postId == postId);
+    _emit();
+  }
+
+  @override
+  Future<void> setAcceptedReply(String postId, {String? replyId}) async {
+    calls.add('setAcceptedReply $postId ${replyId ?? 'null'}');
+    _check();
+    final post = posts[postId];
+    if (post == null) return;
+    post.acceptedReplyId = replyId;
+    post.status = replyId == null ? PostStatus.open : PostStatus.resolved;
+    _emit();
+  }
+
+  @override
+  Future<void> saveReply(Answer answer) async {
+    calls.add('saveReply ${answer.id}');
+    _check();
+    replies[answer.id] = Answer.fromJson(answer.toJson());
+    _emit();
+  }
+
+  @override
+  Future<void> deleteReply(String replyId) async {
+    calls.add('deleteReply $replyId');
+    _check();
+    replies.remove(replyId);
+    _emit();
+  }
+
+  @override
+  Future<void> setReplyVerified(
+    String replyId, {
+    required bool verified,
+    DateTime? at,
+  }) async {
+    calls.add('setReplyVerified $replyId $verified');
+    _check();
+    final reply = replies[replyId];
+    if (reply == null) return;
+    reply.isTeacherVerified = verified;
+    reply.verifiedAt = verified ? at : null;
+    _emit();
+  }
+
+  @override
+  Future<void> saveReaction(Reaction reaction, {bool replacing = false}) async {
+    calls.add('saveReaction ${reaction.id} replacing=$replacing');
+    _check();
+    reactions[reaction.id] = reaction;
+    _emit();
+  }
+
+  @override
+  Future<void> deleteReaction(Reaction reaction) async {
+    calls.add('deleteReaction ${reaction.id}');
+    _check();
+    reactions.remove(reaction.id);
+    _emit();
+  }
+
+  @override
+  Future<void> saveRating(Rating rating) async {
+    calls.add('saveRating ${rating.id} ${rating.stars}');
+    _check();
+    ratings[rating.id] = rating;
+    _emit();
+  }
+
+  @override
+  Future<void> deleteRating(Rating rating) async {
+    calls.add('deleteRating ${rating.id}');
+    _check();
+    ratings.remove(rating.id);
+    _emit();
+  }
+
+  @override
+  void close() {}
+}
 
 /// Stockage qui échoue toujours (appareil sans stockage disponible).
 class _BrokenStore implements ForumStore {
@@ -25,7 +191,7 @@ class _BrokenStore implements ForumStore {
 }
 
 ForumProvider makeProvider([ForumStore? store]) =>
-    ForumProvider(store: store ?? MemoryForumStore());
+    ForumProvider(store: store ?? MemoryForumStore(), linkFirebase: false);
 
 /// Crée une question en tant qu'étudiant (Selim) et renvoie son identifiant.
 String addQuestion(ForumProvider provider, {String title = 'Ma question test'}) {
@@ -436,126 +602,432 @@ void main() {
     });
   });
 
-  group('Synchronisation REST (client HTTP simulé)', () {
-    ({ForumProvider provider, List<http.Request> calls}) makeRemote(
-      Future<http.Response> Function(http.Request request) handler,
-    ) {
-      final calls = <http.Request>[];
-      final client = MockClient((request) async {
-        calls.add(request);
-        return handler(request);
-      });
-      final api = ForumApiClient(
-        config: const ForumConfig(
-            remoteEnabled: true, baseUrl: 'http://test.local'),
-        client: client,
-      );
-      return (
-        provider: ForumProvider(store: MemoryForumStore(), api: api),
-        calls: calls,
-      );
-    }
+  group('Notes, réactions emoji et classement', () {
+    test('la moyenne et le nombre de notes viennent des données', () {
+      final provider = makeProvider();
+      final stats = provider.ratingStats(ReactionTarget.reply, 'ans_1');
+      expect(stats.count, 4);
+      expect(stats.average, closeTo(4.75, 0.001));
+    });
 
-    test('chaque opération envoie la bonne requête', () async {
-      final remote = makeRemote((_) async => http.Response('{}', 200));
-      final provider = remote.provider;
+    test('on note, on change de note, puis on retire la note', () {
+      final provider = makeProvider();
+      expect(provider.myRating(ReactionTarget.reply, 'ans_2'), isNull);
+
+      expect(provider.rate(ReactionTarget.reply, 'ans_2', 5), isTrue);
+      expect(provider.myRating(ReactionTarget.reply, 'ans_2'), 5);
+      expect(provider.ratingStats(ReactionTarget.reply, 'ans_2').count, 3);
+
+      provider.rate(ReactionTarget.reply, 'ans_2', 3);
+      expect(provider.myRating(ReactionTarget.reply, 'ans_2'), 3);
+      expect(provider.ratingStats(ReactionTarget.reply, 'ans_2').count, 3);
+
+      provider.rate(ReactionTarget.reply, 'ans_2', 3); // même note = retrait
+      expect(provider.myRating(ReactionTarget.reply, 'ans_2'), isNull);
+      expect(provider.ratingStats(ReactionTarget.reply, 'ans_2').count, 2);
+    });
+
+    test('refuse une note hors 1-5 et la note de son propre contenu', () {
+      final provider = makeProvider();
+      expect(provider.rate(ReactionTarget.reply, 'ans_2', 0), isFalse);
+      expect(provider.rate(ReactionTarget.reply, 'ans_2', 6), isFalse);
+
+      // ans_3 a été écrite par Selim, l'utilisateur courant.
+      expect(provider.canRate(ReactionTarget.reply, 'ans_3'), isFalse);
+      expect(provider.rate(ReactionTarget.reply, 'ans_3', 5), isFalse);
 
       final id = addQuestion(provider);
-      await pumpEventQueue();
-      provider.updatePost(id,
-          title: 'Titre modifié',
-          body: 'Corps modifié de la question',
-          courseName: 'Architecture Logicielle');
-      await pumpEventQueue();
-      provider.toggleReaction(ReactionTarget.post, id, ReactionType.like);
-      await pumpEventQueue();
-      provider.toggleReaction(ReactionTarget.post, id, ReactionType.like);
-      await pumpEventQueue();
+      expect(provider.rate(ReactionTarget.post, id, 5), isFalse);
+      expect(provider.rate(ReactionTarget.post, 'inconnu', 5), isFalse);
+    });
+
+    test('« Mieux notées » classe le fil avec le score bayésien', () {
+      final provider = makeProvider();
+      provider.setSortOrder(ForumSortOrder.topRated);
+      var ids = provider.filteredPosts.map((p) => p.id).toList();
+      expect(ids.first, 'post_1'); // 4 et 5 étoiles
+      expect(ids.last, 'post_3'); // une seule note de 3 étoiles
+
+      // Une note de 5 étoiles fait remonter post_3 au-dessus des questions sans note.
+      provider.rate(ReactionTarget.post, 'post_3', 5);
+      ids = provider.filteredPosts.map((p) => p.id).toList();
+      expect(ids.first, 'post_1');
+      expect(ids[1], 'post_3');
+    });
+
+    test('« Populaires » classe selon réactions, notes et réponses', () {
+      final provider = makeProvider();
+      provider.setSortOrder(ForumSortOrder.popular);
+      int engagement(Post p) =>
+          provider.reactionCount(ReactionTarget.post, p.id) +
+          2 * provider.ratingStats(ReactionTarget.post, p.id).count +
+          p.answersCount;
+      final list = provider.filteredPosts;
+      for (var i = 0; i < list.length - 1; i++) {
+        expect(engagement(list[i]) >= engagement(list[i + 1]), isTrue);
+      }
+    });
+
+    test("revenir à « Récentes » rétablit l'ordre par date", () {
+      final provider = makeProvider();
+      provider.setSortOrder(ForumSortOrder.topRated);
+      provider.setSortOrder(ForumSortOrder.recent);
+      expect(provider.filteredPosts.first.id, 'post_4');
+      expect(provider.hasActiveFilters, isFalse);
+    });
+
+    test("les réponses les mieux notées remontent, l'acceptée reste en tête",
+        () {
+      final provider = makeProvider();
+      final id = addQuestion(provider);
+      provider.setRole(ForumRole.teacher);
+      final first = provider.addAnswer(postId: id, body: 'Première réponse')!;
+      final second = provider.addAnswer(postId: id, body: 'Deuxième réponse')!;
+      provider.setRole(ForumRole.student);
+
+      provider.rate(ReactionTarget.reply, second, 5);
+      provider.rate(ReactionTarget.reply, first, 1);
+      expect(provider.getAnswersForPost(id).map((a) => a.id), [second, first]);
+
+      provider.toggleAcceptAnswer(id, first);
+      expect(provider.getAnswersForPost(id).first.id, first);
+    });
+
+    test('supprimer une réponse ou une question supprime ses notes', () {
+      final provider = makeProvider();
+      final id = addQuestion(provider);
+      provider.setRole(ForumRole.teacher);
       final answerId = provider.addAnswer(postId: id, body: 'Une réponse')!;
-      await pumpEventQueue();
+      provider.rate(ReactionTarget.post, id, 4);
+      provider.setRole(ForumRole.student);
+      provider.rate(ReactionTarget.reply, answerId, 5);
+
+      provider.setRole(ForumRole.teacher);
       provider.deleteAnswer(answerId);
-      await pumpEventQueue();
+      expect(provider.ratingStats(ReactionTarget.reply, answerId).count, 0);
+
+      provider.setRole(ForumRole.student);
       provider.deletePost(id);
-      await pumpEventQueue();
-
-      final summary =
-          remote.calls.map((c) => '${c.method} ${c.url.path}').toList();
-      expect(summary, [
-        'POST /posts',
-        'PATCH /posts/$id',
-        'PUT /reactions',
-        'DELETE /reactions',
-        'POST /replies',
-        'DELETE /replies/$answerId',
-        'DELETE /posts/$id',
-      ]);
-
-      // Le corps de la création contient bien la question en JSON.
-      final created =
-          jsonDecode(remote.calls.first.body) as Map<String, dynamic>;
-      expect(created['id'], id);
-      expect(created['courseName'], 'Architecture Logicielle');
-      expect(remote.calls[3].url.queryParameters['userId'], 'user_selim');
-      expect(provider.lastSyncError, isNull);
+      expect(provider.ratingStats(ReactionTarget.post, id).count, 0);
     });
 
-    test('une erreur du serveur est mémorisée sans perdre la donnée locale',
-        () async {
-      final remote = makeRemote(
-        (_) async => http.Response('{"message":"Serveur en panne"}', 500),
-      );
-      final id = addQuestion(remote.provider);
-      await pumpEventQueue();
-
-      expect(remote.provider.lastSyncError, 'Serveur en panne');
-      expect(remote.provider.getPostById(id), isNotNull);
+    test('les nouvelles réactions emoji se posent comme les anciennes', () {
+      final provider = makeProvider();
+      provider.toggleReaction(
+          ReactionTarget.post, 'post_3', ReactionType.applause);
+      expect(provider.myReaction(ReactionTarget.post, 'post_3'),
+          ReactionType.applause);
+      provider.toggleReaction(
+          ReactionTarget.post, 'post_3', ReactionType.relevant);
+      expect(provider.myReaction(ReactionTarget.post, 'post_3'),
+          ReactionType.relevant);
+      expect(provider.reactionCount(ReactionTarget.post, 'post_3'), 1);
     });
 
-    test('un serveur injoignable est signalé', () async {
-      final remote =
-          makeRemote((_) async => throw http.ClientException('hors ligne'));
-      addQuestion(remote.provider);
-      await pumpEventQueue();
-      expect(remote.provider.lastSyncError, contains('injoignable'));
-    });
+    test('les notes sont enregistrées en local', () async {
+      final store = MemoryForumStore();
+      final first = makeProvider(store);
+      await first.init();
+      first.rate(ReactionTarget.reply, 'ans_2', 2);
+      await first.persistenceIdle;
 
-    test('refresh fusionne les données du serveur sans rien supprimer',
-        () async {
-      final remotePost = Post(
-        id: 'remote_1',
-        authorId: 'user_x',
-        authorName: 'Distant',
+      final second = makeProvider(store);
+      await second.init();
+      expect(second.myRating(ReactionTarget.reply, 'ans_2'), 2);
+    });
+  });
+
+  group('Mode connecté (Cloud Firestore simulé)', () {
+    const student =
+        ForumUser(id: 'uid_amel', name: 'Amel Ben Salah', role: ForumRole.student);
+    const teacher = ForumUser(
+        id: 'uid_prof', name: 'Dr. Karim', role: ForumRole.teacher);
+
+    Future<({ForumProvider provider, FakeForumRemote remote})> connect({
+      ForumUser user = student,
+      ForumStore? store,
+    }) async {
+      final provider = makeProvider(store);
+      final remote = FakeForumRemote();
+      provider.connectRemote(remote, user: user);
+      await pumpEventQueue();
+      return (provider: provider, remote: remote);
+    }
+
+    Post remotePost({String id = 'remote_1', String authorId = 'uid_autre'}) {
+      return Post(
+        id: id,
+        authorId: authorId,
+        authorName: 'Camarade',
         courseName: 'Architecture Logicielle',
         title: 'Question venue du serveur',
         body: 'Corps de la question distante',
         createdAt: DateTime.now(),
       );
-      final remote = makeRemote((request) async {
-        if (request.url.path == '/posts/feed') {
-          return http.Response(
-            jsonEncode({
-              'items': [remotePost.toJson()]
-            }),
-            200,
-          );
-        }
-        return http.Response('{"items":[]}', 200);
-      });
+    }
 
-      await remote.provider.refresh();
+    Answer remoteReply(String id, {String postId = 'remote_1'}) {
+      return Answer(
+        id: id,
+        postId: postId,
+        authorId: 'uid_prof',
+        authorName: 'Dr. Karim',
+        authorRole: 'teacher',
+        body: 'Réponse du serveur',
+        createdAt: DateTime.now(),
+      );
+    }
 
-      expect(remote.provider.getPostById('remote_1')!.title,
-          'Question venue du serveur');
-      expect(remote.provider.filteredPosts.length, 5);
-      expect(remote.provider.lastSyncError, isNull);
+    test("la connexion remplace les données d'exemple par celles du serveur",
+        () async {
+      final provider = makeProvider();
+      expect(provider.filteredPosts.length, 4);
+      expect(provider.isOnline, isFalse);
+
+      final remote = FakeForumRemote()..seed(post: remotePost());
+      provider.connectRemote(remote, user: student);
+      await pumpEventQueue();
+
+      expect(provider.isOnline, isTrue);
+      expect(provider.filteredPosts.map((p) => p.id), ['remote_1']);
+      expect(provider.currentUser.id, 'uid_amel');
     });
 
-    test('un refresh en échec garde les données locales', () async {
-      final remote = makeRemote((_) async => http.Response('oups', 503));
-      await remote.provider.refresh();
+    test("les contenus créés portent l'identité du compte connecté", () async {
+      final c = await connect();
+      final id = addQuestion(c.provider);
+      await pumpEventQueue();
 
-      expect(remote.provider.lastSyncError, isNotNull);
-      expect(remote.provider.filteredPosts.length, 4);
+      expect(c.remote.calls, contains('savePost $id'));
+      expect(c.remote.posts[id]!.authorId, 'uid_amel');
+      expect(c.remote.posts[id]!.authorName, 'Amel Ben Salah');
+      expect(c.provider.getPostById(id), isNotNull);
+      expect(c.provider.canModifyPost(c.provider.getPostById(id)!), isTrue);
+    });
+
+    test('les changements des autres utilisateurs arrivent en temps réel',
+        () async {
+      final c = await connect();
+      c.remote.seed(post: remotePost());
+      await pumpEventQueue();
+      expect(c.provider.getPostById('remote_1'), isNotNull);
+
+      c.remote.seed(reply: remoteReply('r1'));
+      await pumpEventQueue();
+      // Le nombre de réponses est recalculé côté application.
+      expect(c.provider.getPostById('remote_1')!.answersCount, 1);
+      expect(c.provider.getAnswersForPost('remote_1').length, 1);
+      expect(c.provider.pendingPosts, isEmpty); // réponse d'enseignant
+    });
+
+    test("on ne modifie pas la question d'un autre utilisateur", () async {
+      final c = await connect();
+      c.remote.seed(post: remotePost());
+      await pumpEventQueue();
+
+      expect(c.provider.canModifyPost(c.provider.getPostById('remote_1')!),
+          isFalse);
+      expect(
+        c.provider.updatePost('remote_1',
+            title: 'Pirate',
+            body: 'Tentative de modification',
+            courseName: 'Architecture Logicielle'),
+        isFalse,
+      );
+      expect(c.provider.deletePost('remote_1'), isFalse);
+      expect(c.remote.calls.where((e) => e.startsWith('delete')), isEmpty);
+    });
+
+    test('accepter une réponse met à jour la question sur le serveur',
+        () async {
+      final c = await connect();
+      final id = addQuestion(c.provider);
+      await pumpEventQueue();
+      c.remote.seed(reply: remoteReply('r1', postId: id));
+      await pumpEventQueue();
+
+      expect(c.provider.toggleAcceptAnswer(id, 'r1'), isTrue);
+      await pumpEventQueue();
+      expect(c.remote.posts[id]!.acceptedReplyId, 'r1');
+      expect(c.provider.getPostById(id)!.isResolved, isTrue);
+
+      c.provider.toggleAcceptAnswer(id, 'r1');
+      await pumpEventQueue();
+      expect(c.remote.calls, contains('setAcceptedReply $id null'));
+      expect(c.provider.getPostById(id)!.isResolved, isFalse);
+    });
+
+    test("une réponse acceptée supprimée par son auteur rouvre la question",
+        () async {
+      final c = await connect();
+      c.remote.seed(post: remotePost(authorId: 'uid_amel'));
+      c.remote.seed(reply: remoteReply('r1'));
+      await pumpEventQueue();
+      c.provider.toggleAcceptAnswer('remote_1', 'r1');
+      await pumpEventQueue();
+      expect(c.provider.getPostById('remote_1')!.isResolved, isTrue);
+
+      // L'enseignant supprime sa réponse côté serveur.
+      c.remote.replies.remove('r1');
+      c.remote.seed();
+      await pumpEventQueue();
+
+      final post = c.provider.getPostById('remote_1')!;
+      expect(post.acceptedReplyId, isNull);
+      expect(post.isResolved, isFalse);
+    });
+
+    test('le rôle vient du compte : impossible de le changer à la main',
+        () async {
+      final c = await connect(user: teacher);
+      expect(c.provider.isTeacher, isTrue);
+
+      c.provider.setRole(ForumRole.student);
+      expect(c.provider.isTeacher, isTrue);
+
+      // Vérification d'une réponse par l'enseignant connecté.
+      c.remote.seed(post: remotePost());
+      c.remote.seed(reply: Answer(
+        id: 'r2',
+        postId: 'remote_1',
+        authorId: 'uid_autre',
+        authorName: 'Camarade',
+        body: 'Réponse à vérifier',
+        createdAt: DateTime.now(),
+      ));
+      await pumpEventQueue();
+      c.provider.toggleVerifyAnswer('r2');
+      await pumpEventQueue();
+      expect(c.remote.replies['r2']!.isTeacherVerified, isTrue);
+      expect(c.remote.calls, contains('setReplyVerified r2 true'));
+    });
+
+    test("changer de type de réaction remplace l'ancienne", () async {
+      final c = await connect();
+      final id = addQuestion(c.provider);
+      await pumpEventQueue();
+
+      c.provider.toggleReaction(ReactionTarget.post, id, ReactionType.like);
+      await pumpEventQueue();
+      c.provider.toggleReaction(ReactionTarget.post, id, ReactionType.helpful);
+      await pumpEventQueue();
+
+      final key = 'post_${id}_uid_amel';
+      expect(c.remote.calls, contains('saveReaction $key replacing=true'));
+      expect(c.remote.reactions[key]!.type, ReactionType.helpful);
+      expect(c.provider.reactionCount(ReactionTarget.post, id), 1);
+
+      c.provider.toggleReaction(ReactionTarget.post, id, ReactionType.helpful);
+      await pumpEventQueue();
+      expect(c.remote.reactions, isEmpty);
+    });
+
+    test("un refus du serveur est signalé puis effacé à l'écriture suivante",
+        () async {
+      final c = await connect();
+      c.remote.failNext = const ForumRemoteException(
+        'Action refusée par les règles de sécurité Firestore.',
+        code: 'permission-denied',
+      );
+      addQuestion(c.provider);
+      await pumpEventQueue();
+      expect(c.provider.lastSyncError, contains('refusée'));
+
+      addQuestion(c.provider, title: 'Deuxième question');
+      await pumpEventQueue();
+      expect(c.provider.lastSyncError, isNull);
+    });
+
+    test('supprimer une question demande la suppression au serveur', () async {
+      final c = await connect();
+      final id = addQuestion(c.provider);
+      await pumpEventQueue();
+
+      expect(c.provider.deletePost(id), isTrue);
+      await pumpEventQueue();
+      expect(c.remote.calls, contains('deletePost $id'));
+      expect(c.remote.posts, isEmpty);
+      expect(c.provider.getPostById(id), isNull);
+    });
+
+    test('les notes sont envoyées au serveur et reçues en temps réel',
+        () async {
+      final c = await connect();
+      c.remote.seed(post: remotePost());
+      await pumpEventQueue();
+
+      expect(c.provider.rate(ReactionTarget.post, 'remote_1', 4), isTrue);
+      await pumpEventQueue();
+      const key = 'post_remote_1_uid_amel';
+      expect(c.remote.calls, contains('saveRating $key 4'));
+      expect(c.provider.ratingStats(ReactionTarget.post, 'remote_1').count, 1);
+
+      // Note d'un autre utilisateur arrivée par le flux temps réel.
+      c.remote.seed(
+        rating: const Rating(
+          targetType: ReactionTarget.post,
+          targetId: 'remote_1',
+          userId: 'uid_autre2',
+          stars: 2,
+        ),
+      );
+      await pumpEventQueue();
+      final stats = c.provider.ratingStats(ReactionTarget.post, 'remote_1');
+      expect(stats.count, 2);
+      expect(stats.average, 3.0);
+
+      c.provider.rate(ReactionTarget.post, 'remote_1', 4); // retrait
+      await pumpEventQueue();
+      expect(c.remote.calls, contains('deleteRating $key'));
+      expect(c.remote.ratings.containsKey(key), isFalse);
+    });
+
+    test('la liste des cours reste utilisable sans cours ni question',
+        () async {
+      final c = await connect();
+      expect(c.provider.courses, contains(ForumProvider.generalCourse));
+      expect(c.provider.courses.first, ForumProvider.allCourses);
+    });
+
+    test('en ligne, le stockage local du mode démonstration est préservé',
+        () async {
+      final store = MemoryForumStore();
+      final provider = makeProvider(store);
+      await provider.init();
+      final savedBefore = store.saveCount;
+
+      final remote = FakeForumRemote();
+      provider.connectRemote(remote, user: student);
+      await pumpEventQueue();
+      addQuestion(provider);
+      await provider.persistenceIdle;
+
+      expect(store.saveCount, savedBefore);
+      final snapshot = await store.load();
+      expect(snapshot!.posts.length, 4);
+    });
+
+    test('la déconnexion restaure les données locales et le profil simulé',
+        () async {
+      final c = await connect(user: teacher);
+      c.remote.seed(post: remotePost());
+      await pumpEventQueue();
+      expect(c.provider.filteredPosts.length, 1);
+
+      c.provider.disconnectRemote();
+
+      expect(c.provider.isOnline, isFalse);
+      expect(c.provider.filteredPosts.length, 4);
+      expect(c.provider.currentUser.id, 'user_selim');
+      expect(c.provider.isTeacher, isFalse);
+    });
+
+    test('le profil connecté peut changer en direct (code enseignant validé)',
+        () async {
+      final c = await connect();
+      expect(c.provider.isTeacher, isFalse);
+      c.provider.updateRemoteUser(teacher);
+      expect(c.provider.isTeacher, isTrue);
     });
   });
 }

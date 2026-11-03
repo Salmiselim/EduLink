@@ -5,6 +5,7 @@ import '../providers/forum_provider.dart';
 import '../routes/app_routes.dart';
 import '../widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
+import '../widgets/role_badge.dart';
 
 /// Onglet Forum (M3) : AppBar du module + fil de questions.
 class ForumFeedScreen extends StatefulWidget {
@@ -54,10 +55,10 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
           subtitle: 'Questions, réponses & réactions',
         ),
         actions: [
-          // État de la synchronisation REST (visible seulement si elle est activée)
-          if (provider.remoteEnabled)
+          // État de la synchronisation Firebase (visible seulement une fois connecté)
+          if (provider.isOnline)
             Tooltip(
-              message: provider.lastSyncError ?? 'Synchronisé avec le serveur',
+              message: provider.lastSyncError ?? 'Synchronisé avec Firebase',
               child: Icon(
                 provider.lastSyncError == null
                     ? Icons.cloud_done_outlined
@@ -68,7 +69,14 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
                     : ForumColors.warning,
               ),
             ),
-          // Bascule de rôle simulé (RoleAware : Étudiant / Enseignant vérifié)
+          // Connecté : le rôle vient du compte Firebase (non modifiable ici).
+          if (provider.isOnline)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 8),
+              child: RoleBadge(role: provider.currentUser.roleString),
+            )
+          // Hors connexion : bascule de rôle simulé (Étudiant / Enseignant vérifié)
+          else
           Padding(
             padding: const EdgeInsets.only(left: 8, right: 8),
             child: ActionChip(
@@ -247,6 +255,47 @@ class _ForumFeedScreenState extends State<ForumFeedScreen> {
                           onDeleted: () => provider.setTagFilter(null),
                         ),
                       ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Ordre du fil : récentes, mieux notées, populaires
+                SizedBox(
+                  height: 34,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8),
+                        child: Center(
+                          child: Icon(
+                            Icons.sort_rounded,
+                            size: 18,
+                            color: ForumColors.muted,
+                          ),
+                        ),
+                      ),
+                      _FilterChip(
+                        label: 'Récentes',
+                        selected: provider.sortOrder == ForumSortOrder.recent,
+                        onSelected: () =>
+                            provider.setSortOrder(ForumSortOrder.recent),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Mieux notées',
+                        selected: provider.sortOrder == ForumSortOrder.topRated,
+                        onSelected: () =>
+                            provider.setSortOrder(ForumSortOrder.topRated),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Populaires',
+                        selected: provider.sortOrder == ForumSortOrder.popular,
+                        onSelected: () =>
+                            provider.setSortOrder(ForumSortOrder.popular),
+                      ),
                     ],
                   ),
                 ),

@@ -4,6 +4,17 @@ import '../screens/question_detail_screen.dart';
 import '../screens/teacher_inbox_screen.dart';
 import '../widgets/forum_ui.dart';
 
+/// Arguments de la route [ForumRoutes.forumAsk].
+/// - [postId] : modifier une question existante ;
+/// - [courseName] : préremplir le cours d'une nouvelle question (ex. depuis la
+///   fiche d'un cours du module Cours).
+class ForumAskArgs {
+  final String? postId;
+  final String? courseName;
+
+  const ForumAskArgs({this.postId, this.courseName});
+}
+
 /// Déclaration et résolution des routes nommées propres au Forum.
 /// S'intègre dans le répartiteur central `EduLinkRoutes` (`main.dart`) en
 /// retournant `null` lorsque le chemin demandé appartient à une autre fonctionnalité.
@@ -11,7 +22,7 @@ class ForumRoutes {
   ForumRoutes._();
 
   /// Route vers le formulaire de publication d'une nouvelle question.
-  static const String forumAsk = '/forum/ask'; // argument optionnel : String postId (modification)
+  static const String forumAsk = '/forum/ask'; // argument optionnel : ForumAskArgs (ou String postId)
 
   /// Route vers le détail d'une question (attend l'identifiant `String postId` en `arguments`).
   static const String forumQuestion = '/forum/question';
@@ -24,12 +35,15 @@ class ForumRoutes {
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case forumAsk:
-        // Argument optionnel : identifiant de la question à modifier.
+        // Argument optionnel : question à modifier et/ou cours à préremplir.
         final args = settings.arguments;
-        final editId = args is String ? args : null;
+        final editId = args is ForumAskArgs
+            ? args.postId
+            : (args is String ? args : null);
+        final course = args is ForumAskArgs ? args.courseName : null;
         return MaterialPageRoute<void>(
           settings: settings,
-          builder: (_) => AskQuestionScreen(postId: editId),
+          builder: (_) => AskQuestionScreen(postId: editId, initialCourse: course),
         );
       case forumQuestion:
         // Vérification défensive de l'identifiant de question reçu en argument.

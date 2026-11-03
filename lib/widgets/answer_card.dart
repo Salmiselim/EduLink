@@ -7,6 +7,7 @@ import '../providers/forum_provider.dart';
 import '../utils/time_format.dart';
 import 'code_block.dart';
 import 'forum_ui.dart';
+import 'rating_bar.dart';
 import 'reaction_bar.dart';
 import 'reply_edit_dialog.dart';
 import 'role_badge.dart';
@@ -190,6 +191,8 @@ class AnswerCard extends StatelessWidget {
 
             const SizedBox(height: 10),
             ReactionBar(target: ReactionTarget.reply, targetId: answer.id),
+            const SizedBox(height: 6),
+            RatingBar(target: ReactionTarget.reply, targetId: answer.id),
 
             // Actions : accepter (auteur de la question), vérifier (enseignant)
             if (canAccept || canVerify) ...[

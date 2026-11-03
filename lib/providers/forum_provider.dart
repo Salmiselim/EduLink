@@ -1,18 +1,24 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../data/mock_forum_data.dart';
+import '../features/courses/data/courses_mock_data.dart';
 import '../models/answer.dart';
 import '../models/post.dart';
+import '../models/rating.dart';
 import '../models/reaction.dart';
 import '../models/user.dart';
 import '../services/code_runner_service.dart';
-import '../services/forum_api_client.dart';
-import '../services/forum_config.dart';
+import '../services/forum_firebase_link.dart';
+import '../services/forum_remote.dart';
 import '../services/forum_store.dart';
+import '../utils/rating_utils.dart';
 import '../utils/tag_utils.dart';
 
 /// Filtre sur l'état des questions dans le fil.
 enum ForumStatusFilter { all, unanswered, resolved }
+
+/// Ordre d'affichage du fil : date, note moyenne ou popularité.
+enum ForumSortOrder { recent, topRated, popular }
 
 /// Gestionnaire d'état central du Forum basé sur `ChangeNotifier`.
 ///
@@ -20,10 +26,15 @@ enum ForumStatusFilter { all, unanswered, resolved }
 /// réactions (`Reaction`). Chaque modification est :
 /// 1. appliquée en mémoire puis notifiée aux écrans (`notifyListeners`) ;
 /// 2. enregistrée sur l'appareil via [ForumStore] (SharedPreferences) ;
-/// 3. envoyée au backend REST via [ForumApiClient] si la synchro est activée.
+/// 3. envoyée à Cloud Firestore via [ForumRemote] quand un compte Firebase est
+///    connecté : les données du serveur remplacent alors les données locales
+///    et se mettent à jour en temps réel (cache hors-ligne du SDK).
 class ForumProvider with ChangeNotifier {
   /// Libellé représentant l'absence de filtre sur un cours particulier.
   static const String allCourses = 'Tous les cours';
+
+  /// Cours proposé par défaut quand aucun cours n'est disponible.
+  static const String generalCourse = 'Général';
 
   /// Nombre de questions affichées par page dans le fil.
   static const int pageSize = 10;
@@ -42,7 +53,7 @@ class ForumProvider with ChangeNotifier {
   );
 
   final ForumStore _store;
-  final ForumApiClient? _api;
+  final bool _linkFirebase;
 
   /// Service d'exécution de code (Judge0), utilisé par `ForumCodeBlock`.
   final CodeRunnerService codeRunner;
@@ -50,10 +61,12 @@ class ForumProvider with ChangeNotifier {
   final List<Post> _posts = [];
   final List<Answer> _answers = [];
   final List<Reaction> _reactions = [];
+  final List<Rating> _ratings = [];
 
   String _searchQuery = '';
   String _selectedCourse = allCourses;
   ForumStatusFilter _statusFilter = ForumStatusFilter.all;
+  ForumSortOrder _sortOrder = ForumSortOrder.recent;
   String? _tagFilter;
   int _visibleCount = pageSize;
 
@@ -64,17 +77,25 @@ class ForumProvider with ChangeNotifier {
   String? _lastSyncError;
   Future<void> _saveChain = Future<void>.value();
 
+  // Mode connecté (Cloud Firestore)
+  ForumRemote? _remote;
+  ForumFirebaseLink? _firebaseLink;
+  final List<StreamSubscription<dynamic>> _remoteSubs = [];
+  ForumSnapshot? _localBackup;
+  bool _postsLoaded = false;
+  bool _repliesLoaded = false;
+
   ForumProvider({
     ForumStore? store,
-    ForumApiClient? api,
     CodeRunnerService? codeRunner,
-    ForumConfig config = ForumConfig.fromEnv,
+    bool linkFirebase = true,
   })  : _store = store ?? SharedPrefsForumStore(),
-        _api = api ?? (config.remoteEnabled ? ForumApiClient(config: config) : null),
+        _linkFirebase = linkFirebase,
         codeRunner = codeRunner ?? CodeRunnerService() {
     _posts.addAll(MockForumData.getInitialPosts());
     _answers.addAll(MockForumData.getInitialAnswers());
     _reactions.addAll(MockForumData.getInitialReactions());
+    _ratings.addAll(MockForumData.getInitialRatings());
     _sortPosts();
   }
 
@@ -95,13 +116,21 @@ class ForumProvider with ChangeNotifier {
     }
     _isReady = true;
     _notify();
-    if (_api != null) unawaited(refresh());
+    // Relie le Forum au compte Firebase (sans effet si Firebase n'est pas configuré).
+    if (_linkFirebase && _firebaseLink == null) {
+      _firebaseLink = ForumFirebaseLink.start(this);
+    }
   }
 
   @override
   void dispose() {
     _disposed = true;
-    _api?.close();
+    _firebaseLink?.dispose();
+    for (final sub in _remoteSubs) {
+      sub.cancel();
+    }
+    _remoteSubs.clear();
+    _remote?.close();
     codeRunner.close();
     super.dispose();
   }
@@ -122,6 +151,7 @@ class ForumProvider with ChangeNotifier {
         posts: List<Post>.of(_posts),
         answers: List<Answer>.of(_answers),
         reactions: List<Reaction>.of(_reactions),
+        ratings: List<Rating>.of(_ratings),
         role: _currentUser.role,
       );
 
@@ -135,6 +165,9 @@ class ForumProvider with ChangeNotifier {
     _reactions
       ..clear()
       ..addAll(snapshot.reactions);
+    _ratings
+      ..clear()
+      ..addAll(snapshot.ratings);
     _currentUser =
         snapshot.role == ForumRole.teacher ? _testTeacher : _testStudent;
     _sortPosts();
@@ -143,6 +176,9 @@ class ForumProvider with ChangeNotifier {
   /// Enregistre l'état sur l'appareil ; les écritures sont chaînées pour
   /// conserver l'ordre et une erreur de stockage ne bloque jamais l'interface.
   void _persist() {
+    // Connecté, Firestore (et son cache hors-ligne) fait foi : on ne mélange pas
+    // ses données avec la copie locale du mode démonstration.
+    if (_remote != null) return;
     final snapshot = _snapshot();
     _saveChain = _saveChain.then((_) => _store.save(snapshot)).catchError(
       (Object error) {
@@ -163,91 +199,189 @@ class ForumProvider with ChangeNotifier {
   String _newId(String prefix) =>
       '${prefix}_${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
-  // ============================================================ Synchro REST
+  // ======================================================== Cloud Firestore
 
-  /// Vrai si la synchronisation REST est activée (`--dart-define=FORUM_REMOTE=true`).
-  bool get remoteEnabled => _api != null;
+  /// Vrai quand le Forum est branché sur Firestore avec un compte connecté.
+  bool get isOnline => _remote != null;
 
   /// Dernier message d'erreur de synchronisation (null si tout va bien).
   String? get lastSyncError => _lastSyncError;
 
-  /// Envoie une modification au serveur sans bloquer l'interface. En cas d'échec,
-  /// la modification reste enregistrée localement et l'erreur est mémorisée.
-  void _syncRemote(Future<void> Function(ForumApiClient api) action) {
-    final api = _api;
-    if (api == null) return;
+  /// Branche le Forum sur la base distante avec l'identité de [user].
+  /// Les données locales (mode démonstration) sont mises de côté puis
+  /// restaurées par [disconnectRemote]. Les listes se remplissent ensuite
+  /// avec les flux temps réel (écritures en attente hors-ligne comprises).
+  void connectRemote(ForumRemote remote, {required ForumUser user}) {
+    if (_remote != null) _detachRemote(restoreLocal: false);
+
+    _localBackup ??= _snapshot();
+    _remote = remote;
+    _currentUser = user;
+    _posts.clear();
+    _answers.clear();
+    _reactions.clear();
+    _ratings.clear();
+    _postsLoaded = false;
+    _repliesLoaded = false;
+    _lastSyncError = null;
+    _visibleCount = pageSize;
+
+    _remoteSubs
+      ..add(remote.watchPosts().listen(_onRemotePosts, onError: _onRemoteError))
+      ..add(remote.watchReplies().listen(_onRemoteReplies, onError: _onRemoteError))
+      ..add(remote
+          .watchReactions()
+          .listen(_onRemoteReactions, onError: _onRemoteError))
+      ..add(remote
+          .watchRatings()
+          .listen(_onRemoteRatings, onError: _onRemoteError));
+    _notify();
+  }
+
+  /// Met à jour le profil connecté (nom, rôle) sans recharger les données.
+  void updateRemoteUser(ForumUser user) {
+    if (_remote == null) return;
+    _currentUser = user;
+    _notify();
+  }
+
+  /// Quitte le mode connecté et restaure les données locales.
+  void disconnectRemote() {
+    if (_remote == null) return;
+    _detachRemote(restoreLocal: true);
+    _notify();
+  }
+
+  void _detachRemote({required bool restoreLocal}) {
+    for (final sub in _remoteSubs) {
+      sub.cancel();
+    }
+    _remoteSubs.clear();
+    _remote?.close();
+    _remote = null;
+    _lastSyncError = null;
+    if (restoreLocal) {
+      final backup = _localBackup;
+      _localBackup = null;
+      if (backup != null) _applySnapshot(backup);
+    }
+  }
+
+  void _onRemotePosts(List<Post> posts) {
+    _posts
+      ..clear()
+      ..addAll(posts);
+    _sortPosts();
+    _postsLoaded = true;
+    _reconcile();
+    _notify();
+  }
+
+  void _onRemoteReplies(List<Answer> replies) {
+    _answers
+      ..clear()
+      ..addAll(replies);
+    _repliesLoaded = true;
+    _reconcile();
+    _notify();
+  }
+
+  void _onRemoteReactions(List<Reaction> reactions) {
+    _reactions
+      ..clear()
+      ..addAll(reactions);
+    _notify();
+  }
+
+  void _onRemoteRatings(List<Rating> ratings) {
+    _ratings
+      ..clear()
+      ..addAll(ratings);
+    _notify();
+  }
+
+  void _onRemoteError(Object error) {
+    _lastSyncError = error is ForumRemoteException
+        ? error.message
+        : 'Lecture du forum impossible ($error).';
+    _notify();
+  }
+
+  /// Recalcule les champs dérivés après un changement distant : nombre de
+  /// réponses (les règles réservent la modification d'une question à son
+  /// auteur, ce compteur ne peut donc pas être tenu à jour par les autres) et
+  /// réponse acceptée qui n'existe plus.
+  void _reconcile() {
+    if (!_postsLoaded || !_repliesLoaded) return;
+    final counts = <String, int>{};
+    final replyIds = <String>{};
+    for (final answer in _answers) {
+      counts[answer.postId] = (counts[answer.postId] ?? 0) + 1;
+      replyIds.add(answer.id);
+    }
+    for (final post in _posts) {
+      post.answersCount = counts[post.id] ?? 0;
+      final accepted = post.acceptedReplyId;
+      if (accepted != null && !replyIds.contains(accepted)) {
+        post.acceptedReplyId = null;
+        post.status = PostStatus.open;
+      }
+    }
+  }
+
+  /// Envoie une modification au serveur sans bloquer l'interface. En cas
+  /// d'échec (règles de sécurité, réseau), l'erreur est mémorisée ; le flux
+  /// temps réel rétablit alors l'état réel du serveur.
+  void _syncRemote(Future<void> Function(ForumRemote remote) action) {
+    final remote = _remote;
+    if (remote == null) return;
     unawaited(() async {
       try {
-        await action(api);
-        if (_lastSyncError != null) {
+        await action(remote);
+        if (identical(remote, _remote) && _lastSyncError != null) {
           _lastSyncError = null;
           _notify();
         }
-      } on ForumApiException catch (error) {
-        _lastSyncError = error.message;
-        _notify();
+      } on ForumRemoteException catch (error) {
+        _reportSyncError(remote, error.message);
       } catch (error) {
-        _lastSyncError = 'Synchronisation impossible ($error).';
-        _notify();
+        _reportSyncError(remote, 'Synchronisation impossible ($error).');
       }
     }());
   }
 
-  /// Rafraîchit le fil. Sans serveur : simple rechargement visuel. Avec serveur :
-  /// fusionne les données distantes (mise à jour ou ajout par identifiant, sans
-  /// jamais supprimer une donnée locale).
-  Future<void> refresh() async {
-    final api = _api;
-    if (api == null) {
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      _notify();
-      return;
-    }
-    try {
-      final remote = await api.fetchSnapshot();
-      _mergeRemote(remote);
-      _lastSyncError = null;
-      _persist();
-    } on ForumApiException catch (error) {
-      _lastSyncError = error.message;
-    } catch (error) {
-      _lastSyncError = 'Données du serveur invalides ($error).';
-    }
+  void _reportSyncError(ForumRemote remote, String message) {
+    if (!identical(remote, _remote)) return;
+    _lastSyncError = message;
     _notify();
   }
 
-  void _mergeRemote(ForumSnapshot remote) {
-    for (final post in remote.posts) {
-      final index = _posts.indexWhere((p) => p.id == post.id);
-      if (index == -1) {
-        _posts.add(post);
-      } else {
-        _posts[index] = post;
-      }
-    }
-    for (final answer in remote.answers) {
-      final index = _answers.indexWhere((a) => a.id == answer.id);
-      if (index == -1) {
-        _answers.add(answer);
-      } else {
-        _answers[index] = answer;
-      }
-    }
-    for (final reaction in remote.reactions) {
-      final index = _reactions.indexWhere((r) => r.id == reaction.id);
-      if (index == -1) {
-        _reactions.add(reaction);
-      } else {
-        _reactions[index] = reaction;
-      }
-    }
-    _sortPosts();
+  /// Tirer pour actualiser : les flux temps réel sont déjà à jour, l'appel
+  /// relance simplement l'affichage.
+  Future<void> refresh() async {
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    _notify();
   }
 
   // ================================================================== Getters
 
-  /// Liste des intitulés de cours proposés dans les filtres et le formulaire de création.
-  List<String> get courses => MockForumData.coursesList;
+  /// Intitulés de cours proposés dans les filtres et le formulaire de création :
+  /// les cours publiés du module Cours, ceux déjà utilisés par des questions et
+  /// « Général ». Hors connexion, la liste d'exemple du Forum est conservée.
+  List<String> get courses {
+    final names = <String>{};
+    if (_remote == null) {
+      names.addAll(MockForumData.coursesList.where((c) => c != allCourses));
+    }
+    for (final course in CoursesController.instance.publishedCourses) {
+      names.add(course.title);
+    }
+    for (final post in _posts) {
+      if (post.courseName.isNotEmpty) names.add(post.courseName);
+    }
+    names.add(generalCourse);
+    return [allCourses, ...names];
+  }
 
   /// Requête de recherche textuelle active.
   String get searchQuery => _searchQuery;
@@ -260,6 +394,9 @@ class ForumProvider with ChangeNotifier {
 
   /// Tag actif dans le filtre (null si aucun).
   String? get tagFilter => _tagFilter;
+
+  /// Ordre d'affichage du fil (récentes par défaut).
+  ForumSortOrder get sortOrder => _sortOrder;
 
   /// Profil utilisateur actif dans la session du forum.
   ForumUser get currentUser => _currentUser;
@@ -294,6 +431,8 @@ class ForumProvider with ChangeNotifier {
 
   /// Bascule entre le profil étudiant et le profil enseignant puis rafraîchit l'interface.
   void setRole(ForumRole role) {
+    // Connecté, le rôle vient du compte Firebase (users/{uid}) et ne se change pas ici.
+    if (_remote != null) return;
     if (role == _currentUser.role) return;
     _currentUser = role == ForumRole.teacher ? _testTeacher : _testStudent;
     _commit();
@@ -322,6 +461,13 @@ class ForumProvider with ChangeNotifier {
     _notify();
   }
 
+  /// Change l'ordre du fil : date, mieux notées ou populaires.
+  void setSortOrder(ForumSortOrder order) {
+    _sortOrder = order;
+    _visibleCount = pageSize;
+    _notify();
+  }
+
   /// Filtre sur un tag (null pour retirer le filtre).
   void setTagFilter(String? tag) {
     _tagFilter = tag;
@@ -344,7 +490,7 @@ class ForumProvider with ChangeNotifier {
   /// Questions correspondant à tous les filtres actifs (cours, tag, état, mot-clé).
   List<Post> get filteredPosts {
     final query = _searchQuery.trim().toLowerCase();
-    return _posts.where((post) {
+    final result = _posts.where((post) {
       if (_selectedCourse != allCourses && post.courseName != _selectedCourse) {
         return false;
       }
@@ -365,6 +511,55 @@ class ForumProvider with ChangeNotifier {
       }
       return true;
     }).toList();
+    _sortPostsFor(result);
+    return result;
+  }
+
+  /// Applique l'ordre choisi (la liste reçue est déjà triée par date).
+  /// - Mieux notées : score bayésien des étoiles, puis nombre de notes, puis date.
+  /// - Populaires : réactions + 2 × notes + réponses, puis date.
+  void _sortPostsFor(List<Post> list) {
+    if (_sortOrder == ForumSortOrder.recent) return;
+    final stats = _ratingIndex();
+    final reactionCounts = <String, int>{};
+    for (final reaction in _reactions) {
+      if (reaction.targetType == ReactionTarget.post) {
+        reactionCounts[reaction.targetId] =
+            (reactionCounts[reaction.targetId] ?? 0) + 1;
+      }
+    }
+    RatingStats statsOf(Post p) =>
+        stats[_targetKey(ReactionTarget.post, p.id)] ?? RatingStats.empty;
+    int engagement(Post p) =>
+        (reactionCounts[p.id] ?? 0) + statsOf(p).count * 2 + p.answersCount;
+
+    list.sort((a, b) {
+      if (_sortOrder == ForumSortOrder.topRated) {
+        final sa = statsOf(a);
+        final sb = statsOf(b);
+        final byScore = sb.score.compareTo(sa.score);
+        if (byScore != 0) return byScore;
+        final byCount = sb.count.compareTo(sa.count);
+        if (byCount != 0) return byCount;
+      } else {
+        final byEngagement = engagement(b).compareTo(engagement(a));
+        if (byEngagement != 0) return byEngagement;
+      }
+      return b.createdAt.compareTo(a.createdAt);
+    });
+  }
+
+  static String _targetKey(ReactionTarget target, String id) =>
+      '${target.name}_$id';
+
+  /// Totaux des notes par cible, calculés en un seul passage.
+  Map<String, RatingStats> _ratingIndex() {
+    final index = <String, RatingStats>{};
+    for (final rating in _ratings) {
+      final key = _targetKey(rating.targetType, rating.targetId);
+      index[key] = (index[key] ?? RatingStats.empty).add(rating.stars);
+    }
+    return index;
   }
 
   /// Première page de [filteredPosts] ; [loadMore] en ajoute une suivante.
@@ -447,7 +642,7 @@ class ForumProvider with ChangeNotifier {
 
     _posts.insert(0, post);
     _commit();
-    _syncRemote((api) => api.createPost(post));
+    _syncRemote((remote) => remote.savePost(post));
     return post.id;
   }
 
@@ -475,7 +670,7 @@ class ForumProvider with ChangeNotifier {
       ..updatedAt = DateTime.now();
 
     _commit();
-    _syncRemote((api) => api.updatePost(post));
+    _syncRemote((remote) => remote.savePost(post));
     return true;
   }
 
@@ -491,10 +686,13 @@ class ForumProvider with ChangeNotifier {
     _reactions.removeWhere((r) =>
         (r.targetType == ReactionTarget.post && r.targetId == postId) ||
         (r.targetType == ReactionTarget.reply && replyIds.contains(r.targetId)));
+    _ratings.removeWhere((r) =>
+        (r.targetType == ReactionTarget.post && r.targetId == postId) ||
+        (r.targetType == ReactionTarget.reply && replyIds.contains(r.targetId)));
     _posts.removeWhere((p) => p.id == postId);
 
     _commit();
-    _syncRemote((api) => api.deletePost(postId));
+    _syncRemote((remote) => remote.deletePost(postId));
     return true;
   }
 
@@ -507,9 +705,18 @@ class ForumProvider with ChangeNotifier {
   }
 
   /// Récupère les réponses rattachées à [postId] : la réponse acceptée d'abord,
-  /// puis les réponses vérifiées par un enseignant, puis les autres.
+  /// puis les réponses vérifiées par un enseignant, puis les autres. Dans chaque
+  /// groupe, les mieux notées remontent (score bayésien), puis les plus anciennes.
   List<Answer> getAnswersForPost(String postId) {
     final all = _answers.where((a) => a.postId == postId).toList();
+    final stats = _ratingIndex();
+    double scoreOf(Answer a) =>
+        (stats[_targetKey(ReactionTarget.reply, a.id)] ?? RatingStats.empty)
+            .score;
+    all.sort((a, b) {
+      final byScore = scoreOf(b).compareTo(scoreOf(a));
+      return byScore != 0 ? byScore : a.createdAt.compareTo(b.createdAt);
+    });
     final acceptedId = getPostById(postId)?.acceptedReplyId;
     return [
       ...all.where((a) => a.id == acceptedId),
@@ -551,7 +758,7 @@ class ForumProvider with ChangeNotifier {
     post.answersCount++;
 
     _commit();
-    _syncRemote((api) => api.createReply(answer));
+    _syncRemote((remote) => remote.saveReply(answer));
     return answer.id;
   }
 
@@ -574,7 +781,7 @@ class ForumProvider with ChangeNotifier {
       ..updatedAt = DateTime.now();
 
     _commit();
-    _syncRemote((api) => api.updateReply(answer));
+    _syncRemote((remote) => remote.saveReply(answer));
     return true;
   }
 
@@ -595,9 +802,11 @@ class ForumProvider with ChangeNotifier {
     _answers.removeWhere((a) => a.id == answerId);
     _reactions.removeWhere(
         (r) => r.targetType == ReactionTarget.reply && r.targetId == answerId);
+    _ratings.removeWhere(
+        (r) => r.targetType == ReactionTarget.reply && r.targetId == answerId);
 
     _commit();
-    _syncRemote((api) => api.deleteReply(answerId));
+    _syncRemote((remote) => remote.deleteReply(answerId));
     return true;
   }
 
@@ -623,9 +832,10 @@ class ForumProvider with ChangeNotifier {
     }
 
     _commit();
-    _syncRemote((api) => wasAccepted
-        ? api.clearAcceptedReply(postId)
-        : api.acceptReply(postId, answerId));
+    _syncRemote((remote) => remote.setAcceptedReply(
+          postId,
+          replyId: wasAccepted ? null : answerId,
+        ));
     return true;
   }
 
@@ -640,8 +850,11 @@ class ForumProvider with ChangeNotifier {
     answer.verifiedAt = answer.isTeacherVerified ? DateTime.now() : null;
 
     _commit();
-    _syncRemote(
-        (api) => api.verifyReply(answerId, verified: answer.isTeacherVerified));
+    _syncRemote((remote) => remote.setReplyVerified(
+          answerId,
+          verified: answer.isTeacherVerified,
+          at: answer.verifiedAt,
+        ));
   }
 
   // ==================================================================== Réactions
@@ -675,7 +888,7 @@ class ForumProvider with ChangeNotifier {
     if (index != -1 && _reactions[index].type == type) {
       final removed = _reactions.removeAt(index);
       _commit();
-      _syncRemote((api) => api.deleteReaction(removed));
+      _syncRemote((remote) => remote.deleteReaction(removed));
       return;
     }
 
@@ -691,7 +904,75 @@ class ForumProvider with ChangeNotifier {
       _reactions[index] = reaction;
     }
     _commit();
-    _syncRemote((api) => api.putReaction(reaction));
+    _syncRemote((remote) => remote.saveReaction(reaction, replacing: index != -1));
+  }
+
+  // ======================================================================= Notes
+
+  /// Nombre et somme des notes reçues par une question ou une réponse
+  /// (`stats.average` = moyenne affichée, `stats.score` = score de classement).
+  RatingStats ratingStats(ReactionTarget target, String targetId) {
+    var stats = RatingStats.empty;
+    for (final rating in _ratings) {
+      if (rating.targetType == target && rating.targetId == targetId) {
+        stats = stats.add(rating.stars);
+      }
+    }
+    return stats;
+  }
+
+  /// Note de l'utilisateur courant sur une cible (null s'il n'a pas noté).
+  int? myRating(ReactionTarget target, String targetId) {
+    for (final rating in _ratings) {
+      if (rating.targetType == target &&
+          rating.targetId == targetId &&
+          rating.userId == _currentUser.id) {
+        return rating.stars;
+      }
+    }
+    return null;
+  }
+
+  /// On ne note ni son propre contenu ni un contenu qui n'existe plus.
+  bool canRate(ReactionTarget target, String targetId) {
+    final authorId = target == ReactionTarget.post
+        ? getPostById(targetId)?.authorId
+        : getAnswerById(targetId)?.authorId;
+    return authorId != null && authorId != _currentUser.id;
+  }
+
+  /// Donne [stars] (1 à 5) à une cible ; renvoyer la même note la retire.
+  /// Une seule note par utilisateur et par cible (`PUT` / `DELETE` sur `ratings`).
+  /// Renvoie false si la note est refusée (hors 1-5, contenu personnel).
+  bool rate(ReactionTarget target, String targetId, int stars) {
+    if (stars < Rating.minStars || stars > Rating.maxStars) return false;
+    if (!canRate(target, targetId)) return false;
+
+    final userId = _currentUser.id;
+    final index = _ratings.indexWhere((r) =>
+        r.targetType == target && r.targetId == targetId && r.userId == userId);
+
+    if (index != -1 && _ratings[index].stars == stars) {
+      final removed = _ratings.removeAt(index);
+      _commit();
+      _syncRemote((remote) => remote.deleteRating(removed));
+      return true;
+    }
+
+    final rating = Rating(
+      targetType: target,
+      targetId: targetId,
+      userId: userId,
+      stars: stars,
+    );
+    if (index == -1) {
+      _ratings.add(rating);
+    } else {
+      _ratings[index] = rating;
+    }
+    _commit();
+    _syncRemote((remote) => remote.saveRating(rating));
+    return true;
   }
 
   // ================================================================ Exécution de code

@@ -17,6 +17,7 @@ class PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<ForumProvider>();
     final reactions = provider.reactionCount(ReactionTarget.post, post.id);
+    final ratings = provider.ratingStats(ReactionTarget.post, post.id);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -191,6 +192,23 @@ class PostCard extends StatelessWidget {
                         const SizedBox(width: 4),
                         Text(
                           '$reactions',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: ForumColors.muted,
+                          ),
+                        ),
+                      ],
+                      if (ratings.count > 0) ...[
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 15,
+                          color: ForumColors.warning,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${ratings.average.toStringAsFixed(1)} (${ratings.count})',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,

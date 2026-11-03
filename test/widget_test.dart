@@ -263,6 +263,42 @@ void main() {
       expect(find.text("J'aime · 1"), findsNothing);
     });
 
+    testWidgets('Une question se note avec les étoiles', (tester) async {
+      await openForum(tester);
+
+      await tester.tap(find.text(
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?'));
+      await tester.pumpAndSettle();
+
+      // Question de Nour sans aucune note : Selim peut la noter.
+      expect(find.text('Soyez le premier à noter'), findsWidgets);
+      final star = find.byTooltip('Noter 4 sur 5').first;
+      await tester.ensureVisible(star);
+      await tester.pumpAndSettle();
+      await tester.tap(star);
+      await tester.pumpAndSettle();
+
+      expect(find.text('4.0 · 1 avis'), findsOneWidget);
+    });
+
+    testWidgets('Le tri « Mieux notées » remonte la question la mieux notée',
+        (tester) async {
+      await openForum(tester);
+
+      const best = 'Comment bien organiser les dossiers dans un projet Flutter ?';
+      const newest =
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?';
+      // Par défaut : la plus récente en premier.
+      expect(tester.getTopLeft(find.text(newest)).dy,
+          lessThan(tester.getTopLeft(find.text(best)).dy));
+
+      await tester.tap(find.text('Mieux notées'));
+      await tester.pumpAndSettle();
+
+      expect(tester.getTopLeft(find.text(best)).dy,
+          lessThan(tester.getTopLeft(find.text(newest)).dy));
+    });
+
     testWidgets("Le chip de rôle ouvre la boîte « Questions à traiter »",
         (tester) async {
       await openForum(tester);
