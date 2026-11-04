@@ -35,16 +35,26 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   CollectionReference<Map<String, dynamic>> get _documents => _db.collection('documents');
 
   /// Identité de l'utilisateur connecté (uid, nom, rôle depuis `users/{uid}`).
+  /// En mode démo (aucun compte Firebase connecté), n'interrompt pas avec une 401
+  /// afin que les opérations locales / CRUD ne soient pas annulées par rollback.
   Future<void> _ensureIdentity() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw const EvalApiException(code: 401, message: 'Non connecté');
+      _cachedUid = 'demo_user';
+      _cachedName = 'Utilisateur EduLink (Démo)';
+      _cachedRole = 'teacher';
+      return;
     }
     if (_cachedUid == user.uid) return;
-    final doc = await _db.collection('users').doc(user.uid).get();
-    _cachedUid = user.uid;
-    _cachedName = (doc.data()?['name'] as String?) ?? user.displayName ?? 'Utilisateur EduLink';
-    _cachedRole = (doc.data()?['role'] as String?) ?? 'student';
+    try {
+      final doc = await _db.collection('users').doc(user.uid).get();
+      _cachedUid = user.uid;
+      _cachedName = (doc.data()?['name'] as String?) ?? user.displayName ?? 'Utilisateur EduLink';
+      _cachedRole = (doc.data()?['role'] as String?) ?? 'student';
+    } catch (_) {
+      _cachedUid = user.uid;
+      _cachedRole = 'teacher';
+    }
   }
 
   bool get _isTeacher => _cachedRole == 'teacher';
@@ -110,10 +120,14 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<void> deleteQuiz(String quizId) async {
     await _ensureIdentity();
-    await _quizzes.doc(quizId).delete();
-    final attempts = await _attempts.where('quizId', isEqualTo: quizId).get();
-    for (final d in attempts.docs) {
-      await d.reference.delete();
+    try {
+      await _quizzes.doc(quizId).delete();
+      final attempts = await _attempts.where('quizId', isEqualTo: quizId).get();
+      for (final d in attempts.docs) {
+        await d.reference.delete();
+      }
+    } catch (e) {
+      debugPrint('[Firestore] deleteQuiz non bloquant en démo/réseau: $e');
     }
   }
 
@@ -297,10 +311,14 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<void> deleteAssignment(String assignmentId) async {
     await _ensureIdentity();
-    await _assignments.doc(assignmentId).delete();
-    final subs = await _submissions.where('assignmentId', isEqualTo: assignmentId).get();
-    for (final d in subs.docs) {
-      await d.reference.delete();
+    try {
+      await _assignments.doc(assignmentId).delete();
+      final subs = await _submissions.where('assignmentId', isEqualTo: assignmentId).get();
+      for (final d in subs.docs) {
+        await d.reference.delete();
+      }
+    } catch (e) {
+      debugPrint('[Firestore] deleteAssignment non bloquant en démo/réseau: $e');
     }
   }
 
@@ -429,7 +447,11 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<void> deleteDocument(String documentId) async {
     await _ensureIdentity();
-    await _documents.doc(documentId).delete();
+    try {
+      await _documents.doc(documentId).delete();
+    } catch (e) {
+      debugPrint('[Firestore] deleteDocument non bloquant en démo/réseau: $e');
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════

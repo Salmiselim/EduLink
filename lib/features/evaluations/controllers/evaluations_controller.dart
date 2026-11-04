@@ -934,8 +934,10 @@ class EvaluationsController extends ChangeNotifier {
       error = null;
     } on EvalApiException catch (e) {
       error = e.message;
+      rethrow;
     } catch (e) {
       error = e.toString();
+      rethrow;
     } finally {
       _setLoading(false);
     }
