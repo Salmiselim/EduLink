@@ -104,6 +104,11 @@ class MarketplaceController extends ChangeNotifier {
     _messagesByOrder.clear();
     _favoriteOfferIds.clear();
 
+    for (final s in _subs) {
+      s.cancel();
+    }
+    _subs.clear();
+
     void listen<T>(Stream<T> s, void Function(T) onData) {
       _subs.add(s.listen((v) {
         onData(v);
@@ -111,7 +116,7 @@ class MarketplaceController extends ChangeNotifier {
       }, onError: (Object e) => debugPrint('Flux Firestore : $e')));
     }
 
-    listen<List<Offer>>(remote.watchOffers(), (list) {
+    listen<List<Offer>>(remote.watchOffers(currentUserId), (list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _offers
         ..clear()
@@ -126,17 +131,19 @@ class MarketplaceController extends ChangeNotifier {
         l.sort((a, b) => a.id.compareTo(b.id));
       }
     });
-    listen<List<MarketplaceOrder>>(remote.watchOrders(), (list) {
+    listen<List<MarketplaceOrder>>(remote.watchOrders(currentUserId), (list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _orders
         ..clear()
         ..addAll(list);
+      _syncHasReview();
     });
     listen<List<OfferReview>>(remote.watchReviews(), (list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _reviews
         ..clear()
         ..addAll(list);
+      _syncHasReview();
     });
     listen<List<ChatMessage>>(remote.watchMessages(), (list) {
       list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -158,6 +165,16 @@ class MarketplaceController extends ChangeNotifier {
       s.cancel();
     }
     super.dispose();
+  }
+
+  /// Marque hasReview sur les commandes qui ont un avis dans reviews.
+  void _syncHasReview() {
+    final reviewed = _reviews.map((r) => r.id).toSet();
+    for (var i = 0; i < _orders.length; i++) {
+      if (reviewed.contains(_orders[i].id) && !_orders[i].hasReview) {
+        _orders[i] = _orders[i].copyWith(hasReview: true);
+      }
+    }
   }
 
   /// Une erreur réseau ne doit jamais faire planter l'interface.
@@ -380,6 +397,11 @@ class MarketplaceController extends ChangeNotifier {
       status: autoHidden ? OfferStatus.hidden : _offers[idx].status,
     );
     _pushOffer(offerId);
+    _guard(_remote?.saveReport(
+      offerId: offerId,
+      reporterId: currentUserId,
+      reason: reason,
+    ));
     notifyListeners();
     return autoHidden;
   }
@@ -671,7 +693,8 @@ class MarketplaceController extends ChangeNotifier {
       _pushOffer(order.offerId);
     }
 
-    _pushOrder(order.id);
+    // L'acheteur ne peut pas modifier la commande (règles Firestore) : hasReview est
+    // déduit de l'existence du document reviews/{orderId}.
     _guard(_remote?.saveReview(_reviews.first));
     notifyListeners();
   }

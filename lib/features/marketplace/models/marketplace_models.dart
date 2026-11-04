@@ -418,16 +418,83 @@ class Offer {
         'isRecommendedByCourse': isRecommendedByCourse,
       };
 
+  static SellerRole _parseSellerRole(dynamic val) {
+    if (val == 'teacher' || val == SellerRole.teacher.name) {
+      return SellerRole.teacher;
+    }
+    return SellerRole.student;
+  }
+
+  static OfferType _parseOfferType(dynamic val) {
+    if (val == 'resource_physical' || val == 'resourcePhysical') {
+      return OfferType.resourcePhysical;
+    }
+    if (val == 'private_lesson' || val == 'privateLesson') {
+      return OfferType.privateLesson;
+    }
+    return OfferType.resourceDigital;
+  }
+
+  static OfferCondition? _parseCondition(dynamic val) {
+    if (val == null) return null;
+    final str = val.toString();
+    if (str == 'neuf') return OfferCondition.neuf;
+    if (str == 'bon') return OfferCondition.bon;
+    if (str == 'usage' || str == 'usagé') return OfferCondition.usage;
+    return null;
+  }
+
+  static DeliveryMode? _parseMode(dynamic val) {
+    if (val == null) return null;
+    final str = val.toString();
+    if (str == 'online') return DeliveryMode.online;
+    if (str == 'onsite') return DeliveryMode.onsite;
+    return null;
+  }
+
+  static OfferStatus _parseStatus(dynamic val) {
+    if (val == null) return OfferStatus.published;
+    final str = val.toString();
+    if (str == 'draft') return OfferStatus.draft;
+    if (str == 'soldOut' || str == 'sold_out') return OfferStatus.soldOut;
+    if (str == 'hidden') return OfferStatus.hidden;
+    return OfferStatus.published;
+  }
+
+  static DateTime _parseDateTime(dynamic val) {
+    if (val is DateTime) return val;
+    if (val != null) {
+      try {
+        final dynamic dyn = val;
+        final toDateMethod = dyn.toDate;
+        if (toDateMethod != null) {
+          final dt = toDateMethod();
+          if (dt is DateTime) return dt;
+        }
+      } catch (_) {}
+      if (val is String) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return parsed;
+      }
+      if (val is int) {
+        return DateTime.fromMillisecondsSinceEpoch(val);
+      }
+    }
+    return DateTime.now();
+  }
+
   /// Reconstruit une offre depuis un document Firestore.
   factory Offer.fromMap(Map<String, dynamic> m) => Offer(
-        id: m['id'] as String,
-        sellerId: m['sellerId'] as String,
-        sellerName: m['sellerName'] as String? ?? '',
+        id: (m['id'] as String?)?.isNotEmpty == true
+            ? m['id'] as String
+            : 'offer_${DateTime.now().millisecondsSinceEpoch}',
+        sellerId: (m['sellerId'] as String?) ?? '',
+        sellerName: m['sellerName'] as String? ?? 'Vendeur EduLink',
         sellerAvatar: m['sellerAvatar'] as String? ?? '',
         sellerSubtitle: m['sellerSubtitle'] as String? ?? '',
         sellerBadges: List<String>.from(m['sellerBadges'] ?? const []),
-        sellerRole: SellerRole.values.byName(m['sellerRole'] as String),
-        type: OfferType.values.byName(m['type'] as String),
+        sellerRole: _parseSellerRole(m['sellerRole']),
+        type: _parseOfferType(m['type']),
         title: m['title'] as String? ?? '',
         subject: m['subject'] as String? ?? '',
         level: m['level'] as String? ?? '',
@@ -436,25 +503,21 @@ class Offer {
         price: (m['price'] as num? ?? 0).toDouble(),
         fileUrl: m['fileUrl'] as String?,
         fileSizeLabel: m['fileSizeLabel'] as String?,
-        condition: m['condition'] == null
-            ? null
-            : OfferCondition.values.byName(m['condition'] as String),
+        condition: _parseCondition(m['condition']),
         quantity: (m['quantity'] as num?)?.toInt(),
-        mode: m['mode'] == null
-            ? null
-            : DeliveryMode.values.byName(m['mode'] as String),
+        mode: _parseMode(m['mode']),
         location: m['location'] == null
             ? null
             : OfferLocation.fromMap(Map<String, dynamic>.from(m['location'])),
         courseId: m['courseId'] as String?,
         courseTitle: m['courseTitle'] as String?,
-        status: OfferStatus.values.byName(m['status'] as String),
+        status: _parseStatus(m['status']),
         viewsCount: (m['viewsCount'] as num? ?? 0).toInt(),
         salesCount: (m['salesCount'] as num? ?? 0).toInt(),
         ratingAvg: (m['ratingAvg'] as num? ?? 0).toDouble(),
         ratingCount: (m['ratingCount'] as num? ?? 0).toInt(),
         reportsCount: (m['reportsCount'] as num? ?? 0).toInt(),
-        createdAt: DateTime.parse(m['createdAt'] as String),
+        createdAt: _parseDateTime(m['createdAt']),
         isRecommendedByCourse: m['isRecommendedByCourse'] as bool? ?? false,
       );
 
@@ -603,17 +666,28 @@ class MarketplaceOrder {
         'hasReview': hasReview,
       };
 
+  static OrderStatus _parseOrderStatus(dynamic val) {
+    if (val == null) return OrderStatus.requested;
+    final str = val.toString();
+    for (final s in OrderStatus.values) {
+      if (s.name == str) return s;
+    }
+    return OrderStatus.requested;
+  }
+
   factory MarketplaceOrder.fromMap(Map<String, dynamic> m) => MarketplaceOrder(
-        id: m['id'] as String,
-        offerId: m['offerId'] as String,
+        id: (m['id'] as String?)?.isNotEmpty == true
+            ? m['id'] as String
+            : 'order_${DateTime.now().millisecondsSinceEpoch}',
+        offerId: (m['offerId'] as String?) ?? '',
         offerTitle: m['offerTitle'] as String? ?? '',
-        offerType: OfferType.values.byName(m['offerType'] as String),
+        offerType: Offer._parseOfferType(m['offerType']),
         offerSubject: m['offerSubject'] as String? ?? '',
-        buyerId: m['buyerId'] as String,
+        buyerId: (m['buyerId'] as String?) ?? '',
         buyerName: m['buyerName'] as String? ?? '',
-        sellerId: m['sellerId'] as String,
+        sellerId: (m['sellerId'] as String?) ?? '',
         sellerName: m['sellerName'] as String? ?? '',
-        sellerRole: SellerRole.values.byName(m['sellerRole'] as String),
+        sellerRole: Offer._parseSellerRole(m['sellerRole']),
         quantity: (m['quantity'] as num? ?? 1).toInt(),
         amount: (m['amount'] as num? ?? 0).toDouble(),
         slotId: m['slotId'] as String?,
@@ -621,10 +695,10 @@ class MarketplaceOrder {
         meetingLink: m['meetingLink'] as String?,
         pickupAddress: m['pickupAddress'] as String?,
         fileUrl: m['fileUrl'] as String?,
-        status: OrderStatus.values.byName(m['status'] as String),
+        status: _parseOrderStatus(m['status']),
         note: m['note'] as String? ?? '',
-        createdAt: DateTime.parse(m['createdAt'] as String),
-        updatedAt: DateTime.parse(m['updatedAt'] as String),
+        createdAt: Offer._parseDateTime(m['createdAt']),
+        updatedAt: Offer._parseDateTime(m['updatedAt']),
         unreadCount: (m['unreadCount'] as num? ?? 0).toInt(),
         hasReview: m['hasReview'] as bool? ?? false,
       );
@@ -692,6 +766,8 @@ class OfferReview {
 
   Map<String, dynamic> toMap() => {
         'id': id,
+        // Exigé par les règles Firestore : reviews/{orderId} doit contenir orderId.
+        'orderId': id,
         'buyerId': buyerId,
         'buyerName': buyerName,
         'buyerRoleLabel': buyerRoleLabel,

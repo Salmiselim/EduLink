@@ -105,7 +105,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       if (_filterType != null && o.type != _filterType) return false;
       if (_filterSubject != null && o.subject != _filterSubject) return false;
       if (_filterLevel != null && o.level != _filterLevel) return false;
-      if (o.price > _maxPrice) return false;
+      if (_maxPrice < 100 && o.price > _maxPrice) return false;
       if (_filterMode != null && o.mode != _filterMode) return false;
       if (_filterCity != null && o.location?.city != _filterCity) return false;
       if (_minRating > 0 && o.ratingAvg < _minRating) return false;
@@ -137,7 +137,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         break;
       case 'relevance':
       default:
-        list.sort((a, b) => b.viewsCount.compareTo(a.viewsCount));
+        list.sort((a, b) {
+          final cmp = b.viewsCount.compareTo(a.viewsCount);
+          return cmp != 0 ? cmp : b.createdAt.compareTo(a.createdAt);
+        });
         break;
     }
     return list;
