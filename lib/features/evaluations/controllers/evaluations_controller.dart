@@ -218,10 +218,23 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> deleteQuiz(String quizId) async {
+    // Purge optimiste immédiate en mémoire (quiz + tentatives)
+    final prevQuizzes = quizzes;
+    final prevAttempts = attempts;
+    quizzes = quizzes.where((q) => q.id != quizId).toList();
+    attempts = attempts.where((a) => a.quizId != quizId).toList();
+    notifyListeners();
+
     await _wrapVoid(() async {
-      await _repo.deleteQuiz(quizId);
-      quizzes = quizzes.where((q) => q.id != quizId).toList();
-      notifyListeners();
+      try {
+        await _repo.deleteQuiz(quizId);
+      } catch (e) {
+        // En cas d'erreur réseau, rollback de l'état local
+        quizzes = prevQuizzes;
+        attempts = prevAttempts;
+        notifyListeners();
+        rethrow;
+      }
     });
   }
 
@@ -311,10 +324,23 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> deleteAssignment(String assignmentId) async {
+    // Purge optimiste immédiate en mémoire (devoir + copies)
+    final prevAssignments = assignments;
+    final prevSubmissions = submissions;
+    assignments = assignments.where((a) => a.id != assignmentId).toList();
+    submissions = submissions.where((s) => s.assignmentId != assignmentId).toList();
+    notifyListeners();
+
     await _wrapVoid(() async {
-      await _repo.deleteAssignment(assignmentId);
-      assignments = assignments.where((a) => a.id != assignmentId).toList();
-      notifyListeners();
+      try {
+        await _repo.deleteAssignment(assignmentId);
+      } catch (e) {
+        // En cas d'erreur réseau, rollback de l'état local
+        assignments = prevAssignments;
+        submissions = prevSubmissions;
+        notifyListeners();
+        rethrow;
+      }
     });
   }
 
@@ -390,10 +416,20 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> deleteDocument(String documentId) async {
+    // Purge optimiste immédiate en mémoire
+    final prevDocuments = documents;
+    documents = documents.where((d) => d.id != documentId).toList();
+    notifyListeners();
+
     await _wrapVoid(() async {
-      await _repo.deleteDocument(documentId);
-      documents = documents.where((d) => d.id != documentId).toList();
-      notifyListeners();
+      try {
+        await _repo.deleteDocument(documentId);
+      } catch (e) {
+        // En cas d'erreur réseau, rollback de l'état local
+        documents = prevDocuments;
+        notifyListeners();
+        rethrow;
+      }
     });
   }
 

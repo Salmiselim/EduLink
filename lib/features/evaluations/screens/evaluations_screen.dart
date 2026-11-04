@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
 import '../routes/evaluations_routes.dart';
@@ -487,6 +490,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                         onPressed: () => _confirmDelete(
                           'Supprimer ce quiz ?',
                           () => _controller.deleteQuiz(quiz.id),
+                          successMessage: 'Quiz supprimé.',
                         ),
                         icon: const Icon(
                           Icons.delete_outline_rounded,
@@ -558,9 +562,11 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                         child: const Text('Modifier'),
                       ),
                       IconButton(
+                        tooltip: 'Supprimer',
                         onPressed: () => _confirmDelete(
                           'Supprimer ce devoir ?',
                           () => _controller.deleteAssignment(asg.id),
+                          successMessage: 'Devoir supprimé.',
                         ),
                         icon: const Icon(
                           Icons.delete_outline_rounded,
@@ -805,7 +811,26 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               subtitle: Text('${d.folder.label} · ${d.courseTitle}'),
-              trailing: const Icon(Icons.chevron_right_rounded),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_controller.isTeacher)
+                    IconButton(
+                      tooltip: 'Supprimer ce document',
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: EduColors.danger,
+                        size: 22,
+                      ),
+                      onPressed: () => _confirmDelete(
+                        'Supprimer ce document ?',
+                        () => _controller.deleteDocument(d.id),
+                        successMessage: 'Document supprimé.',
+                      ),
+                    ),
+                  const Icon(Icons.chevron_right_rounded),
+                ],
+              ),
               onTap: () {
                 Navigator.pushNamed(
                   context,
@@ -821,8 +846,12 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   }
 
   /// Affiche une boîte de dialogue modale ([AlertDialog]) demandant confirmation
-  /// avant d'exécuter une suppression irréversible de quiz ou de devoir.
-  Future<void> _confirmDelete(String message, VoidCallback onYes) async {
+  /// avant d'exécuter une suppression irréversible de quiz, devoir ou document.
+  Future<void> _confirmDelete(
+    String message,
+    Future<void> Function() onYes, {
+    String successMessage = 'Élément supprimé avec succès.',
+  }) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -834,13 +863,53 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             child: const Text('Annuler'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: EduColors.danger,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Supprimer'),
           ),
         ],
       ),
     );
-    if (ok == true) onYes();
+    if (ok == true && mounted) {
+      try {
+        await onYes();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la suppression : $e'),
+            backgroundColor: EduColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Écrit le contenu CSV dans un fichier physique sur le stockage local de l'appareil
+  /// et retourne l'instance du [File] généré.
+  Future<File> _writeCsvToDeviceFile(String csvContent) async {
+    Directory baseDir;
+    try {
+      // Tente d'utiliser le répertoire de téléchargements ou documents externes s'il existe
+      final downloads = await getDownloadsDirectory();
+      baseDir = downloads ?? await getApplicationDocumentsDirectory();
+    } catch (_) {
+      baseDir = await getApplicationDocumentsDirectory();
+    }
+
+    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+    final filename = 'carnet_notes_$timestamp.csv';
+    final file = File('${baseDir.path}/$filename');
+
+    // Inclusion du BOM UTF-8 (\uFEFF) pour compatibilité native avec Excel et Numbers
+    await file.writeAsString('\uFEFF$csvContent', encoding: utf8);
+    return file;
   }
 
   /// Génère le contenu CSV du carnet de notes via [EvaluationsController.exportGradebookCsv]
@@ -871,7 +940,7 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
               const SizedBox(height: 8),
               // Aperçu sélectionnable et défilable du contenu CSV généré.
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
+                constraints: const BoxConstraints(maxHeight: 250),
                 child: SingleChildScrollView(
                   child: SelectableText(
                     csv,
@@ -879,17 +948,62 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              // Copie la chaîne CSV dans le presse-papiers système puis referme la feuille modale avec notification SnackBar.
+              const SizedBox(height: 16),
+              // Bouton 1 : Enregistrement d'un vrai fichier CSV sur la machine virtuelle / appareil
               PrimaryCta(
-                label: 'Copier dans le presse-papiers',
-                icon: Icons.copy_rounded,
+                label: 'Enregistrer le fichier CSV sur l\'appareil',
+                icon: Icons.download_rounded,
+                onPressed: () async {
+                  try {
+                    final file = await _writeCsvToDeviceFile(csv);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Fichier CSV créé avec succès :\n${file.path}',
+                          ),
+                          duration: const Duration(seconds: 5),
+                          action: SnackBarAction(
+                            label: 'Copier chemin',
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: file.path));
+                            },
+                          ),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur lors de la sauvegarde du fichier : $e'),
+                          backgroundColor: EduColors.danger,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              // Bouton 2 : Copie rapide du texte dans le presse-papiers système
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.copy_rounded, size: 20),
+                label: const Text('Copier dans le presse-papiers'),
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: csv));
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('CSV copié. Collez-le dans Excel ou Sheets.')),
+                      const SnackBar(
+                        content: Text('CSV copié. Collez-le dans Excel ou Sheets.'),
+                      ),
                     );
                   }
                 },

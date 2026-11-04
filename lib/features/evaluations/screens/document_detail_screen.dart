@@ -37,8 +37,8 @@ class DocumentDetailScreen extends StatelessWidget {
               ),
             ),
             actions: [
-              // Action d'édition visible uniquement lorsque le rôle actif est enseignant.
-              if (controller.isTeacher)
+              // Actions visibles uniquement lorsque le rôle actif est enseignant.
+              if (controller.isTeacher) ...[
                 IconButton(
                   tooltip: 'Modifier',
                   onPressed: () {
@@ -50,6 +50,54 @@ class DocumentDetailScreen extends StatelessWidget {
                   },
                   icon: const Icon(Icons.edit_rounded),
                 ),
+                IconButton(
+                  tooltip: 'Supprimer',
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: EduColors.danger,
+                  ),
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Confirmation'),
+                        content: const Text('Voulez-vous supprimer ce document ?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Annuler'),
+                          ),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: EduColors.danger,
+                            ),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Supprimer'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true && context.mounted) {
+                      try {
+                        await controller.deleteDocument(doc.id);
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Document supprimé.')),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Erreur : $e'),
+                            backgroundColor: EduColors.danger,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
             ],
           ),
           body: ListView(
