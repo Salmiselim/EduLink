@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
+import '../services/eval_gemini_service.dart';
 import '../widgets/eval_ui.dart';
 
 /// Assistant enseignant en trois étapes pour créer ou modifier un [Quiz] :
@@ -412,30 +413,39 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Brouillon Gemini (API simulée)',
+                'Génération assistée par Gemini (IA)',
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _geminiHint,
                 decoration: evalInputDecoration(
-                  label: 'Chapitre source',
-                  hint: 'Ex. Chapitre 2 — Récursivité',
+                  label: 'Chapitre ou extrait de cours',
+                  hint: 'Ex. Chapitre 2 — Récursivité et arbres binaires',
                 ),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                onPressed: () {
+                onPressed: () async {
+                  final text = _geminiHint.text.trim();
+                  if (text.isEmpty) {
+                    _snack('Veuillez entrer le sujet ou chapitre du cours.');
+                    return;
+                  }
+                  _snack('Génération des questions avec Gemini en cours...');
+                  final generated = await EvalGeminiService.instance.generateQuestions(
+                    chapterText: text,
+                    count: 3,
+                  );
+                  if (!mounted) return;
                   setState(() {
-                    _questions.addAll(
-                      _controller.generateGeminiQuestions(_geminiHint.text),
-                    );
+                    _questions.addAll(generated);
                     _questionsError = null;
                   });
-                  _snack('3 questions générées. Relisez-les avant publication.');
+                  _snack('3 questions générées ! Relisez-les avant publication.');
                 },
                 icon: const Icon(Icons.auto_awesome_rounded),
-                label: const Text('Générer un brouillon'),
+                label: const Text('Générer avec Gemini'),
               ),
             ],
           ),

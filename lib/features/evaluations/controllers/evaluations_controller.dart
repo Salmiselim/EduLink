@@ -91,6 +91,9 @@ class EvaluationsController extends ChangeNotifier {
       _repo.currentUserId = currentUserId;
       _repo.currentUserName = currentUserName;
       _repo.currentUserRole = currentUserRole;
+      if (_repo.api is EvaluationsFirestoreService) {
+        (_repo.api as EvaluationsFirestoreService).setRole(currentUserRole == UserRole.teacher ? 'teacher' : 'student');
+      }
     }
     loadAll();
     notifyListeners();
@@ -170,12 +173,29 @@ class EvaluationsController extends ChangeNotifier {
         _loadAssignments(),
         _loadDocuments(),
         _loadUpcoming(),
+        _loadGradebookAll(),
       ]);
       error = null;
     } catch (e) {
       error = e.toString();
     } finally {
       _setLoading(false);
+    }
+  }
+
+  Future<void> _loadGradebookAll() async {
+    if (selectedCourseId != null) {
+      await loadGradebook(selectedCourseId!);
+    } else {
+      // Charge le carnet de tous les cours accessibles
+      final allRows = <GradebookRow>[];
+      for (final c in accessibleCourses) {
+        try {
+          final rows = await _repo.getGradebook(c.id);
+          allRows.addAll(rows);
+        } catch (_) {}
+      }
+      gradebookRows = allRows;
     }
   }
 
@@ -658,12 +678,59 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
+  /// Si `gradebookRows` est vide ou partiel, consolide en temps réel avec les
+  /// quiz complétés et devoirs notés en mémoire.
   List<GradebookRow> gradebook({String? courseId, String? student}) {
-    return gradebookRows.where((r) {
-      if (courseId != null && r.courseTitle != courseId) return false;
-      if (student != null && r.studentId != student) return false;
-      return true;
-    }).toList();
+    // Si des lignes sont déjà synchronisées du serveur, on les filtre
+    if (gradebookRows.isNotEmpty) {
+      return gradebookRows.where((r) {
+        if (courseId != null && r.courseTitle != courseId) return false;
+        if (student != null && r.studentId != student) return false;
+        return true;
+      }).toList();
+    }
+
+    // Sinon, synthèse dynamique immédiate à partir des objets en mémoire
+    final synthesized = <GradebookRow>[];
+    for (final q in quizzes) {
+      if (courseId != null && q.courseId != courseId) continue;
+      final atts = attempts.where((a) => a.quizId == q.id && a.isSubmitted).toList();
+      for (final a in atts) {
+        if (student != null && a.studentId != student) continue;
+        synthesized.add(GradebookRow(
+          studentId: a.studentId,
+          studentName: a.studentName.isNotEmpty ? a.studentName : 'Étudiant',
+          courseTitle: q.courseTitle,
+          itemType: 'Quiz',
+          itemTitle: q.title,
+          grade: a.score,
+          maxGrade: 20,
+          status: 'Noté',
+          datedAt: a.submittedAt,
+        ));
+      }
+    }
+
+    for (final asg in assignments) {
+      if (courseId != null && asg.courseId != courseId) continue;
+      final subs = submissions.where((s) => s.assignmentId == asg.id).toList();
+      for (final s in subs) {
+        if (student != null && s.studentId != student) continue;
+        synthesized.add(GradebookRow(
+          studentId: s.studentId,
+          studentName: s.studentName.isNotEmpty ? s.studentName : 'Étudiant',
+          courseTitle: asg.courseTitle,
+          itemType: 'Devoir',
+          itemTitle: asg.title,
+          grade: s.grade,
+          maxGrade: asg.maxGrade,
+          status: s.status == SubmissionStatus.graded ? 'Noté' : 'En attente',
+          datedAt: s.submittedAt,
+        ));
+      }
+    }
+
+    return synthesized;
   }
 
   /// Documents visibles filtrés par cours, dossier et recherche textuelle.

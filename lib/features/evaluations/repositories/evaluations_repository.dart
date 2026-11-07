@@ -22,6 +22,8 @@ class EvaluationsRepository {
   String currentUserName;
   UserRole currentUserRole;
 
+  EvaluationsApiService get api => _api;
+
   EvaluationsRepository({
     required EvaluationsApiService api,
     required EvaluationsLocalService local,
@@ -72,7 +74,10 @@ class EvaluationsRepository {
   Future<Quiz> updateQuiz(String quizId, Map<String, dynamic> body) =>
       _api.updateQuiz(quizId, body);
 
-  Future<void> deleteQuiz(String quizId) => _api.deleteQuiz(quizId);
+  Future<void> deleteQuiz(String quizId) async {
+    await _local.removeCachedQuiz(quizId);
+    await _api.deleteQuiz(quizId);
+  }
 
   Future<Quiz> publishQuiz(String quizId) => _api.publishQuiz(quizId);
 

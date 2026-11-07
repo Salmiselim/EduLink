@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
@@ -108,27 +108,53 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
       _error = null;
     });
     _timer?.cancel();
-    if (_attemptId == null) return;
-    _controller.saveAttemptAnswers(_attemptId!, _answers);
-    // Correction automatique et calcul du score ramené sur 20 dans le contrôleur.
-    final attempt = await _controller.submitAttempt(_attemptId!, _answers);
-    if (!mounted) return;
-    final score = attempt?.score ?? 0.0;
-    // Remplace l'écran de passage dans la pile de navigation pour empêcher un retour arrière sur la copie close.
-    Navigator.pushReplacementNamed(
-      context,
-      EvaluationsRoutes.quizResults,
-      arguments: QuizResultsArgs(quizId: _quiz.id, attemptId: _attemptId),
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          auto
-              ? 'Temps écoulé — quiz soumis automatiquement. Note : ${EvaluationsController.formatScore(score)} / 20'
-              : 'Correction automatique : ${EvaluationsController.formatScore(score)} / 20',
+
+    try {
+      // Si la tentative n'avait pas encore reçu d'ID (problème réseau), on en génère un local
+      String targetAttemptId = _attemptId ?? 'att_local_${DateTime.now().millisecondsSinceEpoch}';
+      if (_attemptId == null) {
+        final newAttempt = await _controller.startAttempt(_quiz.id);
+        if (newAttempt != null) {
+          targetAttemptId = newAttempt.id;
+          _attemptId = targetAttemptId;
+        }
+      }
+
+      _controller.saveAttemptAnswers(targetAttemptId, _answers);
+      // Correction automatique et calcul du score ramené sur 20 dans le contrôleur.
+      final attempt = await _controller.submitAttempt(targetAttemptId, _answers);
+      if (!mounted) return;
+
+      final score = attempt?.score ?? 0.0;
+      // Remplace l'écran de passage dans la pile de navigation pour empêcher un retour arrière sur la copie close.
+      Navigator.pushReplacementNamed(
+        context,
+        EvaluationsRoutes.quizResults,
+        arguments: QuizResultsArgs(quizId: _quiz.id, attemptId: targetAttemptId),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            auto
+                ? 'Temps écoulé — quiz soumis automatiquement. Note : ${EvaluationsController.formatScore(score)} / 20'
+                : 'Correction automatique : ${EvaluationsController.formatScore(score)} / 20',
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _error = 'Erreur lors de la soumission : $e';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur de soumission : $e'),
+            backgroundColor: EduColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   @override

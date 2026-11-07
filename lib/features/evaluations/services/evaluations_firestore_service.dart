@@ -57,7 +57,13 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     }
   }
 
-  bool get _isTeacher => _cachedRole == 'teacher';
+  bool _isTeacher = true;
+
+  /// Met à jour dynamiquement le rôle actif dans le service Firestore
+  void setRole(String role) {
+    _cachedRole = role;
+    _isTeacher = role == 'teacher';
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // QUIZ
