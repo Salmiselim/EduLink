@@ -149,9 +149,50 @@ class EduLinkShell extends StatefulWidget {
   State<EduLinkShell> createState() => _EduLinkShellState();
 }
 
-class _EduLinkShellState extends State<EduLinkShell> {
+class _EduLinkShellState extends State<EduLinkShell>
+    with WidgetsBindingObserver {
   /// Onglet affiché au démarrage : Cours.
   int _currentIndex = 0;
+
+  /// Anti-doublon : plusieurs reprises peuvent se déclencher en rafale
+  /// (retour depuis l'arrière-plan, bascule d'application…).
+  DateTime? _lastResumeRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Reprise de l'application (retour depuis l'arrière-plan ou une autre
+  /// application) : recharge les données Firestore des modules Cours et
+  /// Évaluations pour que les ajouts des collègues apparaissent sans
+  /// relancer l'application. La Marketplace et la cloche des notifications
+  /// sont déjà en temps réel — rien à faire pour eux.
+  /// Coût maîtrisé : une recharge ≈ 30-60 lectures Firestore, très en
+  /// dessous du quota gratuit (50 000 lectures/jour) ; un anti-doublon de
+  /// 15 secondes évite les recharges en rafale.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed) return;
+    final now = DateTime.now();
+    final last = _lastResumeRefresh;
+    if (last != null && now.difference(last) < const Duration(seconds: 15)) {
+      return;
+    }
+    _lastResumeRefresh = now;
+    if (!AuthService.instance.isFirebaseReady) return;
+    if (AuthService.instance.currentUser == null) return;
+    unawaited(CoursesController.instance.connectCloud());
+    unawaited(EvaluationsController.instance.connectCloud());
+  }
 
   @override
   Widget build(BuildContext context) {
