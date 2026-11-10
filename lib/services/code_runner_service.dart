@@ -74,6 +74,9 @@ class CodeRunException implements Exception {
 ///
 /// Flux : `GET /languages` (identifiant du langage) -> `POST /submissions`
 /// (jeton) -> `GET /submissions/:jeton` jusqu'à la fin du traitement.
+/// Le code et les sorties sont échangés en base64 (`base64_encoded=true`) :
+/// en texte brut, Judge0 refuse (HTTP 400) tout code ou toute sortie contenant
+/// des caractères non ASCII (accents, symboles).
 /// L'API publique est gratuite mais limitée et peut changer : toute erreur est
 /// convertie en [CodeRunException] avec un message lisible.
 class CodeRunnerService {
@@ -141,6 +144,10 @@ class CodeRunnerService {
         throw const CodeRunException(
             "Le service d'exécution public refuse les requêtes sans clé.");
       }
+      if (code == 400 || code == 422) {
+        throw CodeRunException(
+            "Requête refusée par le service d'exécution (HTTP $code)${_detail(response)}.");
+      }
       if (code < 200 || code >= 300) {
         throw CodeRunException("Service d'exécution indisponible (HTTP $code).");
       }
@@ -153,6 +160,51 @@ class CodeRunnerService {
     } on FormatException {
       throw const CodeRunException("Réponse du service d'exécution illisible.");
     }
+  }
+
+  /// Message d'erreur renvoyé par le service (tronqué), précédé de « : », ou vide.
+  String _detail(http.Response response) {
+    var text = utf8.decode(response.bodyBytes, allowMalformed: true).trim();
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map) {
+        final message = decoded['error'] ?? decoded['message'];
+        if (message is String) {
+          text = message;
+        } else if (decoded.isNotEmpty) {
+          text = decoded.values.join(' ');
+        }
+      }
+    } on FormatException {
+      // Corps non JSON : on garde le texte brut.
+    }
+    if (text.isEmpty) return '';
+    return ' : ${text.length > 140 ? '${text.substring(0, 140)}...' : text}';
+  }
+
+  static String _toBase64(String text) => base64Encode(utf8.encode(text));
+
+  /// Décode un champ base64 de Judge0 (qui insère des retours à la ligne) ;
+  /// renvoie le texte tel quel s'il n'est pas du base64 valide.
+  static String _fromBase64(String raw) {
+    try {
+      return utf8.decode(
+        base64.decode(raw.replaceAll(RegExp(r'\s'), '')),
+        allowMalformed: true,
+      );
+    } on FormatException {
+      return raw;
+    }
+  }
+
+  /// Décode les champs texte d'une soumission terminée (sorties et messages).
+  Map<String, dynamic> _decodeTextFields(Map<String, dynamic> json) {
+    final copy = Map<String, dynamic>.from(json);
+    for (final key in const ['stdout', 'stderr', 'compile_output', 'message']) {
+      final raw = copy[key];
+      if (raw is String) copy[key] = _fromBase64(raw);
+    }
+    return copy;
   }
 
   /// Identifiant Judge0 du langage (la version la plus récente disponible).
@@ -211,11 +263,11 @@ class CodeRunnerService {
 
     final created = await _request(
       'POST',
-      '/submissions?base64_encoded=false&wait=false',
+      '/submissions?base64_encoded=true&wait=false',
       body: {
-        'source_code': source,
+        'source_code': _toBase64(source),
         'language_id': languageId,
-        'stdin': stdin,
+        if (stdin.isNotEmpty) 'stdin': _toBase64(stdin),
       },
     );
     final token = created is Map ? created['token'] as String? : null;
@@ -227,14 +279,16 @@ class CodeRunnerService {
       if (pollInterval > Duration.zero) await Future<void>.delayed(pollInterval);
       final decoded = await _request(
         'GET',
-        '/submissions/$token?base64_encoded=false'
+        '/submissions/$token?base64_encoded=true'
         '&fields=stdout,stderr,compile_output,message,status,time,memory',
       );
       if (decoded is! Map<String, dynamic>) {
         throw const CodeRunException("Réponse du service d'exécution illisible.");
       }
       // 1 = en file d'attente, 2 = en cours : on continue d'attendre.
-      if (_statusIdOf(decoded) > 2) return CodeRunResult.fromJson(decoded);
+      if (_statusIdOf(decoded) > 2) {
+        return CodeRunResult.fromJson(_decodeTextFields(decoded));
+      }
     }
     throw const CodeRunException("L'exécution prend trop de temps.");
   }

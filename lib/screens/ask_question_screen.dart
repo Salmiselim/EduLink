@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/forum_provider.dart';
-import '../routes/app_routes.dart';
+import '../features/forum/routes/app_routes.dart';
 import '../utils/content_filter.dart';
+import '../services/stack_overflow_service.dart';
 import '../utils/tag_utils.dart';
 import '../widgets/code_editor.dart';
-import '../widgets/forum_ui.dart';
+import '../widgets/similar_questions_panel.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Formulaire de création d'une question, ou de modification si [postId] est fourni.
 class AskQuestionScreen extends StatefulWidget {
@@ -36,6 +39,14 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
   late String _selectedCourse;
   String _codeLanguage = 'python';
   bool _withCode = false;
+
+  // Questions similaires (API Stack Exchange), recherchées pendant la saisie du titre.
+  Timer? _similarTimer;
+  String _lastSearchedTitle = '';
+  int _similarRequest = 0;
+  bool _similarLoading = false;
+  List<StackQuestion> _similar = const [];
+  String? _similarError;
 
   bool get _isEditing => widget.postId != null;
 
@@ -74,10 +85,14 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
         _codeLanguage = existing.codeLanguage ?? 'python';
       }
     }
+
+    // Les suggestions ne servent qu'à la création d'une nouvelle question.
+    if (!_isEditing) _titleController.addListener(_scheduleSimilarSearch);
   }
 
   @override
   void dispose() {
+    _similarTimer?.cancel();
     _titleController.dispose();
     _bodyController.dispose();
     _tagsController.dispose();
@@ -104,6 +119,62 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
   }
 
   String? _validateTags(String? val) => validateTags(val ?? '');
+
+  /// Relance la recherche Stack Overflow 900 ms après la dernière frappe.
+  void _scheduleSimilarSearch() {
+    if (_isEditing) return;
+    final title = _titleController.text.trim();
+    if (title == _lastSearchedTitle) return; // simple déplacement du curseur
+    _lastSearchedTitle = title;
+    _similarTimer?.cancel();
+    if (title.length < StackOverflowService.minQueryLength) {
+      _similarRequest++; // ignore une réponse encore en vol
+      if (_similarLoading || _similar.isNotEmpty || _similarError != null) {
+        setState(() {
+          _similarLoading = false;
+          _similar = const [];
+          _similarError = null;
+        });
+      }
+      return;
+    }
+    _similarTimer = Timer(const Duration(milliseconds: 900), _searchSimilar);
+  }
+
+  Future<void> _searchSimilar() async {
+    if (!mounted) return;
+    final provider = context.read<ForumProvider>();
+    final request = ++_similarRequest;
+    setState(() {
+      _similarLoading = true;
+      _similarError = null;
+    });
+    try {
+      final results = await provider.findSimilarQuestions(
+        title: _titleController.text,
+        codeLanguage: _withCode ? _codeLanguage : null,
+      );
+      if (!mounted || request != _similarRequest) return;
+      setState(() {
+        _similar = results;
+        _similarLoading = false;
+      });
+    } on StackOverflowException catch (error) {
+      if (!mounted || request != _similarRequest) return;
+      setState(() {
+        _similar = const [];
+        _similarError = error.message;
+        _similarLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _similarRequest) return;
+      setState(() {
+        _similar = const [];
+        _similarError = 'Suggestions indisponibles pour le moment.';
+        _similarLoading = false;
+      });
+    }
+  }
 
   /// Ajoute un tag suggéré au champ, sans doublon et dans la limite autorisée.
   void _addSuggestedTag(String tag) {
@@ -251,6 +322,16 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
               ),
             ),
 
+            if (!_isEditing &&
+                (_similarLoading || _similar.isNotEmpty || _similarError != null)) ...[
+              SimilarQuestionsPanel(
+                loading: _similarLoading,
+                questions: _similar,
+                error: _similarError,
+              ),
+              const SizedBox(height: 8),
+            ],
+
             const SizedBox(height: 8),
 
             TextFormField(
@@ -308,7 +389,11 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                 style: TextStyle(fontSize: 12.5, color: ForumColors.muted),
               ),
               value: _withCode,
-              onChanged: (value) => setState(() => _withCode = value),
+              onChanged: (value) {
+                setState(() => _withCode = value);
+                _lastSearchedTitle = ''; // le tag du langage change la recherche
+                _scheduleSimilarSearch();
+              },
             ),
 
             if (_withCode) ...[
@@ -316,8 +401,11 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
               ForumCodeEditor(
                 controller: _codeController,
                 language: _codeLanguage,
-                onLanguageChanged: (value) =>
-                    setState(() => _codeLanguage = value),
+                onLanguageChanged: (value) {
+                  setState(() => _codeLanguage = value);
+                  _lastSearchedTitle = '';
+                  _scheduleSimilarSearch();
+                },
               ),
             ],
 

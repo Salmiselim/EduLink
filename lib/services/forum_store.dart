@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/answer.dart';
-import '../models/post.dart';
+import '../features/forum/models/answer.dart';
+import '../features/forum/models/post.dart';
 import '../models/rating.dart';
 import '../models/reaction.dart';
-import '../models/user.dart';
+import '../features/forum/models/user.dart';
 
 List<T> _readList<T>(Object? raw, T Function(Map<String, dynamic>) parse) {
   if (raw is! List) return <T>[];

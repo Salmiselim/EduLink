@@ -2,8 +2,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/foundation.dart';
-import '../models/answer.dart';
-import '../models/post.dart';
+import '../features/forum/models/answer.dart';
+import '../features/forum/models/post.dart';
 import '../models/rating.dart';
 import '../models/reaction.dart';
 import 'forum_remote.dart';
@@ -113,10 +113,15 @@ class ForumFirestoreService implements ForumRemote {
     required bool verified,
     DateTime? at,
   }) {
-    return _guard(() => _replies.doc(replyId).update({
-          'isTeacherVerified': verified,
-          'verifiedAt': verified ? (at ?? DateTime.now()).toIso8601String() : null,
-        }));
+    return _guard(
+      () => _replies.doc(replyId).update({
+        'isTeacherVerified': verified,
+        'verifiedAt': verified ? (at ?? DateTime.now()).toIso8601String() : null,
+      }),
+      denied: 'Vérification refusée par Firestore : la règle « replies » doit '
+          'autoriser les enseignants (voir FORUM_FIREBASE.md) et le compte doit '
+          'avoir le rôle enseignant.',
+    );
   }
 
   @override
@@ -178,11 +183,15 @@ class ForumFirestoreService implements ForumRemote {
     }
   }
 
-  Future<void> _guard(Future<void> Function() action) async {
+  /// [denied] remplace le message générique d'un refus de permission.
+  Future<void> _guard(Future<void> Function() action, {String? denied}) async {
     try {
       await action();
     } on FirebaseException catch (error) {
-      throw ForumRemoteException(_messageFor(error), code: error.code);
+      final message = error.code == 'permission-denied' && denied != null
+          ? denied
+          : _messageFor(error);
+      throw ForumRemoteException(message, code: error.code);
     }
   }
 

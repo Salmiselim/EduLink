@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../models/answer.dart';
+import '../features/forum/models/answer.dart';
 import '../utils/content_filter.dart';
 import 'code_editor.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Résultat de la boîte de modification d'une réponse.
 class ReplyEditResult {

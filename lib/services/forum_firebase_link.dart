@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import '../models/user.dart';
+import '../features/forum/models/user.dart';
 import '../providers/forum_provider.dart';
 import 'forum_firestore_service.dart';
 

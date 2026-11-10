@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Notation d'une question ou d'une réponse : 5 étoiles à toucher (toucher la
 /// même étoile retire la note) et la moyenne avec le nombre d'avis.

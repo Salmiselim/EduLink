@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/code_runner_service.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Saisie d'un extrait de code : choix du langage + champ monospace.
 /// Utilisé par le formulaire de question, la barre de réponse et la modification d'une réponse.

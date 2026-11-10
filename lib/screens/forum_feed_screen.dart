@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/user.dart';
+import '../features/forum/models/user.dart';
 import '../providers/forum_provider.dart';
-import '../routes/app_routes.dart';
-import '../widgets/forum_ui.dart';
+import '../features/forum/routes/app_routes.dart';
+import '../features/forum/widgets/forum_ui.dart';
 import '../widgets/post_card.dart';
 import '../widgets/role_badge.dart';
+import '../widgets/sync_error_notifier.dart';
 
 /// Onglet Forum (M3) : AppBar du module + fil de questions.
 class ForumFeedScreen extends StatefulWidget {
@@ -15,7 +16,8 @@ class ForumFeedScreen extends StatefulWidget {
   State<ForumFeedScreen> createState() => _ForumFeedScreenState();
 }
 
-class _ForumFeedScreenState extends State<ForumFeedScreen> {
+class _ForumFeedScreenState extends State<ForumFeedScreen>
+    with ForumSyncErrorNotifier<ForumFeedScreen> {
   late final TextEditingController _searchController;
 
   @override

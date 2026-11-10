@@ -12,6 +12,7 @@
 - Écriture optimiste : l'interface change tout de suite, le flux Firestore remet l'état réel du serveur
   (si une règle refuse l'écriture, l'icône cloud du fil passe à l'orange avec le message).
 - Exécution de code : Judge0 CE (HTTP), indépendant de Firebase.
+- Autres API (Stack Exchange, Gemini, avec clés) : voir `FORUM_API.md`.
 
 ## Collections
 | Collection | Id | Champs principaux |

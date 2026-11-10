@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/post.dart';
+import '../features/forum/models/post.dart';
 import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
-import '../routes/app_routes.dart';
+import '../features/forum/routes/app_routes.dart';
 import '../utils/content_filter.dart';
-import '../utils/time_format.dart';
+import '../features/forum/utils/time_format.dart';
 import '../widgets/answer_card.dart';
 import '../widgets/code_block.dart';
 import '../widgets/code_editor.dart';
-import '../widgets/forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 import '../widgets/rating_bar.dart';
 import '../widgets/reaction_bar.dart';
 import '../widgets/resource_suggestions_sheet.dart';
 import '../widgets/role_badge.dart';
+import '../widgets/sync_error_notifier.dart';
 
 class QuestionDetailScreen extends StatefulWidget {
   final String postId;
@@ -24,7 +25,8 @@ class QuestionDetailScreen extends StatefulWidget {
   State<QuestionDetailScreen> createState() => _QuestionDetailScreenState();
 }
 
-class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
+class _QuestionDetailScreenState extends State<QuestionDetailScreen>
+    with ForumSyncErrorNotifier<QuestionDetailScreen> {
   static const int _answerMin = 3;
   static const int _answerMax = 1000;
 
@@ -135,7 +137,7 @@ class _QuestionDetailScreenState extends State<QuestionDetailScreen> {
       ),
       title: const ForumPageTitle('Détail de la question'),
       actions: [
-        if (canModify && post != null)
+        if (canModify)
           PopupMenuButton<String>(
             tooltip: 'Options de la question',
             icon: const Icon(Icons.more_vert_rounded, color: ForumColors.text),

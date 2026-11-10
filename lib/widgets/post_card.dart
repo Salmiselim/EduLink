@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/post.dart';
+import '../features/forum/models/post.dart';
 import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
-import '../routes/app_routes.dart';
-import '../utils/time_format.dart';
-import 'forum_ui.dart';
+import '../features/forum/routes/app_routes.dart';
+import '../features/forum/utils/time_format.dart';
+import '../features/forum/widgets/forum_ui.dart';
 import 'role_badge.dart';
 
 class PostCard extends StatelessWidget {

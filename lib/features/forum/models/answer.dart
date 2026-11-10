@@ -1,4 +1,4 @@
-import 'json_helpers.dart';
+import '../../../models/json_helpers.dart';
 
 /// Modèle de données représentant une réponse publiée sous une question du Forum.
 /// Géré par `ForumProvider` et affiché via le composant `AnswerCard`.

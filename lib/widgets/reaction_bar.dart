@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Barre des réactions emoji (👍 J'aime, ✅ Utile, 💡 Instructif, 👏 Bravo,
 /// 🎯 Pertinent) d'une question ou d'une réponse.

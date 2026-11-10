@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../marketplace/data/marketplace_mock_data.dart';
 import '../../marketplace/models/marketplace_models.dart';
 import '../../marketplace/routes/marketplace_routes.dart';
-import '../../../routes/app_routes.dart';
+import '../../forum/routes/app_routes.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
 import '../routes/courses_routes.dart';

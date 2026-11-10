@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Badge distinctif indiquant le rôle de l'auteur d'une publication (`'teacher'` ou `'student'`).
 /// S'appuie sur `ForumPill` et est affiché dans `PostCard`, `AnswerCard` et `QuestionDetailScreen`.

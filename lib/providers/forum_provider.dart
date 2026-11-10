@@ -2,15 +2,17 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../data/mock_forum_data.dart';
 import '../features/courses/data/courses_mock_data.dart';
-import '../models/answer.dart';
-import '../models/post.dart';
+import '../features/forum/models/answer.dart';
+import '../features/forum/models/post.dart';
 import '../models/rating.dart';
 import '../models/reaction.dart';
-import '../models/user.dart';
+import '../features/forum/models/user.dart';
 import '../services/code_runner_service.dart';
 import '../services/forum_firebase_link.dart';
 import '../services/forum_remote.dart';
 import '../services/forum_store.dart';
+import '../services/gemini_service.dart';
+import '../services/stack_overflow_service.dart';
 import '../utils/rating_utils.dart';
 import '../utils/tag_utils.dart';
 
@@ -58,6 +60,12 @@ class ForumProvider with ChangeNotifier {
   /// Service d'exécution de code (Judge0), utilisé par `ForumCodeBlock`.
   final CodeRunnerService codeRunner;
 
+  /// API Stack Exchange : questions similaires sur Stack Overflow (formulaire de question).
+  final StackOverflowService stackOverflow;
+
+  /// API Gemini : explication d'un code ou d'une erreur (`ForumCodeBlock`).
+  final GeminiService codeAssistant;
+
   final List<Post> _posts = [];
   final List<Answer> _answers = [];
   final List<Reaction> _reactions = [];
@@ -75,6 +83,8 @@ class ForumProvider with ChangeNotifier {
   bool _isReady = false;
   bool _disposed = false;
   String? _lastSyncError;
+  final StreamController<String> _syncErrorController =
+      StreamController<String>.broadcast();
   Future<void> _saveChain = Future<void>.value();
 
   // Mode connecté (Cloud Firestore)
@@ -88,10 +98,14 @@ class ForumProvider with ChangeNotifier {
   ForumProvider({
     ForumStore? store,
     CodeRunnerService? codeRunner,
+    StackOverflowService? stackOverflow,
+    GeminiService? codeAssistant,
     bool linkFirebase = true,
   })  : _store = store ?? SharedPrefsForumStore(),
         _linkFirebase = linkFirebase,
-        codeRunner = codeRunner ?? CodeRunnerService() {
+        codeRunner = codeRunner ?? CodeRunnerService(),
+        stackOverflow = stackOverflow ?? StackOverflowService(),
+        codeAssistant = codeAssistant ?? GeminiService() {
     _posts.addAll(MockForumData.getInitialPosts());
     _answers.addAll(MockForumData.getInitialAnswers());
     _reactions.addAll(MockForumData.getInitialReactions());
@@ -131,6 +145,7 @@ class ForumProvider with ChangeNotifier {
     }
     _remoteSubs.clear();
     _remote?.close();
+    _syncErrorController.close();
     codeRunner.close();
     super.dispose();
   }
@@ -206,6 +221,10 @@ class ForumProvider with ChangeNotifier {
 
   /// Dernier message d'erreur de synchronisation (null si tout va bien).
   String? get lastSyncError => _lastSyncError;
+
+  /// Émet un message à chaque modification refusée par le serveur (les écrans
+  /// l'affichent dans une barre d'information).
+  Stream<String> get syncErrors => _syncErrorController.stream;
 
   /// Branche le Forum sur la base distante avec l'identité de [user].
   /// Les données locales (mode démonstration) sont mises de côté puis
@@ -353,6 +372,7 @@ class ForumProvider with ChangeNotifier {
   void _reportSyncError(ForumRemote remote, String message) {
     if (!identical(remote, _remote)) return;
     _lastSyncError = message;
+    if (!_syncErrorController.isClosed) _syncErrorController.add(message);
     _notify();
   }
 
@@ -731,7 +751,7 @@ class ForumProvider with ChangeNotifier {
 
   /// Enregistre une réponse (`POST /replies`), incrémente `answersCount` de la
   /// question et retourne l'identifiant créé (null si le texte est vide ou la question inconnue).
-  String? addAnswer({
+  String?   addAnswer({
     required String postId,
     required String body,
     String? codeSnippet,
@@ -989,5 +1009,35 @@ class ForumProvider with ChangeNotifier {
       throw const CodeRunException('Langage inconnu.');
     }
     return codeRunner.run(language: target, source: source, stdin: stdin);
+  }
+
+  // ============================================================ API externes (clés)
+
+  /// Questions Stack Overflow proches de [title] (API Stack Exchange, clé
+  /// d'application). Lève une [StackOverflowException] avec un message lisible.
+  Future<List<StackQuestion>> findSimilarQuestions({
+    required String title,
+    String? codeLanguage,
+  }) {
+    return stackOverflow.searchSimilar(
+      title: title,
+      codeLanguage: codeLanguage,
+    );
+  }
+
+  /// Explication pédagogique d'un extrait de code (API Gemini, clé API).
+  /// [errorOutput] : sortie d'erreur de l'exécution Judge0, si elle existe.
+  /// Lève une [AiAssistantException] avec un message lisible.
+  Future<String> explainCode({
+    required String? language,
+    required String source,
+    String? errorOutput,
+  }) {
+    final label = CodeRunnerService.languageByKey(language)?.label ?? language;
+    return codeAssistant.explainCode(
+      code: source,
+      language: label,
+      errorOutput: errorOutput,
+    );
   }
 }

@@ -1,5 +1,5 @@
-import '../models/answer.dart';
-import '../models/post.dart';
+import '../features/forum/models/answer.dart';
+import '../features/forum/models/post.dart';
 import '../models/rating.dart';
 import '../models/reaction.dart';
 

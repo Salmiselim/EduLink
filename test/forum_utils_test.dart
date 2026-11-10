@@ -1,16 +1,16 @@
 import 'dart:convert';
 
-import 'package:edulink/models/answer.dart';
-import 'package:edulink/models/post.dart';
+import 'package:edulink/features/forum/models/answer.dart';
+import 'package:edulink/features/forum/models/post.dart';
 import 'package:edulink/models/rating.dart';
 import 'package:edulink/models/reaction.dart';
-import 'package:edulink/models/user.dart';
+import 'package:edulink/features/forum/models/user.dart';
 import 'package:edulink/services/forum_marketplace_bridge.dart';
 import 'package:edulink/services/forum_store.dart';
 import 'package:edulink/utils/content_filter.dart';
 import 'package:edulink/utils/rating_utils.dart';
 import 'package:edulink/utils/tag_utils.dart';
-import 'package:edulink/utils/time_format.dart';
+import 'package:edulink/features/forum/utils/time_format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

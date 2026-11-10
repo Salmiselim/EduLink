@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:edulink/models/answer.dart';
-import 'package:edulink/models/post.dart';
+import 'package:edulink/features/forum/models/answer.dart';
+import 'package:edulink/features/forum/models/post.dart';
 import 'package:edulink/models/rating.dart';
 import 'package:edulink/models/reaction.dart';
-import 'package:edulink/models/user.dart';
+import 'package:edulink/features/forum/models/user.dart';
 import 'package:edulink/providers/forum_provider.dart';
 import 'package:edulink/services/forum_remote.dart';
 import 'package:edulink/services/forum_store.dart';
@@ -936,6 +936,21 @@ void main() {
       addQuestion(c.provider, title: 'Deuxième question');
       await pumpEventQueue();
       expect(c.provider.lastSyncError, isNull);
+    });
+
+    test('un refus du serveur est aussi diffusé aux écrans (barre de message)',
+        () async {
+      final c = await connect();
+      final messages = <String>[];
+      final sub = c.provider.syncErrors.listen(messages.add);
+      c.remote.failNext = const ForumRemoteException(
+        'Vérification refusée.',
+        code: 'permission-denied',
+      );
+      addQuestion(c.provider);
+      await pumpEventQueue();
+      expect(messages, ['Vérification refusée.']);
+      await sub.cancel();
     });
 
     test('supprimer une question demande la suppression au serveur', () async {

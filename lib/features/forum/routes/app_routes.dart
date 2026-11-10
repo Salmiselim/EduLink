@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../screens/ask_question_screen.dart';
-import '../screens/question_detail_screen.dart';
+import '../../../screens/ask_question_screen.dart';
+import '../../../screens/question_detail_screen.dart';
 import '../screens/teacher_inbox_screen.dart';
 import '../widgets/forum_ui.dart';
 

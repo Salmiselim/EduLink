@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../features/marketplace/models/marketplace_models.dart';
 import '../features/marketplace/routes/marketplace_routes.dart';
-import '../models/post.dart';
+import '../features/forum/models/post.dart';
 import '../services/forum_marketplace_bridge.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
 /// Liaison L7 : feuille « Trouver une ressource ou un tuteur » ouverte depuis
 /// une question. Propose des offres de la Marketplace selon le cours et les tags.

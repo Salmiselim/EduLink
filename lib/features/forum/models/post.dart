@@ -1,4 +1,4 @@
-import 'json_helpers.dart';
+import '../../../models/json_helpers.dart';
 
 /// Statut d'une question : ouverte, ou résolue lorsqu'une réponse est acceptée.
 enum PostStatus { open, resolved }

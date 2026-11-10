@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/answer.dart';
-import '../models/post.dart';
+import '../features/forum/models/answer.dart';
+import '../features/forum/models/post.dart';
 import '../models/reaction.dart';
 import '../providers/forum_provider.dart';
-import '../utils/time_format.dart';
+import '../features/forum/utils/time_format.dart';
 import 'code_block.dart';
-import 'forum_ui.dart';
+import '../features/forum/widgets/forum_ui.dart';
 import 'rating_bar.dart';
 import 'reaction_bar.dart';
 import 'reply_edit_dialog.dart';

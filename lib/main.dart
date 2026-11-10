@@ -24,7 +24,7 @@ import 'features/marketplace/services/marketplace_firestore_service.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
 import 'features/profil/screens/profile_screen.dart';
 import 'providers/forum_provider.dart';
-import 'routes/app_routes.dart';
+import 'features/forum/routes/app_routes.dart';
 import 'screens/forum_feed_screen.dart';
 
 /// Point d'entrée principal de l'application EduLink.

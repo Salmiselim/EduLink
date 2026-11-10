@@ -26,6 +26,19 @@ void main() {
   http.Response json(Object body, [int status = 200]) =>
       http.Response(jsonEncode(body), status);
 
+  /// Encode comme Judge0 : base64 avec des retours à la ligne tous les 20 caractères.
+  String judgeBase64(String text) {
+    final encoded = base64Encode(utf8.encode(text));
+    final buffer = StringBuffer();
+    for (var i = 0; i < encoded.length; i += 20) {
+      buffer.writeln(encoded.substring(
+          i, i + 20 > encoded.length ? encoded.length : i + 20));
+    }
+    return buffer.toString();
+  }
+
+  String decodeBase64(String encoded) => utf8.decode(base64Decode(encoded));
+
   test('exécute un programme Python et renvoie la sortie', () async {
     final calls = <String>[];
     Map<String, dynamic>? submitted;
@@ -35,6 +48,7 @@ void main() {
       calls.add('${request.method} ${request.url.path}');
       if (request.url.path == '/languages') return json(languages);
       if (request.method == 'POST') {
+        expect(request.url.queryParameters['base64_encoded'], 'true');
         submitted = jsonDecode(request.body) as Map<String, dynamic>;
         return json({'token': 'abc'});
       }
@@ -45,8 +59,9 @@ void main() {
           'status': {'id': 2, 'description': 'Processing'}
         });
       }
+      expect(request.url.queryParameters['base64_encoded'], 'true');
       return json({
-        'stdout': 'bonjour\n',
+        'stdout': judgeBase64('bonjour\n'),
         'status': {'id': 3, 'description': 'Accepted'},
         'time': '0.012',
       });
@@ -63,7 +78,8 @@ void main() {
     expect(result.statusLabel, 'Accepted');
     // Python 3.8.1 (id 71) est choisi : ni la 2.7 ni la variante « ML ».
     expect(submitted!['language_id'], 71);
-    expect(submitted!['source_code'], 'print("bonjour")');
+    expect(decodeBase64(submitted!['source_code'] as String), 'print("bonjour")');
+    expect(submitted!.containsKey('stdin'), isFalse);
     expect(calls.first, 'GET /languages');
     expect(polls, 2);
   });
@@ -73,7 +89,7 @@ void main() {
       if (request.url.path == '/languages') return json(languages);
       if (request.method == 'POST') return json({'token': 't'});
       return json({
-        'stderr': 'NameError: x',
+        'stderr': judgeBase64('NameError: x'),
         'status': {'id': 11, 'description': 'Runtime Error (NZEC)'},
       });
     });
@@ -85,6 +101,51 @@ void main() {
     expect(result.success, isFalse);
     expect(result.stderr, 'NameError: x');
     expect(result.hasOutput, isTrue);
+  });
+
+  test('un code avec des accents est envoyé et reçu sans erreur (UTF-8)',
+      () async {
+    const source = 'print("Résultat final : 15 ✓")';
+    Map<String, dynamic>? submitted;
+    final service = makeService((request) async {
+      if (request.url.path == '/languages') return json(languages);
+      if (request.method == 'POST') {
+        submitted = jsonDecode(request.body) as Map<String, dynamic>;
+        return json({'token': 't'});
+      }
+      return json({
+        'stdout': judgeBase64('Résultat final : 15 ✓\n'),
+        'status': {'id': 3, 'description': 'Accepted'},
+      });
+    });
+
+    final result = await service.run(
+      language: CodeRunnerService.languageByKey('python')!,
+      source: source,
+    );
+    expect(decodeBase64(submitted!['source_code'] as String), source);
+    expect(result.stdout, 'Résultat final : 15 ✓\n');
+    expect(result.success, isTrue);
+  });
+
+  test("une entrée standard est envoyée en base64", () async {
+    Map<String, dynamic>? submitted;
+    final service = makeService((request) async {
+      if (request.url.path == '/languages') return json(languages);
+      if (request.method == 'POST') {
+        submitted = jsonDecode(request.body) as Map<String, dynamic>;
+        return json({'token': 't'});
+      }
+      return json({
+        'status': {'id': 3, 'description': 'Accepted'}
+      });
+    });
+    await service.run(
+      language: CodeRunnerService.languageByKey('python')!,
+      source: 'print(input())',
+      stdin: 'salut',
+    );
+    expect(decodeBase64(submitted!['stdin'] as String), 'salut');
   });
 
   test('refuse un langage non exécutable ou un code vide', () async {
@@ -134,6 +195,22 @@ void main() {
     await expectMessage(429, "Trop d'exécutions");
     await expectMessage(403, 'sans clé');
     await expectMessage(500, 'HTTP 500');
+    await expectMessage(400, 'HTTP 400');
+  });
+
+  test("le message d'erreur du service est repris dans l'affichage", () async {
+    final service = makeService((request) async {
+      if (request.url.path == '/languages') return json(languages);
+      return json({'error': 'language_id is invalid'}, 422);
+    });
+    await expectLater(
+      service.run(
+        language: CodeRunnerService.languageByKey('python')!,
+        source: 'print(1)',
+      ),
+      throwsA(isA<CodeRunException>()
+          .having((e) => e.message, 'message', contains('language_id is invalid'))),
+    );
   });
 
   test('signale un service injoignable', () async {
