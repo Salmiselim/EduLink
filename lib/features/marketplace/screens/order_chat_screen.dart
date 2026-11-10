@@ -1,11 +1,13 @@
 // Bibliothèque Material Design de Flutter : fournit Scaffold, AppBar, ListenableBuilder,
 // ListView.builder, ScrollController, TextField, ModalBottomSheet, Align et CircleBorder.
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Liaisons avec le contrôleur (`sendMessage`, `updateOrderStatus`, `markConversationRead`, `submitReview`),
 // les modèles (`MarketplaceOrder`, `ChatMessage`) et la feuille modale `ReviewBottomSheet` :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
+import '../services/calendar_api_service.dart';
 import '../widgets/review_dialog.dart';
 
 /// Écran de messagerie et de suivi dédié à une commande ([MarketplaceRoutes.orderChat]).
@@ -374,13 +376,64 @@ class _OrderSummaryHeader extends StatelessWidget {
                 ),
               ),
               if (order.slotLabel != null)
-                Text(
-                  'Créneau : ${order.slotLabel}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF7C3AED),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Créneau : ${order.slotLabel}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF7C3AED),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () async {
+                        await CalendarApiService.openGoogleCalendarSlot(
+                          title: 'EduLink · ${order.offerTitle}',
+                          slotLabel: order.slotLabel!,
+                          description:
+                              'Séance EduLink (${order.offerSubject}) entre ${order.buyerName} et ${order.sellerName}.'
+                              '${order.meetingLink != null ? '\nLien Jitsi Meet : ${order.meetingLink}' : ''}',
+                          location: order.meetingLink ??
+                              order.pickupAddress ??
+                              'EduLink Marketplace',
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3E8FF),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFD8B4FE)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_month_rounded,
+                              size: 13,
+                              color: Color(0xFF7C3AED),
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'Ajouter à Google Agenda',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF7C3AED),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               if (order.pickupAddress != null)
                 Text(
@@ -424,14 +477,17 @@ class _OrderSummaryHeader extends StatelessWidget {
                     ),
                   ),
                   TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Ouverture de la visio Jitsi Meet : ${order.meetingLink}',
-                          ),
-                        ),
-                      );
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final opened = await launchUrl(
+                        Uri.parse(order.meetingLink!),
+                        mode: LaunchMode.externalApplication,
+                      ).catchError((_) => false);
+                      if (!opened) {
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('Impossible d\'ouvrir la salle Jitsi Meet.')),
+                        );
+                      }
                     },
                     child: const Text('Rejoindre'),
                   ),

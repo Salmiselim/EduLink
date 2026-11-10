@@ -1,5 +1,7 @@
 // Bibliothèque officielle Material Design de Flutter : fournit MaterialApp, Scaffold,
 // AppBar, NavigationBar, ActionChip, IconButton, SnackBar, ThemeData et ColorScheme.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 
@@ -43,16 +45,17 @@ Future<void> _initFirebase() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
-    );
+    ).timeout(const Duration(seconds: 5));
     MarketplaceFirestoreService.enableOfflinePersistence();
-    await MarketplaceController.instance.connectFirestore();
     CoursesController.firebaseReady = true;
     AuthService.onSignedIn = (user) async {
       await CoursesController.instance.connectCloud();
       await MarketplaceController.instance.connectFirestore();
       await EvaluationsController.instance.connectCloud();
     };
-    await CoursesController.instance.connectCloud();
+    // Connexion aux collections Firestore en arrière-plan pour ne jamais bloquer l'affichage initial
+    unawaited(MarketplaceController.instance.connectFirestore());
+    unawaited(CoursesController.instance.connectCloud());
   } catch (e) {
     debugPrint('Firebase non configuré, mode hors Firestore : $e');
   }

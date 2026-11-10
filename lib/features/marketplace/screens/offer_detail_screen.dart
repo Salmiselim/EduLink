@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
+import '../services/calendar_api_service.dart';
+import '../widgets/osm_map_picker_sheet.dart';
 
 /// Écran de consultation détaillée d'une offre poussé via [MarketplaceRoutes.offerDetail].
 /// Incrémente automatiquement le compteur de vues à l'ouverture, affiche les métadonnées
@@ -491,12 +493,20 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                         label: 'Modalité',
                         value: offer.mode!.label,
                       ),
-                    if (offer.location != null)
+                    if (offer.location != null) ...[
                       _DetailRow(
                         label: 'Lieu (OpenStreetMap Nominatim)',
                         value:
                             '${offer.location!.address} (${offer.location!.city})',
                       ),
+                      const SizedBox(height: 10),
+                      OsmMiniMapPreview(
+                        lat: offer.location!.lat,
+                        lng: offer.location!.lng,
+                        addressLabel:
+                            '${offer.location!.address}, ${offer.location!.city}',
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -566,6 +576,35 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
                             );
                           }).toList(),
                         ),
+                      if (_highlightedSlot != null) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final s = _highlightedSlot!;
+                              await CalendarApiService.openGoogleCalendarSlot(
+                                title: 'EduLink · ${offer.title}',
+                                slotLabel:
+                                    '${s.date} · ${s.startTime} - ${s.endTime}',
+                                description:
+                                    'Cours particulier (${offer.subject}) avec ${offer.sellerName}.',
+                                location: offer.location != null
+                                    ? '${offer.location!.address}, ${offer.location!.city}'
+                                    : 'En ligne (Jitsi Meet)',
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.calendar_month_rounded,
+                              size: 16,
+                            ),
+                            label: Text(
+                              'Prévisualiser dans Google Agenda (${_highlightedSlot!.date})',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
