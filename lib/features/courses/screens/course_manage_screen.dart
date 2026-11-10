@@ -296,8 +296,49 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
                     'Supprimer le chapitre',
                     style: TextStyle(color: CourseColors.danger),
                   ),
-                  onTap: () {
+                  // Confirmation préalable : suppression d'un contenu
+                  // destructrice pour la progression des étudiants.
+                  onTap: () async {
                     Navigator.pop(sheetContext);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        title: const Text(
+                          'Supprimer ce chapitre ?',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        content: Text(
+                          '« ${chapter.title} » sera définitivement retiré '
+                          'du cours et la progression des étudiants sera '
+                          'ajustée.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Annuler'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: CourseColors.danger,
+                            ),
+                            child: const Text('Supprimer'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !mounted) return;
                     _controller.deleteChapter(course.id, chapter.id);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(

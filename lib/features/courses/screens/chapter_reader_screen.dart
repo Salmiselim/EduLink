@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
 import '../services/courses_ai_service.dart';
 import '../services/courses_document_service.dart';
+import '../services/youtube_oembed_service.dart';
 import '../widgets/ai_tools.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
@@ -49,6 +51,38 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
   /// Résolutions locales des documents PDF par chapitre (mémo). La clé est
   /// l'identifiant du chapitre : évite de relire le disque à chaque rebuild.
   final Map<String, Future<File?>> _pdfResolutions = {};
+
+  /// Résolutions oEmbed des vidéos par chapitre (mémo, même principe).
+  final Map<String, Future<YouTubeVideoInfo?>> _videoFutures = {};
+
+  /// Ouvre une URL externe dans le navigateur / l'application dédiée via
+  /// url_launcher ; message d'erreur explicite en cas d'échec.
+  Future<void> _openExternalUrl(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !uri.hasScheme) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Lien invalide.'),
+        ),
+      );
+      return;
+    }
+    try {
+      final opened =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) throw StateError('refusé par le système');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Ouverture impossible sur cet appareil.'),
+        ),
+      );
+    }
+  }
 
   /// Ouvre la feuille système d'enregistrement/partage (« téléchargement »)
   /// pour le document du chapitre courant.
@@ -900,119 +934,243 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
   }
 
-  /// Affiche l'aperçu 16:9 d'une vidéo YouTube ainsi que son URL copiable dans le presse-papiers.
+  /// Affiche la vidéo du chapitre : miniature officielle et titre réels via
+  /// l'API oEmbed de YouTube (gratuite, sans clé), ouverture dans YouTube en
+  /// un tap sur la miniature, et repli sur l'encart générique si les
+  /// métadonnées sont indisponibles (hors-ligne, vidéo privée).
   Widget _videoContent(Chapter chapter) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F172A),
-                borderRadius: BorderRadius.all(Radius.circular(16)),
+    final future = _videoFutures.putIfAbsent(
+      chapter.id,
+      () => YouTubeOEmbedService.instance.fetch(chapter.content ?? ''),
+    );
+    return FutureBuilder<YouTubeVideoInfo?>(
+      future: future,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        final canOpen =
+            YouTubeOEmbedService.extractVideoId(chapter.content ?? '') != null;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Miniature officielle (ou encart sombre en repli) : un tap
+              // ouvre la vidéo dans l'application YouTube.
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (info != null)
+                        Image.network(
+                          info.thumbnailUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _videoPlaceholder(),
+                        )
+                      else
+                        _videoPlaceholder(),
+                      if (canOpen) ...[
+                        Center(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(10),
+                              child: Icon(
+                                Icons.play_circle_rounded,
+                                size: 46,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => _openExternalUrl(
+                                YouTubeOEmbedService.watchUrl(
+                                  YouTubeOEmbedService.extractVideoId(
+                                    chapter.content ?? '',
+                                  )!,
+                                ),
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.play_circle_rounded,
-                      size: 46,
-                      color: Colors.white,
+              // Titre réel et chaîne de la vidéo, tels que renvoyés par
+              // oEmbed (visibles avant même d'ouvrir YouTube).
+              if (info != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  info.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    height: 1.3,
+                    color: CourseColors.text,
+                  ),
+                ),
+                if (info.author.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Chaîne : ${info.author}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: CourseColors.muted,
+                      ),
                     ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Lecture vidéo',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white70,
+                  ),
+              ],
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: courseCardDecoration(),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.smart_display_rounded,
+                        color: Color(0xFF7C3AED),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Vidéo YouTube',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: CourseColors.text,
+                            ),
+                          ),
+                          Text(
+                            chapter.content ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: CourseColors.muted,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copier le lien',
+                      onPressed: () {
+                        Clipboard.setData(
+                          ClipboardData(text: chapter.content ?? ''),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            duration: Duration(seconds: 2),
+                            content: Text('Lien de la vidéo copié.'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.copy_rounded,
+                        color: CourseColors.primary,
+                        size: 19,
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: courseCardDecoration(),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.smart_display_rounded,
-                    color: Color(0xFF7C3AED),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Vidéo YouTube',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                          color: CourseColors.text,
-                        ),
+              if (canOpen) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: 280,
+                  height: 44,
+                  child: FilledButton.icon(
+                    onPressed: () => _openExternalUrl(
+                      YouTubeOEmbedService.watchUrl(
+                        YouTubeOEmbedService.extractVideoId(
+                          chapter.content ?? '',
+                        )!,
                       ),
-                      Text(
-                        chapter.content ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: CourseColors.muted,
-                          fontFamily: 'monospace',
-                        ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: CourseColors.danger,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Copier le lien',
-                  onPressed: () {
-                    Clipboard.setData(
-                      ClipboardData(text: chapter.content ?? ''),
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        duration: Duration(seconds: 2),
-                        content: Text('Lien de la vidéo copié.'),
+                    ),
+                    icon: const Icon(Icons.play_circle_rounded, size: 18),
+                    label: const Text(
+                      'Ouvrir dans YouTube',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
                       ),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.copy_rounded,
-                    color: CourseColors.primary,
-                    size: 19,
+                    ),
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Text(
-              'Titre et miniature récupérés via YouTube oEmbed '
-              '(API externe gratuite, sans clé).',
-              style: TextStyle(
-                fontSize: 10.5,
-                color: CourseColors.muted,
+              const SizedBox(height: 8),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  'Titre et miniature récupérés via YouTube oEmbed '
+                  '(API externe gratuite, sans clé).',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: CourseColors.muted,
+                  ),
+                ),
               ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Encart 16:9 sombre affiché en repli lorsque la miniature oEmbed n'est
+  /// pas disponible (hors-ligne, vidéo privée ou supprimée).
+  Widget _videoPlaceholder() {
+    return Container(
+      color: const Color(0xFF0F172A),
+      alignment: Alignment.center,
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.play_circle_rounded,
+            size: 46,
+            color: Colors.white,
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Lecture vidéo',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.white70,
             ),
           ),
         ],
@@ -1112,17 +1270,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                 SizedBox(
                   height: 44,
                   child: FilledButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          duration: Duration(seconds: 2),
-                          content: Text(
-                            'Ouverture externe — '
-                            'intégration à venir.',
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: () => _openExternalUrl(chapter.content ?? ''),
                     style: FilledButton.styleFrom(
                       backgroundColor: CourseColors.success,
                       shape: RoundedRectangleBorder(
