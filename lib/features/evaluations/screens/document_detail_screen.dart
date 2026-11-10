@@ -50,6 +50,65 @@ class DocumentDetailScreen extends StatelessWidget {
                   },
                   icon: const Icon(Icons.edit_rounded),
                 ),
+              // Suppression définitive du document (enseignant uniquement),
+              // protégée par une boîte de confirmation — le CRUD document
+              // n'exposait aucun bouton de suppression jusqu'ici.
+              if (controller.isTeacher)
+                IconButton(
+                  tooltip: 'Supprimer',
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        title: const Text(
+                          'Supprimer ce document ?',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        content: Text(
+                          '« ${doc.title} » sera définitivement retiré du '
+                          'cours.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, false),
+                            child: const Text('Annuler'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: EduColors.danger,
+                            ),
+                            child: const Text('Supprimer'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok != true || !context.mounted) return;
+                    await controller.deleteDocument(doc.id);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        duration: Duration(seconds: 2),
+                        content: Text('Document supprimé.'),
+                      ),
+                    );
+                    Navigator.pop(context);
+                  },
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: EduColors.danger,
+                  ),
+                ),
             ],
           ),
           body: ListView(

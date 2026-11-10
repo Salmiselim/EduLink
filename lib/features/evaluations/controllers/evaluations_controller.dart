@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../../courses/data/courses_mock_data.dart';
 import '../models/evaluations_models.dart';
+import '../services/evaluations_ai_service.dart';
 import '../services/evaluations_api_service.dart';
 import '../services/evaluations_firestore_service.dart';
 import '../services/evaluations_local_service.dart';
@@ -36,6 +37,15 @@ class EvaluationsController extends ChangeNotifier {
 
   EvaluationsController._() {
     _initRepository();
+  }
+
+  /// Constructeur réservé aux tests : injecte directement un repository
+  /// (double de service) sans toucher à Firebase, à l'API REST ni au cache
+  /// Hive — permet de vérifier la logique métier de façon déterministe.
+  @visibleForTesting
+  EvaluationsController.forTesting(EvaluationsRepository repo) {
+    _repo = repo;
+    _ready = true;
   }
 
   // ── Repository & services ─────────────────────────────────────────────────
@@ -161,6 +171,10 @@ class EvaluationsController extends ChangeNotifier {
   // ════════════════════════════════════════════════════════════════════════
 
   /// Charge toutes les données du module selon le rôle et le cours courant.
+  /// Inclut désormais les TENTATIVES, les COPIES et le CARNET DE NOTES :
+  /// sans ce chargement, après un redémarrage de l'application, le compteur
+  /// de tentatives (`canTakeQuiz`), la liste « Copies à corriger » et le
+  /// carnet restaient vides alors que les données existaient dans Firestore.
   Future<void> loadAll() async {
     if (!_ready) return;
     _setLoading(true);
@@ -170,6 +184,9 @@ class EvaluationsController extends ChangeNotifier {
         _loadAssignments(),
         _loadDocuments(),
         _loadUpcoming(),
+        _loadAttempts(),
+        _loadSubmissions(),
+        _loadGradebooks(),
       ]);
       error = null;
     } catch (e) {
@@ -193,6 +210,37 @@ class EvaluationsController extends ChangeNotifier {
 
   Future<void> _loadUpcoming() async {
     upcomingItems = await _repo.getUpcoming();
+  }
+
+  /// Tentatives visibles : celles de l'étudiant, ou celles des quiz de
+  /// l'enseignant (alimente `canTakeQuiz`, les résultats et les statistiques).
+  Future<void> _loadAttempts() async {
+    attempts = await _repo.getVisibleAttempts();
+  }
+
+  /// Copies visibles : celles de l'étudiant, ou celles des devoirs de
+  /// l'enseignant (alimente « Copies à corriger » et `canSubmitAssignment`).
+  Future<void> _loadSubmissions() async {
+    submissions = await _repo.getVisibleSubmissions();
+  }
+
+  /// Carnet de notes agrégé sur les cours PERTINENTS pour l'utilisateur :
+  /// les cours dont il est propriétaire (enseignant) ou ceux où il est
+  /// inscrit (étudiant) — évite de balayer tout le catalogue.
+  Future<void> _loadGradebooks() async {
+    final coursesCtrl = CoursesController.instance;
+    final courseIds = isTeacher
+        ? coursesCtrl.teacherCourses.map((c) => c.id).toSet()
+        : coursesCtrl.myEnrollments.map((e) => e.courseId).toSet();
+    final rows = <GradebookRow>[];
+    for (final id in courseIds) {
+      try {
+        rows.addAll(await _repo.getGradebook(id));
+      } catch (_) {
+        // Un cours sans notes (ou hors-ligne) ne doit pas bloquer les autres.
+      }
+    }
+    gradebookRows = rows;
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -475,11 +523,18 @@ class EvaluationsController extends ChangeNotifier {
         : score.toStringAsFixed(1);
   }
 
-  /// Génère le CSV du carnet de notes chargé.
+  /// Génère le CSV du carnet de notes chargé. Même correctif que
+  /// [gradebook] : résolution identifiant de cours → titre.
   String exportGradebookCsv({String? courseId, String? student}) {
+    String? courseTitle;
+    if (courseId != null) {
+      courseTitle = _courseTitleFor(courseId) ?? courseId;
+    }
     final rows = gradebookRows.where((r) {
-      if (courseId != null && r.courseTitle != courseId) return false;
-      if (student != null && r.studentName != student) return false;
+      if (courseTitle != null && r.courseTitle != courseTitle) return false;
+      // Même convention que [gradebook] : filtre par IDENTIFIANT étudiant
+      // (l'écran passe currentUserId, pas le nom).
+      if (student != null && r.studentId != student) return false;
       return true;
     }).toList();
     final buf = StringBuffer(
@@ -621,10 +676,30 @@ class EvaluationsController extends ChangeNotifier {
     return found.isNotEmpty ? found.first : null;
   }
 
+  /// Résout le TITRE d'un cours à partir de son identifiant (les lignes du
+  /// carnet ne portent que le titre). Cherche d'abord dans les cours liés du
+  /// contrôleur, puis dans le module Cours (liaison L4).
+  String? _courseTitleFor(String courseId) {
+    for (final c in _courses) {
+      if (c.id == courseId) return c.title;
+    }
+    for (final c in CoursesController.instance.allCourses) {
+      if (c.id == courseId) return c.title;
+    }
+    return null;
+  }
+
   /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
+  /// Correctif : le filtre recevait un IDENTIFIANT de cours et le comparait
+  /// au TITRE stocké dans la ligne — aucun résultat n'apparaissait dès
+  /// qu'un cours était sélectionné.
   List<GradebookRow> gradebook({String? courseId, String? student}) {
+    String? courseTitle;
+    if (courseId != null) {
+      courseTitle = _courseTitleFor(courseId) ?? courseId;
+    }
     return gradebookRows.where((r) {
-      if (courseId != null && r.courseTitle != courseId) return false;
+      if (courseTitle != null && r.courseTitle != courseTitle) return false;
       if (student != null && r.studentId != student) return false;
       return true;
     }).toList();
@@ -656,7 +731,11 @@ class EvaluationsController extends ChangeNotifier {
   // ── Wrappers synchrones d'écriture (optimiste) ───────────────────────────
 
   /// Crée ou met à jour un quiz. Déclenche l'API en arrière-plan.
-  /// [publish] à true → publie immédiatement après upsert.
+  /// [publish] à true → positionne explicitement l'état publié APRÈS
+  /// l'enregistrement. Correctif important : l'ancien code appelait
+  /// `publishQuiz` qui BASCULE l'état — un quiz créé avec
+  /// `isPublished: true` était donc re-basculé en brouillon dans Firestore
+  /// alors que l'interface affichait « Publié ».
   void upsertQuiz(Quiz quiz, {bool publish = false}) {
     // Mise à jour optimiste locale.
     final idx = quizzes.indexWhere((q) => q.id == quiz.id);
@@ -666,26 +745,50 @@ class EvaluationsController extends ChangeNotifier {
       quizzes = [...quizzes, quiz];
     }
     notifyListeners();
-    // Appel API en arrière-plan.
+    // Persistance en arrière-plan : enregistrement puis positionnement
+    // EXPLICITE de l'état publié si demandé (corrige le bug du toggle),
+    // rafraîchissement final avec l'état réel renvoyé par la source.
     final body = _quizToBody(quiz);
-    if (idx >= 0) {
-      _repo.updateQuiz(quiz.id, body).then((updated) {
-        quizzes = quizzes.map((q) => q.id == updated.id ? updated : q).toList();
-        if (publish) _repo.publishQuiz(updated.id);
-        notifyListeners();
-      }).catchError((e) => debugPrint('[Controller] upsertQuiz error: $e'));
-    } else {
-      _repo.createQuiz(body).then((created) {
-        quizzes = [...quizzes.where((q) => q.id != quiz.id), created];
-        if (publish) _repo.publishQuiz(created.id);
-        notifyListeners();
-      }).catchError((e) => debugPrint('[Controller] createQuiz error: $e'));
+    Future<void> persist() async {
+      Quiz stored;
+      if (idx >= 0) {
+        stored = await _repo.updateQuiz(quiz.id, body);
+        quizzes = quizzes
+            .map((q) => q.id == stored.id ? stored : q)
+            .toList();
+      } else {
+        stored = await _repo.createQuiz(body);
+        quizzes = [...quizzes.where((q) => q.id != quiz.id), stored];
+      }
+      if (publish && !stored.isPublished) {
+        stored = await _repo.setQuizPublished(stored.id, published: true);
+        quizzes = quizzes
+            .map((q) => q.id == stored.id ? stored : q)
+            .toList();
+      }
+      notifyListeners();
     }
+
+    persist()
+        .catchError((e) => debugPrint('[Controller] upsertQuiz error: $e'));
   }
 
-  /// Publie ou dépublie un quiz. [publish] ignoré ici (le serveur gère le toggle).
+  /// Publie ou masque un quiz : positionne EXPLICITEMENT l'état demandé
+  /// ([publish]) au lieu de basculer — la carte enseignant appelle cette
+  /// méthode avec `!quiz.isPublished` comme cible.
   Future<Quiz?> publishQuizToggle(String quizId, [bool publish = true]) {
-    return publishQuiz(quizId);
+    return _wrap(() async {
+      final updated = await _repo.setQuizPublished(quizId, published: publish);
+      quizzes = quizzes.map((q) => q.id == quizId ? updated : q).toList();
+      if (publish) {
+        _addNotification(
+          title: 'Quiz publié',
+          body: 'Le quiz "${updated.title}" est maintenant visible.',
+        );
+      }
+      notifyListeners();
+      return updated;
+    });
   }
 
   /// Crée ou met à jour un devoir. Déclenche l'API en arrière-plan.
@@ -820,6 +923,19 @@ class EvaluationsController extends ChangeNotifier {
         explanation: "Une file (FIFO) modélise une file d'attente.",
       ),
     ];
+  }
+
+  /// Génère un brouillon de questions via l'API Gemini gratuite (clé partagée
+  /// du fichier `.env`, plan gratuit d'AI Studio) puis retombe sur le
+  /// générateur local de démonstration si la clé est absente ou si le
+  /// service est momentanément indisponible — l'assistant n'est jamais bloqué.
+  Future<List<QuizQuestion>> generateQuizDraftAi({required String topic}) async {
+    final questions = await EvaluationsAiService.instance.generateQuizQuestions(
+      topic: topic,
+      count: 3,
+    );
+    if (questions != null && questions.isNotEmpty) return questions;
+    return generateGeminiQuestions(topic);
   }
 
   // ── Serialisation pour les appels API ────────────────────────────────────

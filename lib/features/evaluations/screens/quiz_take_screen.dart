@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
@@ -18,14 +18,18 @@ class QuizTakeScreen extends StatefulWidget {
 
 class _QuizTakeScreenState extends State<QuizTakeScreen> {
   final _controller = EvaluationsController.instance;
-  late final Quiz _quiz;
+
+  /// Quiz affiché — nullable : peut être introuvable si la liste n'est pas
+  /// (ou plus) chargée ; l'écran affiche alors un état vide au lieu de
+  /// planter (l'ancien code appliquait un `!` direct dans initState).
+  Quiz? _quiz;
   String? _attemptId;
 
   /// Matrice des indices d'options sélectionnés pour chaque question du quiz.
-  late List<List<int>> _answers;
+  List<List<int>> _answers = const [];
 
   /// Temps restant en secondes avant soumission forcée de la tentative.
-  late int _remainingSeconds;
+  int _remainingSeconds = 0;
 
   /// Chronomètre périodique cadencé à 1 seconde pilotant le compte à rebours et la barre de progression.
   Timer? _timer;
@@ -35,11 +39,23 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   @override
   void initState() {
     super.initState();
-    _quiz = _controller.quizById(widget.quizId)!;
+    final quiz = _controller.quizById(widget.quizId);
+    if (quiz == null) {
+      // Quiz introuvable (données rechargées, id obsolète…) : retour propre.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Quiz introuvable.')),
+        );
+        Navigator.pop(context);
+      });
+      return;
+    }
+    _quiz = quiz;
     // Crée l'enregistrement de tentative côté contrôleur dès l'entrée sur l'écran.
     _createAttempt();
-    _answers = List.generate(_quiz.questions.length, (_) => <int>[]);
-    _remainingSeconds = _quiz.timeLimitMin * 60;
+    _answers = List.generate(_quiz!.questions.length, (_) => <int>[]);
+    _remainingSeconds = _quiz!.timeLimitMin * 60;
     // Décrémente le compteur chaque seconde et déclenche l'envoi automatique dès que le délai atteint zéro.
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -69,7 +85,9 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   /// sélection unique sur un Vrai/Faux ou un QCM simple, bascule multi-choix lorsque `q.isMultiple` est vrai,
   /// puis synchronise immédiatement les réponses en cours dans [EvaluationsController].
   void _toggle(int qi, int oi) {
-    final q = _quiz.questions[qi];
+    final quiz = _quiz;
+    if (quiz == null) return;
+    final q = quiz.questions[qi];
     setState(() {
       final current = [..._answers[qi]];
       if (q.type == QuestionType.vraiFaux || !q.isMultiple) {
@@ -91,6 +109,8 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   /// arrête le [Timer], invoque [EvaluationsController.submitAttempt] pour calculer la note sur 20
   /// et redirige vers `QuizResultsScreen` via `pushReplacementNamed`.
   Future<void> _submit({bool auto = false}) async {
+    final quiz = _quiz;
+    if (quiz == null) return;
     if (_submitting) return;
     // En soumission manuelle, vérifie qu'aucune question n'a été laissée sans réponse.
     if (!auto) {
@@ -118,7 +138,7 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
     Navigator.pushReplacementNamed(
       context,
       EvaluationsRoutes.quizResults,
-      arguments: QuizResultsArgs(quizId: _quiz.id, attemptId: _attemptId),
+      arguments: QuizResultsArgs(quizId: quiz.id, attemptId: _attemptId),
     );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -133,8 +153,16 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final quiz = _quiz;
+    if (quiz == null) {
+      // Quiz introuvable : état vide explicite au lieu d'un écran rouge.
+      return const Scaffold(
+        backgroundColor: EduColors.scaffold,
+        body: Center(child: Text('Quiz introuvable')),
+      );
+    }
     // Fraction du temps écoulé (entre 0 et 1) alimentant le LinearProgressIndicator supérieur.
-    final progress = 1 - (_remainingSeconds / (_quiz.timeLimitMin * 60));
+    final progress = 1 - (_remainingSeconds / (quiz.timeLimitMin * 60));
     final mm = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
     final ss = (_remainingSeconds % 60).toString().padLeft(2, '0');
     // Passe l'affichage du compte à rebours et de la jauge en rouge sous la barre des 60 dernières secondes.
@@ -177,7 +205,7 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _quiz.title,
+                quiz.title,
                 style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 17,
@@ -185,7 +213,7 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
                 ),
               ),
               Text(
-                '${_quiz.courseTitle} · ${_mmDisplay(mm, ss)}',
+                '${quiz.courseTitle} · ${_mmDisplay(mm, ss)}',
                 style: TextStyle(
                   fontSize: 11.5,
                   color: urgent ? EduColors.danger : EduColors.muted,
@@ -208,8 +236,8 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
-                itemCount: _quiz.questions.length,
-                itemBuilder: (context, i) => _questionCard(i),
+                itemCount: quiz.questions.length,
+                itemBuilder: (context, i) => _questionCard(quiz, i),
               ),
             ),
             if (_error != null)
@@ -241,8 +269,8 @@ class _QuizTakeScreenState extends State<QuizTakeScreen> {
   String _mmDisplay(String mm, String ss) => '$mm:$ss restantes';
 
   /// Construit la carte d'une question avec son barème et ses propositions sous forme de [FilterChip].
-  Widget _questionCard(int i) {
-    final q = _quiz.questions[i];
+  Widget _questionCard(Quiz quiz, int i) {
+    final q = quiz.questions[i];
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),

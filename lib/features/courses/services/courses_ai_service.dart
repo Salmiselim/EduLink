@@ -75,13 +75,15 @@ class CoursesAiService {
     return dotenv.env['GEMINI_API_KEY'] ?? '';
   }
 
-  /// Modèle Gemini utilisé (gratuit dans le quota AI Studio, rapide).
-  /// `gemini-2.5-flash` n'est plus attribué aux nouveaux comptes : on utilise
-  /// la génération 3.5, disponible pour tous.
-  static const String _model = 'gemini-3.5-flash';
-
-  static const String _endpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent';
+  /// Modèles Gemini en CASCADE — chaque modèle dispose de son propre quota
+  /// gratuit quotidien (20 requêtes/jour/modèle sur AI Studio) : quand le
+  /// premier est épuisé (HTTP 429), on passe automatiquement au suivant.
+  /// `gemini-2.5-flash` n'est plus attribué aux nouveaux comptes.
+  static const List<String> _models = [
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+  ];
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -99,50 +101,69 @@ class CoursesAiService {
       'du projet (aistudio.google.com), puis relancez l\'application.';
 
   /// Envoie une consigne au modèle et retourne le texte de la réponse.
-  /// En cas de pointe de charge du service (HTTP 503) ou de quota momentané
-  /// (HTTP 429), la requête est automatiquement réessayée deux fois avec un
-  /// court délai avant de remonter une [AiUnavailableException].
+  /// Stratégie en cascade : en cas de quota journalier épuisé (HTTP 429)
+  /// sur un modèle, le suivant est essayé automatiquement ; une pointe de
+  /// charge (HTTP 503) déclenche un court réessai sur le même modèle avant
+  /// de passer au suivant. Si tous les modèles sont épuisés, une
+  /// [AiUnavailableException] avec le message adapté est levée.
   Future<String> _generate(String prompt) async {
     if (!isConfigured) {
       throw const AiUnavailableException(notConfiguredMessage);
     }
-    const retryStatusCodes = {429, 503};
-    try {
-      final response = await _send(prompt);
-      return _extractText(response);
-    } on DioException catch (error) {
-      final status = error.response?.statusCode;
-      if (status != null && retryStatusCodes.contains(status)) {
-        for (var attempt = 1; attempt <= 2; attempt++) {
-          await Future<void>.delayed(Duration(seconds: 2 * attempt));
-          try {
-            return _extractText(await _send(prompt));
-          } on DioException catch (retryError) {
-            final retryStatus = retryError.response?.statusCode;
-            if (retryStatus == null ||
-                !retryStatusCodes.contains(retryStatus)) {
-              break;
-            }
-          }
-        }
+    var quotaHit = false;
+    Object? lastError;
+    for (final model in _models) {
+      try {
+        final response = await _postWithRetry(model, prompt);
+        return _extractText(response);
+      } on DioException catch (error) {
+        lastError = error;
+        if (error.response?.statusCode == 429) quotaHit = true;
+        // Quota du modèle épuisé ou erreur isolée : modèle suivant.
+      } on AiUnavailableException {
+        // Réponse vide sur ce modèle : essayer le suivant.
+        continue;
       }
-      debugPrint('[CoursesAi] Échec Gemini : $error');
+    }
+    debugPrint('[CoursesAi] Échec sur tous les modèles : $lastError');
+    if (quotaHit) {
       throw const AiUnavailableException(
-        'Service IA momentanément indisponible — vérifiez la connexion.',
-      );
-    } on AiUnavailableException {
-      rethrow;
-    } catch (error) {
-      debugPrint('[CoursesAi] Erreur inattendue : $error');
-      throw const AiUnavailableException(
-        'Service IA momentanément indisponible — réessayez.',
+        'Quota gratuit journalier épuisé — réessaie demain matin '
+        '(réinitialisation vers 8h).',
       );
     }
+    throw const AiUnavailableException(
+      'Service IA momentanément indisponible — vérifiez la connexion.',
+    );
   }
 
-  Future<Response<Map<String, dynamic>>> _send(String prompt) {
+  /// Un essai sur un modèle, avec un unique réessai rapide en cas de forte
+  /// demande (503). Un 429 n'est PAS retenté sur le même modèle (quota du
+  /// jour épuisé) : il remonte pour déclencher la cascade.
+  Future<Response<Map<String, dynamic>>> _postWithRetry(
+    String model,
+    String prompt,
+  ) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await _send(model, prompt);
+      } on DioException catch (error) {
+        if (error.response?.statusCode == 503 && attempt == 0) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw const AiUnavailableException(
+      'Service IA momentanément indisponible.',
+    );
+  }
+
+  Future<Response<Map<String, dynamic>>> _send(String model, String prompt) {
     return _dio.post<Map<String, dynamic>>(
-      _endpoint,
+      'https://generativelanguage.googleapis.com/v1beta/models/'
+      '$model:generateContent',
       queryParameters: {'key': _apiKey},
       data: {
         'contents': [
@@ -315,6 +336,81 @@ class CoursesAiService {
       'Texte :\n"""\n$text\n"""\n'
       'Ne renvoie QUE la traduction, sans explication ni guillemets.',
     );
+  }
+
+  /// Traduit la description ET tous les chapitres texte d'un cours en
+  /// UNE SEULE requête par langue (économie de quota : pour un cours de
+  /// 6 chapitres et 2 langues, 2 appels au lieu de 14 — chaque modèle
+  /// gratuit n'acceptant que 20 requêtes par jour).
+  ///
+  /// Retourne une map dont la clé `"description"` est la traduction de la
+  /// description et les autres clés sont les identifiants de chapitres
+  /// transmis dans [items] avec leur traduction. Retourne `null` si la
+  /// réponse est inexploitable (l'appelant garde ses textes originaux).
+  Future<Map<String, String>?> translateCourseBundle({
+    required String description,
+    required Map<String, String> items,
+    required CourseLanguage language,
+    required String courseTitle,
+  }) async {
+    if (items.isEmpty && description.trim().isEmpty) return null;
+    final buffer = StringBuffer();
+    for (final entry in items.entries) {
+      buffer
+        ..writeln('[BLOC ${entry.key}]')
+        ..writeln('"""')
+        ..writeln(entry.value)
+        ..writeln('"""');
+    }
+    final response = await _generate(
+      "Tu traduis l'intégralité d'un cours universitaire du français vers "
+      '${language.label}.\n'
+      'Cours : « $courseTitle ».\n'
+      'Traduis fidèlement chaque bloc, avec un registre clair et '
+      'pédagogique, sans rien ajouter ni omettre.\n'
+      'Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, '
+      'au format exact suivant :\n'
+      '{"description":"<traduction de la description>",'
+      '"blocs":{"<identifiant du bloc>":"<traduction>"}}\n'
+      'La description à traduire :\n"""\n$description\n"""\n\n'
+      'Les blocs identifiés à traduire :\n'
+      '${buffer.toString()}',
+    );
+
+    // Extraction du JSON (tolère une clôture Markdown éventuelle).
+    var text = response.trim();
+    if (text.startsWith('```')) {
+      text = text
+          .replaceFirst(RegExp(r'^```[a-zA-Z]*\s*'), '')
+          .replaceFirst(RegExp(r'```\s*$'), '')
+          .trim();
+    }
+    final start = text.indexOf('{');
+    final end = text.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try {
+      final decoded =
+          jsonDecode(text.substring(start, end + 1)) as Map<String, dynamic>;
+      final result = <String, String>{};
+      final translatedDescription = (decoded['description'] as String?) ?? '';
+      if (translatedDescription.trim().isNotEmpty) {
+        result['description'] = translatedDescription.trim();
+      }
+      final blocs = (decoded['blocs'] as Map?) ?? const {};
+      blocs.forEach((key, value) {
+        final translated = (value as String?)?.trim() ?? '';
+        if (translated.isNotEmpty && items.containsKey(key.toString())) {
+          result[key.toString()] = translated;
+        }
+      });
+      if (result.isEmpty) return null;
+      return result;
+    } on FormatException {
+      return null;
+    } catch (error) {
+      debugPrint('[CoursesAi] Bundle illisible : $error');
+      return null;
+    }
   }
 
   /// Décode proprement une réponse JSON éventuellement encadrée de balises

@@ -76,6 +76,12 @@ class EvaluationsRepository {
 
   Future<Quiz> publishQuiz(String quizId) => _api.publishQuiz(quizId);
 
+  /// Positionne explicitement l'état de publication (pas de bascule) :
+  /// corrige le bug de l'assistant « Publier » qui repassait le quiz en
+  /// brouillon à cause du toggle.
+  Future<Quiz> setQuizPublished(String quizId, {required bool published}) =>
+      _api.setQuizPublished(quizId, published: published);
+
   /// Génère un brouillon de quiz via Gemini (L — API externe).
   Future<List<Map<String, dynamic>>> generateQuizDraft({
     required String chapterText,
@@ -182,6 +188,29 @@ class EvaluationsRepository {
 
   Future<Submission> getSubmission(String submissionId) =>
       _api.getSubmission(submissionId);
+
+  /// Tentatives visibles par l'utilisateur courant (tentatives de ses quiz
+  /// pour un enseignant, les siennes pour un étudiant). Retourne une liste
+  /// vide si la source ne les expose pas — le reste du module doit continuer
+  /// de fonctionner.
+  Future<List<QuizAttempt>> getVisibleAttempts() async {
+    try {
+      return await _api.getVisibleAttempts();
+    } on EvalApiException catch (e) {
+      debugPrint('[Repo] getVisibleAttempts indisponible : $e');
+      return [];
+    }
+  }
+
+  /// Copies visibles par l'utilisateur courant (avec le même repli sûr).
+  Future<List<Submission>> getVisibleSubmissions() async {
+    try {
+      return await _api.getVisibleSubmissions();
+    } on EvalApiException catch (e) {
+      debugPrint('[Repo] getVisibleSubmissions indisponible : $e');
+      return [];
+    }
+  }
 
   /// Note une copie. L8 : notifie l'étudiant. L2 : badge copies corrigées.
   Future<Submission> gradeSubmission({

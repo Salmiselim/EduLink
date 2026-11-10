@@ -48,8 +48,10 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
   // ── Traduction du cours assistée par IA (couche Service) ─────────────────
 
   /// Choisit les langues cibles puis traduit la description et tous les
-  /// chapitres texte du cours ; les traductions sont enregistrées dans
-  /// Firestore et deviennent disponibles pour tous les étudiants.
+  /// chapitres texte du cours en UNE SEULE requête par langue (économie de
+  /// quota — chaque modèle gratuit n'accepte que 20 requêtes par jour) ;
+  /// les traductions sont enregistrées dans Firestore et deviennent
+  /// disponibles pour tous les étudiants.
   Future<void> _translateCourse(Course course) async {
     final languages = await _pickTranslationLanguages();
     if (languages.isEmpty || !mounted) return;
@@ -62,7 +64,6 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
               (c.content ?? '').trim().isNotEmpty,
         )
         .toList();
-    final total = languages.length * (textChapters.length + 1);
 
     final progress = ValueNotifier<int>(0);
     showDialog<void>(
@@ -87,13 +88,13 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
               ),
               const SizedBox(height: 10),
               LinearProgressIndicator(
-                value: total == 0 ? null : done / total,
+                value: languages.isEmpty ? null : done / languages.length,
                 color: CourseColors.primary,
                 backgroundColor: CourseColors.neutralBg,
               ),
               const SizedBox(height: 8),
               Text(
-                '$done / $total contenus traduits',
+                'Langues traduites : $done / ${languages.length}',
                 style: const TextStyle(
                   fontSize: 11.5,
                   color: CourseColors.muted,
@@ -105,37 +106,44 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
       ),
     );
 
-    var translatedCount = 0;
+    var translatedLanguages = 0;
     try {
       for (final language in languages) {
-        final description = await CoursesAiService.instance.translateText(
-          text: course.description,
+        final bundle = await CoursesAiService.instance.translateCourseBundle(
+          description: course.description,
+          items: {
+            for (final chapter in textChapters)
+              chapter.id: (chapter.content ?? '').trim(),
+          },
           language: language,
-          context:
-              'Description du cours « ${course.title} » '
-              '(${course.subject}, niveau ${course.level})',
+          courseTitle: course.title,
         );
-        _controller.saveCourseDescriptionTranslation(
-          course.id,
-          language.code,
-          description,
-        );
-        progress.value = ++translatedCount;
-        for (final chapter in textChapters) {
-          final translated = await CoursesAiService.instance.translateText(
-            text: chapter.content!.trim(),
-            language: language,
-            context:
-                'Chapitre « ${chapter.title} » du cours « ${course.title} »',
+        if (bundle == null) {
+          throw AiUnavailableException(
+            'Traduction ${language.label} indisponible — réessaie plus tard.',
           );
-          _controller.saveChapterTranslation(
-            course.id,
-            chapter.id,
-            language.code,
-            translated,
-          );
-          progress.value = ++translatedCount;
         }
+        final translatedDescription = bundle['description'];
+        if (translatedDescription != null &&
+            translatedDescription.trim().isNotEmpty) {
+          _controller.saveCourseDescriptionTranslation(
+            course.id,
+            language.code,
+            translatedDescription,
+          );
+        }
+        for (final chapter in textChapters) {
+          final translated = bundle[chapter.id];
+          if (translated != null && translated.trim().isNotEmpty) {
+            _controller.saveChapterTranslation(
+              course.id,
+              chapter.id,
+              language.code,
+              translated,
+            );
+          }
+        }
+        progress.value = ++translatedLanguages;
       }
     } on AiUnavailableException catch (error) {
       progress.dispose();
@@ -143,7 +151,7 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
       Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
           content: Text(error.message),
         ),
       );
@@ -156,8 +164,9 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
       SnackBar(
         duration: const Duration(seconds: 3),
         content: Text(
-          'Traduction terminée : ${languages.length} langue(s), '
-          '$translatedCount contenus enregistrés.',
+          'Traduction terminée : ${languages.length} langue(s) — la '
+          'description et ${textChapters.length} chapitre(s) sont '
+          'disponibles pour les étudiants.',
         ),
       ),
     );

@@ -111,9 +111,15 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<void> deleteQuiz(String quizId) async {
     await _ensureIdentity();
     await _quizzes.doc(quizId).delete();
+    // Cascade : tente chaque suppression indépendamment — un échec isolé
+    // n'annule pas les autres (les règles autorisent l'enseignant propriétaire).
     final attempts = await _attempts.where('quizId', isEqualTo: quizId).get();
     for (final d in attempts.docs) {
-      await d.reference.delete();
+      try {
+        await d.reference.delete();
+      } catch (e) {
+        debugPrint('[EvalFirestore] deleteQuiz tentative ${d.id} : $e');
+      }
     }
   }
 
@@ -127,6 +133,76 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     final current = (doc.data()!['isPublished'] as bool?) ?? false;
     await _quizzes.doc(quizId).update({'isPublished': !current});
     return quizFromJsonPublic({'id': quizId, ...doc.data()!, 'isPublished': !current});
+  }
+
+  /// Positionne explicitement l'état de publication (au lieu de basculer) :
+  /// corrige le bug où « Publier » dans l'assistant écrivait `isPublished:
+  /// true` puis le re-basculait en `false` lors de l'appel de publication.
+  @override
+  Future<Quiz> setQuizPublished(String quizId, {required bool published}) async {
+    await _ensureIdentity();
+    final doc = await _quizzes.doc(quizId).get();
+    if (!doc.exists) {
+      throw EvalApiException(code: 404, message: 'Quiz introuvable');
+    }
+    await _quizzes.doc(quizId).update({'isPublished': published});
+    return quizFromJsonPublic({'id': quizId, ...doc.data()!, 'isPublished': published});
+  }
+
+  /// Tentatives visibles : les siennes (étudiant) ou celles de ses quiz
+  /// (enseignant, requêtes par paquets de 10 pour la limite `whereIn`).
+  @override
+  Future<List<QuizAttempt>> getVisibleAttempts() async {
+    await _ensureIdentity();
+    if (!_isTeacher) {
+      final snap =
+          await _attempts.where('studentId', isEqualTo: _cachedUid).get();
+      return snap.docs
+          .map((d) => _attemptFromDoc({'id': d.id, ...d.data()}))
+          .toList();
+    }
+    final mine =
+        await _quizzes.where('teacherId', isEqualTo: _cachedUid).get();
+    final ids = mine.docs.map((d) => d.id).toList();
+    if (ids.isEmpty) return [];
+    final out = <QuizAttempt>[];
+    for (var i = 0; i < ids.length; i += 10) {
+      final snap = await _attempts
+          .where('quizId', whereIn: ids.sublist(i, i + 10))
+          .get();
+      out.addAll(
+        snap.docs.map((d) => _attemptFromDoc({'id': d.id, ...d.data()})),
+      );
+    }
+    return out;
+  }
+
+  /// Copies visibles : les siennes (étudiant) ou celles de ses devoirs
+  /// (enseignant).
+  @override
+  Future<List<Submission>> getVisibleSubmissions() async {
+    await _ensureIdentity();
+    if (!_isTeacher) {
+      final snap =
+          await _submissions.where('studentId', isEqualTo: _cachedUid).get();
+      return snap.docs
+          .map((d) => _submissionFromDoc({'id': d.id, ...d.data()}))
+          .toList();
+    }
+    final mine =
+        await _assignments.where('teacherId', isEqualTo: _cachedUid).get();
+    final ids = mine.docs.map((d) => d.id).toList();
+    if (ids.isEmpty) return [];
+    final out = <Submission>[];
+    for (var i = 0; i < ids.length; i += 10) {
+      final snap = await _submissions
+          .where('assignmentId', whereIn: ids.sublist(i, i + 10))
+          .get();
+      out.addAll(
+        snap.docs.map((d) => _submissionFromDoc({'id': d.id, ...d.data()})),
+      );
+    }
+    return out;
   }
 
   /// Brouillon de questions généré localement (l'appel réel à Gemini se fera
@@ -298,9 +374,15 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<void> deleteAssignment(String assignmentId) async {
     await _ensureIdentity();
     await _assignments.doc(assignmentId).delete();
-    final subs = await _submissions.where('assignmentId', isEqualTo: assignmentId).get();
+    // Cascade résiliente (voir deleteQuiz).
+    final subs =
+        await _submissions.where('assignmentId', isEqualTo: assignmentId).get();
     for (final d in subs.docs) {
-      await d.reference.delete();
+      try {
+        await d.reference.delete();
+      } catch (e) {
+        debugPrint('[EvalFirestore] deleteAssignment copie ${d.id} : $e');
+      }
     }
   }
 

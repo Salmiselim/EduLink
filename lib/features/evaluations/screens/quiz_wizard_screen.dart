@@ -117,7 +117,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
           setState(() => _questionsError = 'Cochez au moins une bonne réponse.');
           return false;
         }
-        if (q.points <= 0 || q.points > 20) {
+        if (q.points < 0.5 || q.points > 20) {
           setState(() => _questionsError = 'Les points doivent être entre 0.5 et 20.');
           return false;
         }
@@ -399,12 +399,35 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
     );
   }
 
+  /// Génération d'un brouillon en cours (désactive le bouton pendant l'appel).
+  bool _generatingDraft = false;
+
+  /// Génère un brouillon de questions via l'API Gemini GRATUITE (clé du
+  /// fichier `.env`, même clé que le module Cours) avec repli automatique
+  /// sur le générateur local de démonstration en cas d'absence de clé ou
+  /// d'indisponibilité du service.
+  Future<void> _generateDraft() async {
+    setState(() => _generatingDraft = true);
+    final questions =
+        await _controller.generateQuizDraftAi(topic: _geminiHint.text);
+    if (!mounted) return;
+    setState(() {
+      _generatingDraft = false;
+      _questions.addAll(questions);
+      _questionsError = null;
+    });
+    _snack(
+      '${questions.length} question(s) générée(s). Relisez-les avant publication.',
+    );
+  }
+
   /// Étape 1 : génération assistée de questions de départ et ajout/édition manuelle de QCM ou Vrai/Faux.
   Widget _questionsStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Encart de préremplissage automatique ajoutant 3 questions via `generateGeminiQuestions`.
+        // Encart de préremplissage automatique ajoutant des questions via
+        // l'API Gemini gratuite (repli local si la clé n'est pas configurée).
         Container(
           padding: const EdgeInsets.all(14),
           decoration: evalCardDecoration(),
@@ -412,7 +435,7 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Brouillon Gemini (API simulée)',
+                'Brouillon Gemini (IA gratuite)',
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5),
               ),
               const SizedBox(height: 8),
@@ -425,17 +448,17 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _questions.addAll(
-                      _controller.generateGeminiQuestions(_geminiHint.text),
-                    );
-                    _questionsError = null;
-                  });
-                  _snack('3 questions générées. Relisez-les avant publication.');
-                },
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: const Text('Générer un brouillon'),
+                onPressed: _generatingDraft ? null : _generateDraft,
+                icon: _generatingDraft
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome_rounded),
+                label: Text(
+                  _generatingDraft ? 'Génération en cours…' : 'Générer un brouillon',
+                ),
               ),
             ],
           ),

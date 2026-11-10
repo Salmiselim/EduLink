@@ -313,6 +313,35 @@ class EvaluationsApiService {
   /// désérialiser les entrées JSON stockées dans le cache Hive local.
   Quiz quizFromJsonPublic(Map<String, dynamic> j) => _quizFromJson(j);
 
+  /// Tentatives visibles par l'utilisateur courant (les siennes côté étudiant,
+  /// celles de ses quiz côté enseignant). Non supporté par l'API REST de
+  /// secours : seule l'implémentation Firestore surcharge cette méthode.
+  Future<List<QuizAttempt>> getVisibleAttempts() async =>
+      throw const EvalApiException(
+        code: 501,
+        message: "Fonction non disponible via l'API REST.",
+      );
+
+  /// Copies visibles par l'utilisateur courant (les siennes côté étudiant,
+  /// celles de ses devoirs côté enseignant).
+  Future<List<Submission>> getVisibleSubmissions() async =>
+      throw const EvalApiException(
+        code: 501,
+        message: "Fonction non disponible via l'API REST.",
+      );
+
+  /// Positionne explicitement l'état de publication d'un quiz — contrairement
+  /// à [publishQuiz] qui BASCULE la valeur actuelle, ce qui faisait
+  /// repasser en brouillon un quiz publié par l'assistant.
+  Future<Quiz> setQuizPublished(
+    String quizId, {
+    required bool published,
+  }) async =>
+      throw const EvalApiException(
+        code: 501,
+        message: "Fonction non disponible via l'API REST.",
+      );
+
   /// Date tolérante : accepte un ISO string, un Timestamp Firestore ou null.
   DateTime _safeDate(dynamic v, {DateTime? fallback}) {
     if (v is DateTime) return v;
