@@ -18,6 +18,8 @@ void main() {
       client: MockClient(handler),
       baseUrl: 'http://gemini.test/v1beta',
       model: 'test-model',
+      fallbackModels: const ['backup-model'],
+      retryDelay: Duration.zero,
       apiKey: apiKey,
     );
   }
@@ -58,6 +60,23 @@ void main() {
     expect(prompt, contains('NameError: x'));
     expect(body['systemInstruction'], isNotNull);
     expect(text, 'Ce code affiche « é » à l\'écran.');
+  });
+
+  test('passe au modèle de secours quand le principal est surchargé', () async {
+    final urls = <String>[];
+    final service = makeService((request) async {
+      urls.add(request.url.path);
+      if (request.url.path.contains('test-model')) {
+        return json({'error': {'status': 'UNAVAILABLE'}}, 503);
+      }
+      return json(reply('depuis le secours'));
+    });
+
+    expect(await service.explainCode(code: 'x = 1'), 'depuis le secours');
+    expect(urls, [
+      '/v1beta/models/test-model:generateContent',
+      '/v1beta/models/backup-model:generateContent',
+    ]);
   });
 
   test('sans clé, refuse sans appeler le réseau', () async {
@@ -120,7 +139,7 @@ void main() {
         'GEMINI_API_KEY');
     await expectMessage(
         429, {'error': {'status': 'RESOURCE_EXHAUSTED'}}, 'Quota');
-    await expectMessage(503, {'error': {'status': 'UNAVAILABLE'}}, 'indisponible');
+    await expectMessage(503, {'error': {'status': 'UNAVAILABLE'}}, 'surchargé');
   });
 
   test('réponse bloquée ou vide', () async {
