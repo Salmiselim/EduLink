@@ -5,6 +5,7 @@ import '../../marketplace/routes/marketplace_routes.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
 import '../routes/courses_routes.dart';
+import '../services/courses_ai_service.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
 
@@ -31,6 +32,83 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   bool get _isOwner =>
       _controller.courseById(widget.courseId)?.teacherId ==
       _controller.currentUserId;
+
+  /// Langue d'affichage de la description (`en`, `ar`, `es`) ou `null` pour
+  /// l'original. Réinitialisée si la traduction choisie n'existe plus.
+  String? _descLang;
+
+  /// Description du cours avec sélecteur de langue lorsque l'enseignant a
+  /// enregistré des traductions ; le sens du texte est adapté pour l'arabe.
+  Widget _descriptionBlock(Course course) {
+    final effectiveLang =
+        course.descriptionTranslations.containsKey(_descLang)
+            ? _descLang
+            : null;
+    final language =
+        effectiveLang == null ? null : CourseLanguage.byCode(effectiveLang);
+    final hasTranslations = course.descriptionTranslations.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (hasTranslations) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Original'),
+                selected: effectiveLang == null,
+                onSelected: (_) => setState(() => _descLang = null),
+                selectedColor: CourseColors.primary,
+                showCheckmark: false,
+                visualDensity: VisualDensity.compact,
+                labelStyle: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: effectiveLang == null
+                      ? Colors.white
+                      : CourseColors.textSecondary,
+                ),
+              ),
+              for (final available in CourseLanguage.available)
+                if (course.descriptionTranslations
+                    .containsKey(available.code))
+                  ChoiceChip(
+                    label: Text(available.label),
+                    selected: effectiveLang == available.code,
+                    onSelected: (_) =>
+                        setState(() => _descLang = available.code),
+                    selectedColor: CourseColors.primary,
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    labelStyle: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: effectiveLang == available.code
+                          ? Colors.white
+                          : CourseColors.textSecondary,
+                    ),
+                  ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        Directionality(
+          textDirection:
+              (language?.rtl ?? false) ? TextDirection.rtl : TextDirection.ltr,
+          child: Text(
+            course.descriptionIn(effectiveLang),
+            style: const TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color: CourseColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   /// Ouvre une `ModalBottomSheet` listant les offres publiées sur la Marketplace
   /// rattachées à ce cours (`offer.courseId == course.id`), avec navigation directe
@@ -518,14 +596,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               ),
               const SizedBox(height: 18),
               const SectionHeader(title: 'Description'),
-              Text(
-                course.description,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  height: 1.5,
-                  color: CourseColors.textSecondary,
-                ),
-              ),
+              _descriptionBlock(course),
               // Carte récapitulative d'avancement réservée aux étudiants inscrits.
               if (isEnrolled && !_isOwner) ...[
                 const SizedBox(height: 18),

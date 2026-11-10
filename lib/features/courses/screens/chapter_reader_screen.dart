@@ -1,9 +1,16 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
+import '../services/courses_ai_service.dart';
+import '../services/courses_document_service.dart';
+import '../widgets/ai_tools.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
+import 'pdf_viewer_screen.dart';
 
 // Écran plein écran de lecture d'un chapitre (`ChapterReaderScreen`).
 // Adapte la zone principale au format du chapitre (`text`, `pdf`, `video`, `link`)
@@ -33,6 +40,36 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
 
   /// Identifiant du chapitre actuellement affiché dans la zone de lecture.
   late String _currentChapterId = widget.chapterId;
+
+  /// Langue d'affichage choisie pour le chapitre (`en`, `ar`, `es`) ou `null`
+  /// pour le contenu original (français). Réinitialisée si le chapitre
+  /// sélectionné ne propose pas cette traduction.
+  String? _displayLang;
+
+  /// Résolutions locales des documents PDF par chapitre (mémo). La clé est
+  /// l'identifiant du chapitre : évite de relire le disque à chaque rebuild.
+  final Map<String, Future<File?>> _pdfResolutions = {};
+
+  /// Ouvre la feuille système d'enregistrement/partage (« téléchargement »)
+  /// pour le document du chapitre courant.
+  Future<void> _exportPdf(File file, Chapter chapter) async {
+    final exported = await CoursesDocumentService.instance.exportDocument(
+      file,
+      title: chapter.title,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(
+          exported
+              ? 'Feuille de partage ouverte — choisissez « Enregistrer » '
+                  'pour télécharger le document.'
+              : 'Téléchargement impossible sur cet appareil.',
+        ),
+      ),
+    );
+  }
 
   /// Change le chapitre actif dans l'état local sans empiler de nouvelle route.
   void _selectChapter(String chapterId) {
@@ -114,6 +151,115 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Outils IA de lecture : résumé, traduction à la volée, langues stockées ─
+
+  /// Ouvre un sélecteur simple des langues de traduction disponibles.
+  Future<CourseLanguage?> _pickLanguage() async {
+    return showDialog<CourseLanguage>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Traduire vers…',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        children: [
+          for (final language in CourseLanguage.available)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, language),
+              child: Row(
+                children: [
+                  const Icon(Icons.translate_rounded,
+                      size: 18, color: CourseColors.primary),
+                  const SizedBox(width: 10),
+                  Text(
+                    language.label,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Résume le chapitre courant en 3 points clés via l'IA (toujours à partir
+  /// du contenu original, en français, pour servir d'aide à la révision).
+  Future<void> _summarizeChapter(Chapter chapter) async {
+    final content = chapter.content ?? '';
+    if (content.isEmpty) return;
+    final course = _controller.courseById(widget.courseId);
+    final summary = await runWithAiLoader<String>(
+      context,
+      "L'IA résume le chapitre…",
+      () => CoursesAiService.instance.summarizeChapter(
+        courseTitle: course?.title ?? 'Cours',
+        chapterTitle: chapter.title,
+        content: content,
+      ),
+    );
+    if (summary == null || !mounted) return;
+    await showAiTextSheet(
+      context,
+      title: 'Résumé — points clés',
+      body: summary,
+    );
+  }
+
+  /// Traduit le chapitre courant à la volée vers la langue choisie. Le
+  /// résultat est affiché sans être enregistré ; l'enseignant auteur du
+  /// cours peut néanmoins le stocker pour tous les étudiants.
+  Future<void> _translateChapterOnTheFly(Chapter chapter) async {
+    final content = chapter.content ?? '';
+    if (content.isEmpty) return;
+    final language = await _pickLanguage();
+    if (language == null || !mounted) return;
+    final course = _controller.courseById(widget.courseId);
+    final translated = await runWithAiLoader<String>(
+      context,
+      'Traduction en ${language.label}…',
+      () => CoursesAiService.instance.translateText(
+        text: content,
+        language: language,
+        context:
+            'Chapitre « ${chapter.title} » du cours « ${course?.title ?? 'Cours'} »',
+      ),
+    );
+    if (translated == null || !mounted) return;
+    final isOwner =
+        course != null && course.teacherId == _controller.currentUserId;
+    await showAiTextSheet(
+      context,
+      title: 'Traduction — ${language.label}',
+      body: translated,
+      rtl: language.rtl,
+      actionLabel: isOwner ? 'Enregistrer la traduction' : null,
+      onAction: isOwner
+          ? () async {
+              _controller.saveChapterTranslation(
+                widget.courseId,
+                chapter.id,
+                language.code,
+                translated,
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  duration: const Duration(seconds: 2),
+                  content: Text(
+                    'Traduction ${language.label} enregistrée — disponible '
+                    'pour tous les étudiants.',
+                  ),
+                ),
+              );
+            }
+          : null,
     );
   }
 
@@ -421,10 +567,18 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     }
   }
 
-  /// Affiche un chapitre rédigé en découpant le texte brut en paragraphes espacés.
+  /// Affiche un chapitre rédigé en découpant le texte en paragraphes espacés,
+  /// avec sélecteur de langue (traductions enregistrées par l'enseignant),
+  /// résumé IA et traduction à la volée pour les chapitres texte.
   Widget _textContent(Chapter chapter, int index) {
-    final paragraphs =
-        (chapter.content ?? '').split('\n\n').where((p) => p.isNotEmpty);
+    final effectiveLang =
+        chapter.translations.containsKey(_displayLang) ? _displayLang : null;
+    final language =
+        effectiveLang == null ? null : CourseLanguage.byCode(effectiveLang);
+    final displayed = chapter.contentIn(effectiveLang) ?? '';
+    final paragraphs = displayed.split('\n\n').where((p) => p.isNotEmpty);
+    final hasTranslations = chapter.translations.isNotEmpty;
+    final hasContent = (chapter.content ?? '').trim().isNotEmpty;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -458,17 +612,92 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
           const SizedBox(height: 12),
           const Divider(color: CourseColors.border),
           const SizedBox(height: 8),
-          ...paragraphs.map(
-            (paragraph) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Text(
-                paragraph,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  height: 1.7,
-                  color: CourseColors.textSecondary,
+          // Sélecteur de langue : le contenu original ou une traduction
+          // générée par l'enseignant et stockée avec le chapitre.
+          if (hasTranslations) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Original'),
+                  selected: effectiveLang == null,
+                  onSelected: (_) => setState(() => _displayLang = null),
+                  selectedColor: CourseColors.primary,
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  labelStyle: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: effectiveLang == null
+                        ? Colors.white
+                        : CourseColors.textSecondary,
+                  ),
                 ),
-              ),
+                for (final available in CourseLanguage.available)
+                  if (chapter.translations.containsKey(available.code))
+                    ChoiceChip(
+                      label: Text(available.label),
+                      selected: effectiveLang == available.code,
+                      onSelected: (_) => setState(
+                        () => _displayLang = available.code,
+                      ),
+                      selectedColor: CourseColors.primary,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      labelStyle: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: effectiveLang == available.code
+                            ? Colors.white
+                            : CourseColors.textSecondary,
+                      ),
+                    ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          // Outils IA de lecture : résumé en 3 points et traduction à la
+          // volée (enregistrable par l'enseignant auteur du cours).
+          if (hasContent) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                AiToolButton(
+                  'Résumé (IA)',
+                  compact: true,
+                  onPressed: () => _summarizeChapter(chapter),
+                ),
+                AiToolButton(
+                  'Traduire (IA)',
+                  compact: true,
+                  onPressed: () => _translateChapterOnTheFly(chapter),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          Directionality(
+            textDirection:
+                (language?.rtl ?? false) ? TextDirection.rtl : TextDirection.ltr,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...paragraphs.map(
+                  (paragraph) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Text(
+                      paragraph,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        height: 1.7,
+                        color: CourseColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -476,8 +705,21 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
   }
 
-  /// Affiche la fiche d'un support PDF hébergé sur le stockage média avec action de téléchargement.
+  /// Affiche la fiche d'un document PDF du cours. Si le fichier a été
+  /// importé sur cet appareil, l'étudiant peut le visualiser dans
+  /// l'application (visionneuse intégrée) ou le télécharger (feuille
+  /// système d'enregistrement/partage). Sinon, message explicite :
+  /// document présent sur l'appareil de l'enseignant, ou support simulé.
   Widget _pdfContent(Chapter chapter) {
+    final mobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+    final future = _pdfResolutions.putIfAbsent(
+      chapter.id,
+      () => CoursesDocumentService.instance.resolveLocalFile(chapter.content),
+    );
+    final shownName = (chapter.content ?? 'document')
+        .split('/')
+        .last;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -522,8 +764,10 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                chapter.content ?? 'fichier privé',
+                shownName,
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 10,
                   color: CourseColors.muted,
@@ -532,38 +776,119 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              width: 280,
-              height: 44,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      duration: Duration(seconds: 2),
-                      content: Text(
-                        'Téléchargement via le service média '
-                        '— intégration à venir.',
-                      ),
+            FutureBuilder<File?>(
+              future: future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: CourseColors.primary,
                     ),
                   );
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: CourseColors.primary,
-                  side: const BorderSide(color: CourseColors.primary),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                }
+                final file = snapshot.data;
+                if (file != null && mobile) {
+                  return Column(
+                    children: [
+                      SizedBox(
+                        width: 280,
+                        height: 44,
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => PdfViewerScreen(
+                                file: file,
+                                title: chapter.title,
+                              ),
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: CourseColors.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.menu_book_rounded,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Visualiser le document',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: 280,
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportPdf(file, chapter),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: CourseColors.primary,
+                            side: const BorderSide(
+                              color: CourseColors.primary,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.download_rounded, size: 18),
+                          label: const Text(
+                            'Télécharger',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                if (file != null) {
+                  return const Text(
+                    "Fichier enregistré dans le dossier de l'application "
+                    'sur cet appareil.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10.5, color: CourseColors.muted),
+                  );
+                }
+                if (CoursesDocumentService.isLocalReference(chapter.content)) {
+                  return const Text(
+                    "Document disponible sur l'appareil de l'enseignant — "
+                    'il ne peut pas être transféré sur cet appareil '
+                    '(application sans serveur de fichiers).',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      height: 1.5,
+                      color: CourseColors.muted,
+                    ),
+                  );
+                }
+                return const Text(
+                  "Support de démonstration — aucun document réel n'est "
+                  'rattaché à ce chapitre.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.5,
+                    color: CourseColors.muted,
                   ),
-                ),
-                icon: const Icon(Icons.download_rounded, size: 18),
-                label: const Text(
-                  'Télécharger le support',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-                ),
-              ),
+                );
+              },
             ),
             const SizedBox(height: 8),
             const Text(
-              'Fichier privé — accessible aux étudiants inscrits.',
+              'Document du cours — consultable dans l\'application.',
               style: TextStyle(
                 fontSize: 10.5,
                 color: CourseColors.muted,

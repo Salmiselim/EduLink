@@ -93,26 +93,6 @@ class _SignInScreenState extends State<SignInScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Accès rapide permettant d'ouvrir directement le shell principal sans saisie.
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _enterApp(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AuthColors.muted,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                    label: const Text(
-                      'Passer',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
                 // En-tête de marque partagé entre les écrans d'authentification.
                 const AuthHeader(subtitle: 'Apprendre, échanger, progresser'),
                 const SizedBox(height: 28),

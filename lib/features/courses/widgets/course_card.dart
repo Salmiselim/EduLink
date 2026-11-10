@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../models/courses_models.dart';
+import '../services/courses_document_service.dart';
 import 'courses_ui.dart';
 
 // Carte polymorphe représentant un `Course` dans les listes de `CoursesScreen`.
@@ -63,6 +66,7 @@ class CourseCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
+                    // Badges matière et niveau (passent à la ligne si besoin).
                     Wrap(
                       spacing: 6,
                       runSpacing: 4,
@@ -72,11 +76,21 @@ class CourseCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Row(
+                    // Wrap et non Row : avec un grand nombre d'inscrits ou le
+                    // badge de statut (variante enseignant), les éléments
+                    // passent à la ligne au lieu de déborder de la carte —
+                    // c'était le cas dans le carrousel « Recommandés » (300 px)
+                    // et sur les listes enseignant.
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Icon(Icons.menu_book_outlined,
-                            size: 12, color: CourseColors.muted),
-                        const SizedBox(width: 3),
+                        const Icon(
+                          Icons.menu_book_outlined,
+                          size: 12,
+                          color: CourseColors.muted,
+                        ),
                         Text(
                           '${course.chaptersCount} chap.',
                           style: const TextStyle(
@@ -85,10 +99,11 @@ class CourseCard extends StatelessWidget {
                             color: CourseColors.muted,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Icon(Icons.group_outlined,
-                            size: 12, color: CourseColors.muted),
-                        const SizedBox(width: 3),
+                        const Icon(
+                          Icons.group_outlined,
+                          size: 12,
+                          color: CourseColors.muted,
+                        ),
                         Text(
                           '${course.enrollmentsCount} inscrits',
                           style: const TextStyle(
@@ -97,10 +112,8 @@ class CourseCard extends StatelessWidget {
                             color: CourseColors.muted,
                           ),
                         ),
-                        if (isTeacherVariant) ...[
-                          const SizedBox(width: 8),
+                        if (isTeacherVariant)
                           CourseStatusBadge(isPublished: course.isPublished),
-                        ],
                       ],
                     ),
                     if (!isTeacherVariant && progress != null) ...[
@@ -147,15 +160,35 @@ class CourseCard extends StatelessWidget {
     );
   }
 
-  /// Affiche la miniature réseau du cours si `coverImageUrl` est renseigné,
-  /// avec repli automatique sur `_gradientFallback` en cas d'absence ou d'erreur de chargement.
+  /// Affiche la miniature du cours : image locale importée par l'enseignant
+  /// (référence `edulink_files/...` résolue sur l'appareil), URL réseau le
+  /// cas échéant, avec repli automatique sur `_gradientFallback` sinon.
   Widget _cover() {
     Widget child;
-    if (course.coverImageUrl != null && course.coverImageUrl!.isNotEmpty) {
+    final cover = course.coverImageUrl;
+    if (CoursesDocumentService.isLocalReference(cover)) {
+      child = FutureBuilder<File?>(
+        future: CoursesDocumentService.instance.resolveLocalFile(cover),
+        builder: (context, snapshot) {
+          final file = snapshot.data;
+          if (file == null) return _gradientFallback();
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.file(
+              file,
+              width: 64,
+              height: 64,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _gradientFallback(),
+            ),
+          );
+        },
+      );
+    } else if (cover != null && cover.isNotEmpty) {
       child = ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Image.network(
-          course.coverImageUrl!,
+          cover,
           width: 64,
           height: 64,
           fit: BoxFit.cover,

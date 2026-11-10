@@ -123,6 +123,30 @@ class AuthService {
     }
   }
 
+  /// Envoie l'e-mail officiel de réinitialisation de mot de passe (Firebase).
+  /// En mode démonstration (Firebase absent), le flux reste utilisable et
+  /// l'issue `demo` est retournée : l'interface génère alors son propre code.
+  Future<AuthResult> sendPasswordReset({required String email}) async {
+    if (!isFirebaseReady) {
+      return (outcome: AuthOutcome.demo, error: null);
+    }
+    try {
+      await _auth!.sendPasswordResetEmail(email: email);
+      return (outcome: AuthOutcome.success, error: null);
+    } on FirebaseAuthException catch (e) {
+      final message = switch (e.code) {
+        'user-not-found' => "Aucun compte EduLink n'est associé à cet e-mail.",
+        _ => _message(e.code),
+      };
+      return (outcome: AuthOutcome.failure, error: message);
+    } catch (_) {
+      return (
+        outcome: AuthOutcome.failure,
+        error: 'Envoi impossible pour le moment.',
+      );
+    }
+  }
+
   /// Messages d'erreur lisibles pour les codes Firebase courants.
   String _message(String code) {
     switch (code) {

@@ -103,6 +103,11 @@ class Course {
   String subject;
   String level;
   String description;
+
+  /// Traductions de la description générées par l'assistant IA, indexées par
+  /// code de langue (`en`, `ar`, `es`). Vide tant que l'enseignant n'a pas
+  /// lancé « Traduire le cours ». Remplacé par copie lors d'une mise à jour.
+  Map<String, String> descriptionTranslations;
   String? coverImageUrl;
   int chaptersCount;
   bool isPublished;
@@ -118,12 +123,20 @@ class Course {
     required this.subject,
     required this.level,
     required this.description,
+    this.descriptionTranslations = const {},
     this.coverImageUrl,
     this.chaptersCount = 0,
     this.isPublished = false,
     this.enrollmentsCount = 0,
     required this.createdAt,
   });
+
+  /// Retourne la description dans la langue [languageCode] si une traduction
+  /// existe, sinon la description originale (français).
+  String descriptionIn(String? languageCode) {
+    if (languageCode == null) return description;
+    return descriptionTranslations[languageCode] ?? description;
+  }
 
   /// Retourne une copie du cours en remplaçant uniquement les champs fournis,
   /// tout en conservant l'identifiant, l'auteur et la date de création d'origine.
@@ -132,6 +145,7 @@ class Course {
     String? subject,
     String? level,
     String? description,
+    Map<String, String>? descriptionTranslations,
     String? coverImageUrl,
     int? chaptersCount,
     bool? isPublished,
@@ -146,6 +160,8 @@ class Course {
       subject: subject ?? this.subject,
       level: level ?? this.level,
       description: description ?? this.description,
+      descriptionTranslations:
+          descriptionTranslations ?? this.descriptionTranslations,
       coverImageUrl: coverImageUrl ?? this.coverImageUrl,
       chaptersCount: chaptersCount ?? this.chaptersCount,
       isPublished: isPublished ?? this.isPublished,
@@ -166,6 +182,11 @@ class Chapter {
   /// Corps du chapitre selon [type] : texte rédigé (`text`), URI du document (`pdf`),
   /// lien YouTube (`video`) ou URL web externe (`link`).
   String? content;
+
+  /// Traductions du contenu rédigé (`text`) générées par l'assistant IA,
+  /// indexées par code de langue (`en`, `ar`, `es`). Remplacé par copie
+  /// lors d'une mise à jour (le contenu ne référence jamais une map constante).
+  Map<String, String> translations;
   int durationMin;
   int order;
 
@@ -174,9 +195,59 @@ class Chapter {
     required this.title,
     required this.type,
     this.content,
+    this.translations = const {},
     required this.durationMin,
     required this.order,
   });
+
+  /// Retourne le contenu du chapitre dans la langue [languageCode] si une
+  /// traduction existe, sinon le contenu original (français).
+  String? contentIn(String? languageCode) {
+    if (languageCode == null) return content;
+    return translations[languageCode] ?? content;
+  }
+}
+
+/// Notification in-app destinée à un étudiant inscrit, créée par le contrôleur
+/// lorsqu'un enseignant publie un cours ou ajoute un chapitre
+/// (collection Firestore `notifications`, lecture temps réel côté étudiant).
+class CourseNotification {
+  final String id;
+
+  /// Destinataire : identifiant de l'étudiant inscrit au cours.
+  final String userId;
+
+  /// Auteur de l'action (identifiant de l'enseignant), utilisé par les règles
+  /// de sécurité pour vérifier la provenance de la notification.
+  final String fromId;
+  final String courseId;
+  final String courseTitle;
+
+  /// Type d'événement : `new_chapter` (chapitre ajouté) ou `course_published`
+  /// (cours publié dans le catalogue).
+  final String type;
+  final String title;
+  final String body;
+  final DateTime createdAt;
+  bool read;
+
+  CourseNotification({
+    required this.id,
+    required this.userId,
+    required this.fromId,
+    required this.courseId,
+    required this.courseTitle,
+    required this.type,
+    required this.title,
+    required this.body,
+    required this.createdAt,
+    this.read = false,
+  });
+
+  /// Icône Material associée au type de notification dans la cloche du module.
+  IconData get icon => type == 'course_published'
+      ? Icons.publish_rounded
+      : Icons.note_add_rounded;
 }
 
 /// Modèle d'inscription reliant un étudiant à un cours (`courseId` + `studentId`).

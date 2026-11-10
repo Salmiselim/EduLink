@@ -1,6 +1,12 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
+import '../services/courses_ai_service.dart';
+import '../services/courses_document_service.dart';
+import 'ai_tools.dart';
 import 'courses_ui.dart';
 
 // Feuille modale réutilisable de création et d'édition de chapitre (`ChapterEditSheet`).
@@ -143,6 +149,8 @@ class ChapterEditSheet {
                         controller: contentController,
                         setSheetState: setSheetState,
                         sheetContext: sheetContext,
+                        courseId: courseId,
+                        titleController: titleController,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -237,31 +245,70 @@ class ChapterEditSheet {
   }
 
   /// Construit le champ de formulaire correspondant à [type] avec son `validator` dédié :
-  /// texte long (>= 20 car.), sélecteur de document PDF, URL YouTube ou URI HTTP/HTTPS externe.
+  /// texte long (avec outils IA : brouillon + orthographe), sélecteur de document PDF
+  /// (copie locale dans l'app, visualisable et téléchargeable), URL YouTube ou URI HTTP/HTTPS externe.
   static Widget _typeSpecificField({
     required ChapterType type,
     required TextEditingController controller,
     required void Function(void Function()) setSheetState,
     required BuildContext sheetContext,
+    required String courseId,
+    required TextEditingController titleController,
   }) {
     switch (type) {
       case ChapterType.text:
-        return TextFormField(
-          controller: controller,
-          maxLines: 6,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          decoration: courseInputDecoration(
-            label: 'Contenu du chapitre',
-            hint: 'Rédigez le contenu (séparez les paragraphes par une ligne vide)',
-            icon: Icons.notes_rounded,
-          ),
-          validator: (value) {
-            final v = value?.trim() ?? '';
-            if (v.trim().isEmpty) {
-              return 'Rédigez le contenu du chapitre.';
-            }
-            return null;
-          },
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              controller: controller,
+              maxLines: 6,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              decoration: courseInputDecoration(
+                label: 'Contenu du chapitre',
+                hint:
+                    'Rédigez le contenu (séparez les paragraphes par une ligne vide)',
+                icon: Icons.notes_rounded,
+              ),
+              validator: (value) {
+                final v = value?.trim() ?? '';
+                if (v.trim().isEmpty) {
+                  return 'Rédigez le contenu du chapitre.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            // Outils IA du module Cours : brouillon rédigé à partir du titre
+            // du chapitre, et relecture orthographique titre + contenu.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                AiToolButton(
+                  'Brouillon IA',
+                  compact: true,
+                  onPressed: () => _draftContentWithAi(
+                    sheetContext,
+                    setSheetState,
+                    courseId,
+                    titleController,
+                    controller,
+                  ),
+                ),
+                AiToolButton(
+                  "Vérifier l'orthographe",
+                  compact: true,
+                  onPressed: () => _checkSheetSpelling(
+                    sheetContext,
+                    type,
+                    titleController,
+                    controller,
+                  ),
+                ),
+              ],
+            ),
+          ],
         );
 
       case ChapterType.pdf:
@@ -272,22 +319,12 @@ class ChapterEditSheet {
               width: double.infinity,
               height: 46,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  // Génère une URI de stockage média pour illustrer le rattachement d'un document PDF.
-                  setSheetState(() {
-                    controller.text =
-                        '/documents/edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
-                  });
-                  ScaffoldMessenger.of(sheetContext).showSnackBar(
-                    const SnackBar(
-                      duration: Duration(seconds: 2),
-                      content: Text(
-                        'Fichier simulé — upload via le service média '
-                        '— intégration à venir.',
-                      ),
-                    ),
-                  );
-                },
+                onPressed: () => _pickChapterPdf(
+                  sheetContext,
+                  setSheetState,
+                  courseId,
+                  controller,
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: CourseColors.primary,
                   side: const BorderSide(color: CourseColors.primary),
@@ -370,5 +407,152 @@ class ChapterEditSheet {
           },
         );
     }
+  }
+
+  /// Génère un brouillon de contenu via l'IA à partir du titre du chapitre
+  /// et du contexte du cours (type « texte » uniquement).
+  static Future<void> _draftContentWithAi(
+    BuildContext sheetContext,
+    void Function(void Function()) setSheetState,
+    String courseId,
+    TextEditingController titleController,
+    TextEditingController contentController,
+  ) async {
+    final chapterTitle = titleController.text.trim();
+    if (chapterTitle.isEmpty) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text("Donnez d'abord un titre au chapitre."),
+        ),
+      );
+      return;
+    }
+    final course = CoursesController.instance.courseById(courseId);
+    final text = await runWithAiLoader<String>(
+      sheetContext,
+      "L'IA rédige un brouillon…",
+      () => CoursesAiService.instance.draftChapterContent(
+        courseTitle: course?.title ?? 'Cours',
+        subject: course?.subject ?? 'Général',
+        chapterTitle: chapterTitle,
+      ),
+    );
+    if (text == null || !sheetContext.mounted) return;
+    setSheetState(() => contentController.text = text);
+  }
+
+  /// Vérifie l'orthographe du titre (et du contenu pour un chapitre texte),
+  /// puis propose les corrections dans une feuille d'application au choix.
+  static Future<void> _checkSheetSpelling(
+    BuildContext sheetContext,
+    ChapterType type,
+    TextEditingController titleController,
+    TextEditingController contentController,
+  ) async {
+    final title = titleController.text.trim();
+    final content =
+        type == ChapterType.text ? contentController.text.trim() : '';
+    if (title.isEmpty && content.isEmpty) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Rien à vérifier : les champs sont vides.'),
+        ),
+      );
+      return;
+    }
+    final corrections = await runWithAiLoader<List<AiFieldCorrection>>(
+      sheetContext,
+      "Vérification de l'orthographe…",
+      () async {
+        final results = <AiFieldCorrection>[];
+        if (title.isNotEmpty) {
+          results.add(
+            AiFieldCorrection(
+              label: 'Titre du chapitre',
+              controller: titleController,
+              corrected: await CoursesAiService.instance.correctSpelling(
+                label: 'Titre du chapitre',
+                text: title,
+              ),
+            ),
+          );
+        }
+        if (content.isNotEmpty) {
+          results.add(
+            AiFieldCorrection(
+              label: 'Contenu du chapitre',
+              controller: contentController,
+              corrected: await CoursesAiService.instance.correctSpelling(
+                label: 'Contenu du chapitre',
+                text: content,
+              ),
+            ),
+          );
+        }
+        return results;
+      },
+    );
+    if (corrections == null || !sheetContext.mounted) return;
+    await showSpellingReviewSheet(sheetContext, corrections);
+  }
+
+  /// Ouvre un PDF (galerie / fichiers de l'appareil) et le copie dans le
+  /// stockage local de l'application : l'étudiant pourra le visualiser dans
+  /// l'app ou le télécharger. En cas d'échec, aucun chemin fictif n'est
+  /// écrit et un message invite à réessayer.
+  static Future<void> _pickChapterPdf(
+    BuildContext sheetContext,
+    void Function(void Function()) setSheetState,
+    String courseId,
+    TextEditingController contentController,
+  ) async {
+    String? pickedPath;
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+      );
+      pickedPath = files.isEmpty ? null : files.first.path;
+    } catch (error) {
+      debugPrint('[ChapterEditSheet] Sélection impossible : $error');
+    }
+    if (pickedPath == null || !sheetContext.mounted) return;
+    // Garde-fou avant copie : 20 Mo maximum.
+    final file = File(pickedPath);
+    if (file.lengthSync() > CoursesDocumentService.maxPdfBytes) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('PDF trop volumineux — 20 Mo maximum.'),
+        ),
+      );
+      return;
+    }
+    final reference = await CoursesDocumentService.instance.importChapterPdf(
+      courseId: courseId,
+      file: file,
+    );
+    if (!sheetContext.mounted) return;
+    if (reference != null) {
+      setSheetState(() => contentController.text = reference);
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text(
+            'PDF ajouté depuis vos fichiers — les étudiants pourront le '
+            'visualiser et le télécharger.',
+          ),
+        ),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(sheetContext).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 3),
+        content: Text("Impossible d'importer ce PDF — réessayez."),
+      ),
+    );
   }
 }
