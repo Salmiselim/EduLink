@@ -8,6 +8,8 @@ import '../../courses/data/courses_mock_data.dart';
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
 import '../routes/marketplace_routes.dart';
+import '../services/calendar_api_service.dart';
+import '../widgets/calendar_slot_picker_dialog.dart';
 import '../widgets/offer_card.dart';
 import '../widgets/review_dialog.dart';
 
@@ -105,7 +107,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       if (_filterType != null && o.type != _filterType) return false;
       if (_filterSubject != null && o.subject != _filterSubject) return false;
       if (_filterLevel != null && o.level != _filterLevel) return false;
-      if (o.price > _maxPrice) return false;
+      if (_maxPrice < 100 && o.price > _maxPrice) return false;
       if (_filterMode != null && o.mode != _filterMode) return false;
       if (_filterCity != null && o.location?.city != _filterCity) return false;
       if (_minRating > 0 && o.ratingAvg < _minRating) return false;
@@ -137,7 +139,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         break;
       case 'relevance':
       default:
-        list.sort((a, b) => b.viewsCount.compareTo(a.viewsCount));
+        list.sort((a, b) {
+          final cmp = b.viewsCount.compareTo(a.viewsCount);
+          return cmp != 0 ? cmp : b.createdAt.compareTo(a.createdAt);
+        });
         break;
     }
     return list;
@@ -441,7 +446,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   /// et valide le formulaire d'ajout ([Form] + [GlobalKey<FormState>] + `_timeRegex`).
   void _openManageSlotsModal(Offer offer) {
     final slotFormKey = GlobalKey<FormState>();
-    final dateCtrl = TextEditingController(text: 'Sam 31 Oct 2026');
+    final dateCtrl = TextEditingController(
+      text: CalendarApiService.formatRelativeDay(0),
+    );
     final startCtrl = TextEditingController(text: '14:00');
     final endCtrl = TextEditingController(text: '15:00');
 
@@ -538,14 +545,33 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         flex: 2,
                         child: TextFormField(
                           controller: dateCtrl,
+                          readOnly: true,
+                          onTap: () async {
+                            final picked = await CalendarSlotPickerDialog.show(
+                              ctx,
+                              initialDate:
+                                  CalendarApiService.parseSlotDate(dateCtrl.text),
+                              initialStartTime: startCtrl.text.trim(),
+                              initialEndTime: endCtrl.text.trim(),
+                            );
+                            if (picked != null) {
+                              dateCtrl.text = picked.dateLabel;
+                              startCtrl.text = picked.startTime;
+                              endCtrl.text = picked.endTime;
+                            }
+                          },
                           validator: (v) {
                             if (v == null || v.trim().length < 5) {
                               return 'Date requise';
                             }
+                            if (CalendarApiService.isPastDateString(v)) {
+                              return 'Date passée interdite';
+                            }
                             return null;
                           },
                           decoration: const InputDecoration(
-                            labelText: 'Date *',
+                            labelText: 'Date (Calendrier API) *',
+                            suffixIcon: Icon(Icons.calendar_month_rounded, size: 18),
                             isDense: true,
                             border: OutlineInputBorder(),
                           ),
@@ -1763,6 +1789,24 @@ class _OrderCard extends StatelessWidget {
                   label: const Text('Chat commande'),
                 ),
               ),
+
+              if (order.slotLabel != null)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    CalendarApiService.openGoogleCalendarSlot(
+                      title: order.offerTitle,
+                      slotLabel: order.slotLabel!,
+                      location: order.meetingLink ?? order.pickupAddress,
+                      description:
+                          'Séance EduLink (${order.offerSubject}) — Vendeur : ${order.sellerName}',
+                    );
+                  },
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.event_rounded, size: 16),
+                  label: const Text('Google Agenda'),
+                ),
 
               if (isSellerView && order.status == OrderStatus.requested) ...[
                 FilledButton.icon(

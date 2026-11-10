@@ -46,6 +46,11 @@ dependencies:
 
   # HTTP & stockage local — cache hors-ligne
   dio: ^5.7.0
+  http: ^1.2.2 # Marketplace : Nominatim (géocodage) & Nager.Date (jours fériés)
+  url_launcher: ^6.3.1 # Marketplace : salle Jitsi, ajout au Google Calendar
+  image_picker: ^1.2.4 # Marketplace : photos des offres depuis la galerie
+  flutter_map: ^8.3.2 # Marketplace : carte OpenStreetMap (gratuite, sans clé)
+  latlong2: ^0.9.1 # Coordonnées pour flutter_map
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path_provider: ^2.1.4

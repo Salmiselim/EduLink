@@ -1,5 +1,7 @@
 // Accès à Cloud Firestore : base NoSQL distante + cache local SQLite géré par le SDK.
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/marketplace_models.dart';
 
@@ -48,6 +50,19 @@ class MarketplaceFirestoreService {
 
   Future<void> saveReview(OfferReview r) => _reviews.doc(r.id).set(r.toMap());
 
+  /// Signalement d'une offre : un document par (offre, utilisateur) dans `reports`.
+  Future<void> saveReport({
+    required String offerId,
+    required String reporterId,
+    required String reason,
+  }) =>
+      _db.collection('reports').doc('${offerId}_$reporterId').set({
+        'offerId': offerId,
+        'reporterId': reporterId,
+        'reason': reason,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+
   Future<void> saveMessage(ChatMessage m) =>
       _messages(m.orderId).doc(m.id).set(m.toMap());
 
@@ -75,26 +90,186 @@ class MarketplaceFirestoreService {
 
   // ---------------------------------------------------------------- READ (temps réel)
 
-  Stream<List<Offer>> watchOffers() =>
-      _offers.snapshots().map((s) => s.docs.map((d) => Offer.fromMap(d.data())).toList());
+  /// Transforme un QuerySnapshot en liste typée en ignorant les documents
+  /// corrompus sans faire planter tout le flux.
+  List<T> _parseDocs<T>(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+    T Function(Map<String, dynamic>) fromMap,
+  ) {
+    final items = <T>[];
+    for (final doc in snapshot.docs) {
+      try {
+        final data = doc.data();
+        items.add(fromMap({...data, 'id': doc.id}));
+      } catch (error) {
+        debugPrint('Marketplace : document ${doc.id} ignoré ($error)');
+      }
+    }
+    return items;
+  }
+
+  /// Écoute les offres publiées et, si [userId] est renseigné, les offres
+  /// personnelles du vendeur (y compris brouillons), en respectant les règles
+  /// de sécurité Firestore ("Rules are not filters").
+  Stream<List<Offer>> watchOffers([String? userId]) {
+    final publishedStream = _offers
+        .where('status', isEqualTo: 'published')
+        .snapshots()
+        .map((s) => _parseDocs(s, Offer.fromMap));
+
+    if (userId == null || userId.isEmpty) {
+      return publishedStream;
+    }
+
+    final mineStream = _offers
+        .where('sellerId', isEqualTo: userId)
+        .snapshots()
+        .map((s) => _parseDocs(s, Offer.fromMap));
+
+    return _combineOffers(publishedStream, mineStream);
+  }
+
+  Stream<List<Offer>> _combineOffers(
+    Stream<List<Offer>> published,
+    Stream<List<Offer>> mine,
+  ) {
+    late StreamController<List<Offer>> controller;
+    StreamSubscription<List<Offer>>? subPub;
+    StreamSubscription<List<Offer>>? subMine;
+    final publishedMap = <String, Offer>{};
+    final mineMap = <String, Offer>{};
+
+    void emit() {
+      if (!controller.isClosed) {
+        final combined = <String, Offer>{...publishedMap, ...mineMap};
+        final list = combined.values.toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        controller.add(list);
+      }
+    }
+
+    controller = StreamController<List<Offer>>.broadcast(
+      onListen: () {
+        subPub = published.listen(
+          (list) {
+            publishedMap.clear();
+            for (final o in list) {
+              publishedMap[o.id] = o;
+            }
+            emit();
+          },
+          onError: (e) =>
+              debugPrint('Marketplace : erreur écoute offres publiques : $e'),
+        );
+
+        subMine = mine.listen(
+          (list) {
+            mineMap.clear();
+            for (final o in list) {
+              mineMap[o.id] = o;
+            }
+            emit();
+          },
+          onError: (e) =>
+              debugPrint('Marketplace : erreur écoute mes offres : $e'),
+        );
+      },
+      onCancel: () {
+        subPub?.cancel();
+        subMine?.cancel();
+      },
+    );
+
+    return controller.stream;
+  }
 
   Stream<List<AvailabilitySlot>> watchSlots() => _slots
       .snapshots()
-      .map((s) => s.docs.map((d) => AvailabilitySlot.fromMap(d.data())).toList());
+      .map((s) => _parseDocs(s, AvailabilitySlot.fromMap));
 
-  Stream<List<MarketplaceOrder>> watchOrders() => _orders
-      .snapshots()
-      .map((s) => s.docs.map((d) => MarketplaceOrder.fromMap(d.data())).toList());
+  Stream<List<MarketplaceOrder>> watchOrders([String? userId]) {
+    if (userId == null || userId.isEmpty) {
+      return _orders
+          .snapshots()
+          .map((s) => _parseDocs(s, MarketplaceOrder.fromMap));
+    }
+
+    final asBuyer = _orders
+        .where('buyerId', isEqualTo: userId)
+        .snapshots()
+        .map((s) => _parseDocs(s, MarketplaceOrder.fromMap));
+
+    final asSeller = _orders
+        .where('sellerId', isEqualTo: userId)
+        .snapshots()
+        .map((s) => _parseDocs(s, MarketplaceOrder.fromMap));
+
+    return _combineOrders(asBuyer, asSeller);
+  }
+
+  Stream<List<MarketplaceOrder>> _combineOrders(
+    Stream<List<MarketplaceOrder>> asBuyer,
+    Stream<List<MarketplaceOrder>> asSeller,
+  ) {
+    late StreamController<List<MarketplaceOrder>> controller;
+    StreamSubscription<List<MarketplaceOrder>>? subBuyer;
+    StreamSubscription<List<MarketplaceOrder>>? subSeller;
+    final buyerMap = <String, MarketplaceOrder>{};
+    final sellerMap = <String, MarketplaceOrder>{};
+
+    void emit() {
+      if (!controller.isClosed) {
+        final combined = <String, MarketplaceOrder>{...buyerMap, ...sellerMap};
+        final list = combined.values.toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        controller.add(list);
+      }
+    }
+
+    controller = StreamController<List<MarketplaceOrder>>.broadcast(
+      onListen: () {
+        subBuyer = asBuyer.listen(
+          (list) {
+            buyerMap.clear();
+            for (final o in list) {
+              buyerMap[o.id] = o;
+            }
+            emit();
+          },
+          onError: (e) =>
+              debugPrint('Marketplace : erreur écoute commandes acheteur : $e'),
+        );
+
+        subSeller = asSeller.listen(
+          (list) {
+            sellerMap.clear();
+            for (final o in list) {
+              sellerMap[o.id] = o;
+            }
+            emit();
+          },
+          onError: (e) =>
+              debugPrint('Marketplace : erreur écoute commandes vendeur : $e'),
+        );
+      },
+      onCancel: () {
+        subBuyer?.cancel();
+        subSeller?.cancel();
+      },
+    );
+
+    return controller.stream;
+  }
 
   Stream<List<OfferReview>> watchReviews() => _reviews
       .snapshots()
-      .map((s) => s.docs.map((d) => OfferReview.fromMap(d.data())).toList());
+      .map((s) => _parseDocs(s, OfferReview.fromMap));
 
   /// Tous les messages de toutes les conversations (requête `collectionGroup`).
   Stream<List<ChatMessage>> watchMessages() => _db
       .collectionGroup('messages')
       .snapshots()
-      .map((s) => s.docs.map((d) => ChatMessage.fromMap(d.data())).toList());
+      .map((s) => _parseDocs(s, ChatMessage.fromMap));
 
   Stream<Set<String>> watchFavorites(String userId) => _favorites
       .where('userId', isEqualTo: userId)

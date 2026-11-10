@@ -64,7 +64,6 @@ Future<void> _initFirebase() async {
     // users/{uid} ; sans effet hors Android/iOS (repli silencieux).
     unawaited(CoursesPushService.init());
     MarketplaceFirestoreService.enableOfflinePersistence();
-    await MarketplaceController.instance.connectFirestore();
     CoursesController.firebaseReady = true;
     AuthService.onSignedIn = (user) async {
       await CoursesController.instance.connectCloud();
@@ -73,7 +72,11 @@ Future<void> _initFirebase() async {
       // Ré-enregistre le jeton FCM pour le compte qui vient de se connecter.
       unawaited(CoursesPushService.refreshForCurrentUser());
     };
-    await CoursesController.instance.connectCloud();
+    // Connexion aux collections Firestore en arrière-plan (amélioration QA)
+    // pour ne jamais bloquer l'affichage initial ; les erreurs réseau sont
+    // gérées à l'intérieur de chaque contrôleur (repli démonstration).
+    unawaited(MarketplaceController.instance.connectFirestore());
+    unawaited(CoursesController.instance.connectCloud());
   } catch (e) {
     debugPrint('Firebase non configuré, mode hors Firestore : $e');
   }

@@ -3,9 +3,20 @@
 // RadioGroup, RadioListTile, AlertDialog, OutlinedButton et FilledButton.
 import 'package:flutter/material.dart';
 
+// Liaison inter-modules : les cours rattachables aux offres sont les cours
+// RÉELLEMENT PUBLIÉS du module Cours (mêmes identifiants Firestore).
+import '../../courses/data/courses_mock_data.dart';
+
 // Liaisons avec le contrôleur d'état (`addOffer` / `updateOffer`) et les modèles de données :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../services/calendar_api_service.dart';
+import '../services/nominatim_service.dart';
+import '../widgets/calendar_slot_picker_dialog.dart';
+import '../widgets/osm_map_picker_sheet.dart';
 
 /// Assistant multi-étapes de création et d'édition d'une offre poussé via [MarketplaceRoutes.offerWizard].
 /// Découpe la saisie en 6 étapes séquentielles (type, informations/médias, tarification TND,
@@ -46,6 +57,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
   OfferCondition _selectedCondition = OfferCondition.bon;
   int _stockQuantity = 1;
   String? _uploadedFileName;
+  String? _uploadedFileDetails;
   final List<String> _uploadedPhotos = [];
   String? _mediaValidationError;
 
@@ -57,17 +69,26 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
   DeliveryMode _selectedMode = DeliveryMode.online;
   String _selectedCity = 'Tunis';
   late final TextEditingController _addressController;
+  /// Coordonnées GPS renvoyées par Nominatim (nulles tant que l'adresse n'est pas géocodée).
+  double? _lat;
+  double? _lng;
+  bool _geocoding = false;
   final List<Map<String, String>> _draftSlots = [
-    {'date': 'Mar 27 Oct 2026', 'start': '16:00', 'end': '17:00'},
-    {'date': 'Jeu 29 Oct 2026', 'start': '18:00', 'end': '19:00'},
+    {
+      'date': CalendarApiService.formatRelativeDay(0),
+      'start': '16:00',
+      'end': '17:00',
+    },
+    {
+      'date': CalendarApiService.formatRelativeDay(1),
+      'start': '18:00',
+      'end': '19:00',
+    },
   ];
   String? _slotsValidationError;
 
   // --- ÉTAPE 5 : Cours rattaché optionnel (intégration avec le module Cours) ---
   String? _selectedCourseId = 'course_algo_1';
-
-  /// Expression régulière validant le format horaire 24h `HH:mm` (ex: `09:30`, `14:00`)
-  static final RegExp _timeRegex = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
 
   /// Libellés des 6 étapes de l'assistant
   static const List<String> _stepTitles = [
@@ -101,6 +122,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
       );
       _selectedMode = existing.mode ?? DeliveryMode.online;
       _selectedCity = existing.location?.city ?? 'Tunis';
+      _lat = existing.location?.lat;
+      _lng = existing.location?.lng;
       _addressController = TextEditingController(
         text: existing.location?.address ??
             'Campus Universitaire El Manar, devant la bibliothèque',
@@ -240,117 +263,225 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
     }
   }
 
-  /// Affiche une boîte de dialogue dotée de son propre [Form] pour ajouter un créneau horaire,
-  /// en contrôlant le format 24h via [_timeRegex] et la cohérence chronologique (`fin > début`).
-  void _showAddDraftSlotDialog() {
-    final slotFormKey = GlobalKey<FormState>();
-    final dateCtrl = TextEditingController(text: 'Ven 30 Oct 2026');
-    final startCtrl = TextEditingController(text: '14:00');
-    final endCtrl = TextEditingController(text: '15:00');
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(
-          'Ajouter un créneau horaire',
-          style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800),
+  /// Ouvre le sélecteur de calendrier interactif ([CalendarSlotPickerDialog]) verrouillé
+  /// à partir d'aujourd'hui (`DateTime.now()`) et interrogeant l'API Calendrier Nager.Date.
+  Future<void> _showAddDraftSlotDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final picked = await CalendarSlotPickerDialog.show(context);
+    if (!mounted || picked == null) return;
+    setState(() {
+      _draftSlots.add({
+        'date': picked.dateLabel,
+        'start': picked.startTime,
+        'end': picked.endTime,
+      });
+      _slotsValidationError = null;
+    });
+    final status = picked.dayInfo?.statusLabel ?? 'Créneau ajouté';
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Créneau ajouté : ${picked.dateLabel} (${picked.startTime} - ${picked.endTime}) · $status',
         ),
-        content: Form(
-          key: slotFormKey,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: dateCtrl,
-                validator: (val) {
-                  if (val == null || val.trim().length < 5) {
-                    return 'Date obligatoire (ex: Ven 30 Oct 2026).';
-                  }
-                  return null;
-                },
-                decoration: const InputDecoration(
-                  labelText: 'Date du créneau *',
-                  hintText: 'Ex: Ven 30 Oct 2026',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: startCtrl,
-                      validator: (val) {
-                        final text = val?.trim() ?? '';
-                        if (!_timeRegex.hasMatch(text)) {
-                          return 'Format HH:mm';
-                        }
-                        return null;
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Début (HH:mm) *',
-                        hintText: '14:00',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextFormField(
-                      controller: endCtrl,
-                      validator: (val) {
-                        final text = val?.trim() ?? '';
-                        if (!_timeRegex.hasMatch(text)) {
-                          return 'Format HH:mm';
-                        }
-                        final start = startCtrl.text.trim();
-                        if (_timeRegex.hasMatch(start) &&
-                            text.compareTo(start) <= 0) {
-                          return 'Doit être > début';
-                        }
-                        return null;
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Fin (HH:mm) *',
-                        hintText: '15:00',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (slotFormKey.currentState!.validate()) {
-                setState(() {
-                  _draftSlots.add({
-                    'date': dateCtrl.text.trim(),
-                    'start': startCtrl.text.trim(),
-                    'end': endCtrl.text.trim(),
-                  });
-                  _slotsValidationError = null;
-                });
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('Ajouter'),
-          ),
-        ],
       ),
     );
   }
 
   /// Revalide les étapes de saisie, assemble l'instance immuable [Offer] ainsi que sa liste
   /// d'[AvailabilitySlot], puis délègue la création (`addOffer`) ou la mise à jour (`updateOffer`) au contrôleur.
+
+  /// Met à jour immédiatement le champ texte d'adresse, la ville et les coordonnées GPS
+  /// dès qu'un point est cliqué sur la carte ou sélectionné dans les résultats Nominatim.
+  void _applySelectedLocation(GeocodeResult selected) {
+    final formatted = formatConciseAddress(selected.displayName);
+    setState(() {
+      _lat = selected.lat;
+      _lng = selected.lng;
+      if (formatted.isNotEmpty) {
+        _addressController.value = TextEditingValue(
+          text: formatted,
+          selection: TextSelection.collapsed(offset: formatted.length),
+        );
+      }
+      if (selected.city != null &&
+          MarketplaceController.cities.contains(selected.city)) {
+        _selectedCity = selected.city!;
+      }
+    });
+    _step4FormKey.currentState?.validate();
+  }
+
+  /// Ouvre le sélecteur interactif OpenStreetMap Nominatim (avec barre de recherche,
+  /// suggestions et clic direct sur la carte) puis met à jour l'adresse, la ville et les coordonnées GPS.
+  Future<void> _openInteractiveMapPicker() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final selected = await OsmMapPickerSheet.show(
+      context,
+      initialAddress: _addressController.text.trim(),
+      initialCity: _selectedCity,
+      initialLat: _lat ?? 36.8325,
+      initialLng: _lng ?? 10.1469,
+      onLocationChanged: _applySelectedLocation,
+    );
+    if (!mounted || selected == null) return;
+    _applySelectedLocation(selected);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Adresse mise à jour : ${_addressController.text} (${selected.lat.toStringAsFixed(4)}, ${selected.lng.toStringAsFixed(4)})',
+        ),
+      ),
+    );
+  }
+
+  /// Appelle l'API OpenStreetMap Nominatim pour convertir l'adresse saisie en
+  /// coordonnées GPS réelles, puis ouvre la carte interactive pour visualiser le point.
+  Future<void> _geocodeAddress() async {
+    final query = _addressController.text.trim();
+    if (query.isEmpty) {
+      await _openInteractiveMapPicker();
+      return;
+    }
+    setState(() => _geocoding = true);
+    try {
+      final result = await const NominatimService().geocode('$query, $_selectedCity');
+      if (!mounted) return;
+      if (result != null) {
+        setState(() {
+          _lat = result.lat;
+          _lng = result.lng;
+          if (result.city != null &&
+              MarketplaceController.cities.contains(result.city)) {
+            _selectedCity = result.city!;
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
+    if (mounted) {
+      await _openInteractiveMapPicker();
+    }
+  }
+  /// Sélection d'un vrai fichier PDF via le sélecteur natif (FilePicker).
+  Future<void> _pickRealPdf() async {
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+      if (file != null) {
+        final bytes = file.lengthSync() ?? await file.length() ?? 0;
+        final sizeKb = (bytes / 1024).toStringAsFixed(1);
+        setState(() {
+          _uploadedFileName = file.name;
+          _uploadedFileDetails = 'Fichier réel · $sizeKb Ko';
+          _mediaValidationError = null;
+        });
+      }
+    } catch (e) {
+      debugPrint('FilePicker PDF error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Impossible d\'ouvrir le sélecteur de fichiers. Utilisez l\'option factice.'),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Fichier PDF factice (Démo / Test) pour avancer rapidement dans l'assistant.
+  void _useFakePdf() {
+    final sub = _selectedSubject.toLowerCase().replaceAll(' ', '_');
+    setState(() {
+      _uploadedFileName = 'fiches_${sub}_$_selectedLevel.pdf';
+      _uploadedFileDetails = 'Document PDF factice (Démo · 2.4 Mo)';
+      _mediaValidationError = null;
+    });
+  }
+
+  /// Sélection d'une vraie photo depuis la galerie ou les fichiers.
+  Future<void> _pickRealPhoto() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 85,
+      );
+      if (picked != null) {
+        setState(() {
+          _uploadedPhotos.add(picked.name);
+          _mediaValidationError = null;
+        });
+        return;
+      }
+    } catch (e) {
+      debugPrint('ImagePicker gallery error: $e');
+    }
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.image,
+      );
+      if (file != null) {
+        setState(() {
+          _uploadedPhotos.add(file.name);
+          _mediaValidationError = null;
+        });
+      }
+    } catch (e2) {
+      debugPrint('FilePicker image fallback error: $e2');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Impossible d\'ouvrir la galerie. Utilisez la photo factice.'),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Prise d'une vraie photo via l'appareil photo.
+  Future<void> _takePhoto() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 85,
+      );
+      if (picked != null) {
+        setState(() {
+          _uploadedPhotos.add(picked.name);
+          _mediaValidationError = null;
+        });
+      }
+    } catch (e) {
+      debugPrint('ImagePicker camera error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Appareil photo indisponible. Utilisez la galerie ou la photo factice.'),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Photo factice (Démo / Test) pour avancer rapidement.
+  void _addFakePhoto() {
+    setState(() {
+      _uploadedPhotos.add('apercu_${_uploadedPhotos.length + 1}.jpg');
+      _mediaValidationError = null;
+    });
+  }
+
   void _submitOffer({required OfferStatus status}) {
     // Vérification finale de toutes les étapes avant publication
     for (int s = 1; s <= 3; s++) {
@@ -369,10 +500,9 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
     final linkedCourse = _selectedCourseId == null
         ? null
-        : MarketplaceController.availableCoursesL6.firstWhere(
-            (c) => c['id'] == _selectedCourseId,
-            orElse: () => MarketplaceController.availableCoursesL6.first,
-          );
+        : _linkableCourses
+            .where((c) => c['id'] == _selectedCourseId)
+            .firstOrNull;
 
     final offerId = widget.existingOffer?.id ??
         'offer_${DateTime.now().millisecondsSinceEpoch}';
@@ -410,7 +540,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
           ? '/fichiers/edulink/private/${_uploadedFileName ?? "document.pdf"}'
           : null,
       fileSizeLabel: _selectedType == OfferType.resourceDigital
-          ? 'PDF privé · ${_uploadedFileName ?? "document.pdf"}'
+          ? (_uploadedFileDetails ?? 'PDF privé · ${_uploadedFileName ?? "document.pdf"}')
           : null,
       condition: _selectedType == OfferType.resourcePhysical
           ? _selectedCondition
@@ -426,8 +556,8 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
           ? OfferLocation(
               address: _addressController.text.trim(),
               city: _selectedCity,
-              lat: 36.8325,
-              lng: 10.1469,
+              lat: _lat ?? 36.8325,
+              lng: _lng ?? 10.1469,
             )
           : null,
       courseId: linkedCourse?['id'],
@@ -958,35 +1088,62 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFBFDBFE)),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
-                      Icons.picture_as_pdf_rounded,
-                      color: Color(0xFF2563EB),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _uploadedFileName ?? 'Aucun fichier sélectionné',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.picture_as_pdf_rounded,
+                          color: Color(0xFF2563EB),
+                          size: 26,
                         ),
-                      ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _uploadedFileName ?? 'Aucun fichier sélectionné',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (_uploadedFileDetails != null)
+                                Text(
+                                  _uploadedFileDetails!,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF1D4ED8),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _uploadedFileName =
-                              'fiches_${_selectedSubject.toLowerCase().replaceAll(' ', '_')}_$_selectedLevel.pdf';
-                          _mediaValidationError = null;
-                        });
-                      },
-                      icon: const Icon(Icons.upload_file_rounded, size: 18),
-                      label: const Text('Changer le PDF'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: _pickRealPdf,
+                          icon: const Icon(Icons.file_open_rounded, size: 18),
+                          label: const Text('Parcourir un PDF'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _useFakePdf,
+                          icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                          label: const Text('Changer le PDF'),
+                        ),
+                      ],
                     ),
                   ],
-                ),
+                )
               ),
             ],
 
@@ -1058,15 +1215,19 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   ),
                 ),
                 ActionChip(
-                  avatar: const Icon(Icons.add_a_photo_outlined, size: 16),
+                  avatar: const Icon(Icons.photo_library_outlined, size: 16),
+                  label: const Text('Galerie photo'),
+                  onPressed: _pickRealPhoto,
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.camera_alt_outlined, size: 16),
+                  label: const Text('Appareil photo'),
+                  onPressed: _takePhoto,
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.auto_fix_high_outlined, size: 16),
                   label: const Text('Ajouter une photo Cloudinary'),
-                  onPressed: () {
-                    setState(() {
-                      _uploadedPhotos
-                          .add('apercu_${_uploadedPhotos.length + 1}.jpg');
-                      _mediaValidationError = null;
-                    });
-                  },
+                  onPressed: _addFakePhoto,
                 ),
               ],
             ),
@@ -1327,6 +1488,10 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   // Contrôle de saisie sur l'adresse OpenStreetMap
                   TextFormField(
                     controller: _addressController,
+                    onChanged: (_) {
+                      _lat = null;
+                      _lng = null;
+                    },
                     validator: (val) {
                       final text = val?.trim() ?? '';
                       if (text.isEmpty) {
@@ -1342,21 +1507,27 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                       helperText: 'Résolu via OpenStreetMap Nominatim',
                       suffixIcon: IconButton(
                         tooltip: 'Géocoder avec OpenStreetMap Nominatim',
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Coordonnées Nominatim résolues : lat 36.8325, lng 10.1469',
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.my_location_rounded),
+                        onPressed: _geocoding ? null : _geocodeAddress,
+                        icon: _geocoding
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.my_location_rounded),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  OsmMiniMapPreview(
+                    lat: _lat ?? 36.8325,
+                    lng: _lng ?? 10.1469,
+                    addressLabel: _addressController.text.trim(),
+                    onTapMap: _openInteractiveMapPicker,
+                    onPointSelected: _applySelectedLocation,
                   ),
                 ],
               ),
@@ -1452,7 +1623,24 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
   /// Étape 5 : sélection optionnelle d'un cours académique via [RadioGroup] et [RadioListTile]
   /// afin de faire remonter l'offre dans les recommandations ciblées.
+  ///
+  /// Liaison inter-modules corrigée : la liste provient des cours
+  /// RÉELLEMENT PUBLIÉS du module Cours (`CoursesController.publishedCourses`)
+  /// et non plus de la liste statique historique `availableCoursesL6` — les
+  /// offres pointent donc vers de vrais identifiants de cours Firestore.
+  List<Map<String, String>> get _linkableCourses => CoursesController
+      .instance.publishedCourses
+      .map(
+        (c) => <String, String>{
+          'id': c.id,
+          'title': c.title,
+          'subject': c.subject,
+        },
+      )
+      .toList();
+
   Widget _buildStep5LinkedCourse() {
+    final linkable = _linkableCourses;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1481,6 +1669,19 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 14),
+          if (linkable.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                "Aucun cours publié pour l'instant — publiez un cours dans "
+                "l'onglet Cours pour pouvoir rattacher vos offres.",
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.5,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
           // Groupe radio rattachant optionnellement l'offre à un cours existant (ou `null` pour une offre libre)
           RadioGroup<String?>(
             groupValue: _selectedCourseId,
@@ -1495,7 +1696,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   ),
                 ),
                 const Divider(),
-                ...MarketplaceController.availableCoursesL6.map((course) {
+                ...linkable.map((course) {
                   return RadioListTile<String?>(
                     value: course['id'],
                     title: Text(
@@ -1525,10 +1726,9 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             0.0;
     final linkedCourse = _selectedCourseId == null
         ? null
-        : MarketplaceController.availableCoursesL6.firstWhere(
-            (c) => c['id'] == _selectedCourseId,
-            orElse: () => MarketplaceController.availableCoursesL6.first,
-          );
+        : _linkableCourses
+            .where((c) => c['id'] == _selectedCourseId)
+            .firstOrNull;
 
     return Container(
       padding: const EdgeInsets.all(18),

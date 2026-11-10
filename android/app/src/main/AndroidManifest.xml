@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Requise pour le HTTP en release (Marketplace : Nominatim, calendrier,
+         Jitsi ; Forum : REST) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="edulink"
         android:name="${applicationName}"
@@ -30,6 +33,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller désactivé : corrige des artefacts de rendu constatés
+             sur certains appareils (carte OSM de la Marketplace). -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -40,6 +48,12 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- url_launcher : ouvrir un lien https (salle Jitsi de la
+             Marketplace, ajout au Google Calendar, liens externes). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

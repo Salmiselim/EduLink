@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 
 // Liaison vers la couche Modèles (`Offer`, `AvailabilitySlot`, `MarketplaceOrder`, `OfferReview`, `ChatMessage`)
 import '../models/marketplace_models.dart';
+import '../services/calendar_api_service.dart';
 import '../services/marketplace_firestore_service.dart';
 
 /// Contrôleur central de la Marketplace basé sur [ChangeNotifier].
@@ -104,6 +105,11 @@ class MarketplaceController extends ChangeNotifier {
     _messagesByOrder.clear();
     _favoriteOfferIds.clear();
 
+    for (final s in _subs) {
+      s.cancel();
+    }
+    _subs.clear();
+
     void listen<T>(Stream<T> s, void Function(T) onData) {
       _subs.add(s.listen((v) {
         onData(v);
@@ -111,7 +117,7 @@ class MarketplaceController extends ChangeNotifier {
       }, onError: (Object e) => debugPrint('Flux Firestore : $e')));
     }
 
-    listen<List<Offer>>(remote.watchOffers(), (list) {
+    listen<List<Offer>>(remote.watchOffers(currentUserId), (list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _offers
         ..clear()
@@ -126,17 +132,19 @@ class MarketplaceController extends ChangeNotifier {
         l.sort((a, b) => a.id.compareTo(b.id));
       }
     });
-    listen<List<MarketplaceOrder>>(remote.watchOrders(), (list) {
+    listen<List<MarketplaceOrder>>(remote.watchOrders(currentUserId), (list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _orders
         ..clear()
         ..addAll(list);
+      _syncHasReview();
     });
     listen<List<OfferReview>>(remote.watchReviews(), (list) {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _reviews
         ..clear()
         ..addAll(list);
+      _syncHasReview();
     });
     listen<List<ChatMessage>>(remote.watchMessages(), (list) {
       list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -158,6 +166,16 @@ class MarketplaceController extends ChangeNotifier {
       s.cancel();
     }
     super.dispose();
+  }
+
+  /// Marque hasReview sur les commandes qui ont un avis dans reviews.
+  void _syncHasReview() {
+    final reviewed = _reviews.map((r) => r.id).toSet();
+    for (var i = 0; i < _orders.length; i++) {
+      if (reviewed.contains(_orders[i].id) && !_orders[i].hasReview) {
+        _orders[i] = _orders[i].copyWith(hasReview: true);
+      }
+    }
   }
 
   /// Une erreur réseau ne doit jamais faire planter l'interface.
@@ -380,6 +398,11 @@ class MarketplaceController extends ChangeNotifier {
       status: autoHidden ? OfferStatus.hidden : _offers[idx].status,
     );
     _pushOffer(offerId);
+    _guard(_remote?.saveReport(
+      offerId: offerId,
+      reporterId: currentUserId,
+      reason: reason,
+    ));
     notifyListeners();
     return autoHidden;
   }
@@ -671,7 +694,8 @@ class MarketplaceController extends ChangeNotifier {
       _pushOffer(order.offerId);
     }
 
-    _pushOrder(order.id);
+    // L'acheteur ne peut pas modifier la commande (règles Firestore) : hasReview est
+    // déduit de l'existence du document reviews/{orderId}.
     _guard(_remote?.saveReview(_reviews.first));
     notifyListeners();
   }
@@ -903,79 +927,86 @@ class MarketplaceController extends ChangeNotifier {
       ),
     ]);
 
-    // Créneaux horaires rattachés aux offres de cours particuliers
+    // Créneaux horaires rattachés aux offres de cours particuliers (générés dynamiquement à partir d'aujourd'hui)
+    final day0 = CalendarApiService.formatRelativeDay(0);
+    final day1 = CalendarApiService.formatRelativeDay(1);
+    final day2 = CalendarApiService.formatRelativeDay(2);
+    final day3 = CalendarApiService.formatRelativeDay(3);
+    final day4 = CalendarApiService.formatRelativeDay(4);
+    final day5 = CalendarApiService.formatRelativeDay(5);
+
     _slotsByOffer['offer_2'] = [
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_201',
         offerId: 'offer_2',
         sellerId: 'seller_pr_salma',
-        date: 'Lun 26 Oct 2026',
+        date: day0,
         startTime: '17:00',
         endTime: '18:00',
       ),
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_202',
         offerId: 'offer_2',
         sellerId: 'seller_pr_salma',
-        date: 'Mar 27 Oct 2026',
+        date: day1,
         startTime: '18:30',
         endTime: '19:30',
         isBooked: true,
         orderId: 'ord_demo_1',
       ),
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_203',
         offerId: 'offer_2',
         sellerId: 'seller_pr_salma',
-        date: 'Jeu 29 Oct 2026',
+        date: day3,
         startTime: '15:00',
         endTime: '16:00',
       ),
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_204',
         offerId: 'offer_2',
         sellerId: 'seller_pr_salma',
-        date: 'Sam 31 Oct 2026',
+        date: day5,
         startTime: '10:00',
         endTime: '11:00',
       ),
     ];
 
     _slotsByOffer['offer_5'] = [
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_501',
         offerId: 'offer_5',
         sellerId: 'seller_rami',
-        date: 'Mer 28 Oct 2026',
+        date: day2,
         startTime: '14:00',
         endTime: '15:00',
       ),
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_502',
         offerId: 'offer_5',
         sellerId: 'seller_rami',
-        date: 'Ven 30 Oct 2026',
+        date: day4,
         startTime: '16:00',
         endTime: '17:00',
       ),
     ];
 
     _slotsByOffer['offer_me_2'] = [
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_me_1',
         offerId: 'offer_me_2',
         sellerId: 'user_me',
-        date: 'Mar 27 Oct 2026',
+        date: day1,
         startTime: '16:00',
         endTime: '17:00',
         isBooked: true,
         orderId: 'ord_seller_1',
       ),
-      const AvailabilitySlot(
+      AvailabilitySlot(
         id: 'slot_me_2',
         offerId: 'offer_me_2',
         sellerId: 'user_me',
-        date: 'Jeu 29 Oct 2026',
+        date: day3,
         startTime: '17:30',
         endTime: '18:30',
       ),
@@ -996,7 +1027,7 @@ class MarketplaceController extends ChangeNotifier {
         sellerRole: SellerRole.teacher,
         amount: 35,
         slotId: 'slot_202',
-        slotLabel: 'Mar 27 Oct 2026 · 18:30 - 19:30',
+        slotLabel: '$day1 · 18:30 - 19:30',
         meetingLink: 'https://meet.jit.si/edulink-ord_demo_1',
         status: OrderStatus.accepted,
         note: 'Bonjour Madame, j\'aimerais revoir l\'algorithme de Dijkstra et les arbres équilibrés.',
@@ -1037,7 +1068,7 @@ class MarketplaceController extends ChangeNotifier {
         sellerRole: SellerRole.student,
         amount: 20,
         slotId: 'slot_me_1',
-        slotLabel: 'Mar 27 Oct 2026 · 16:00 - 17:00',
+        slotLabel: '$day1 · 16:00 - 17:00',
         status: OrderStatus.requested,
         note: 'Salut Yasmine ! Est-ce qu\'on pourra traiter le sujet de DS 2025 sur la récurrence ?',
         createdAt: DateTime(2026, 10, 25, 11, 10),
@@ -1112,7 +1143,7 @@ class MarketplaceController extends ChangeNotifier {
         orderId: 'ord_demo_1',
         senderId: 'system',
         senderName: 'Système EduLink',
-        text: 'Créneau verrouillé (Mar 27 Oct 2026 · 18:30 - 19:30).',
+        text: 'Créneau verrouillé ($day1 · 18:30 - 19:30).',
         createdAt: DateTime(2026, 10, 24, 14, 15),
         isSystemMessage: true,
       ),
@@ -1155,7 +1186,7 @@ class MarketplaceController extends ChangeNotifier {
         orderId: 'ord_seller_1',
         senderId: 'system',
         senderName: 'Système EduLink',
-        text: 'Nouvelle demande de réservation pour le créneau Mar 27 Oct 2026 · 16:00 - 17:00.',
+        text: 'Nouvelle demande de réservation pour le créneau $day1 · 16:00 - 17:00.',
         createdAt: DateTime(2026, 10, 25, 11, 10),
         isSystemMessage: true,
       ),
