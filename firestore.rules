@@ -123,7 +123,8 @@ service cloud.firestore {
       allow read: if isSignedIn() && resource.data.studentId == request.auth.uid;
       allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
       allow update: if isSignedIn() && resource.data.studentId == request.auth.uid;
-      allow delete: if false;
+      allow delete: if isTeacher()
+        && get(/databases/$(database)/documents/quizzes/$(resource.data.quizId)).data.teacherId == request.auth.uid;
     }
     match /assignments/{assignmentId} {
       allow read: if isSignedIn();
@@ -136,7 +137,8 @@ service cloud.firestore {
       // Correction : l'enseignant modifie note et feedback, rien d'autre.
       allow update: if isTeacher()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'grade', 'feedback', 'gradedAt']);
-      allow delete: if false;
+      allow delete: if isTeacher()
+        && get(/databases/$(database)/documents/assignments/$(resource.data.assignmentId)).data.teacherId == request.auth.uid;
     }
     match /documents/{documentId} {
       allow read: if isSignedIn();
