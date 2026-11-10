@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// ============================================================================
+// RÈGLES FIREBASE STORAGE — EduLink (module Cours)
+// Déploiement : firebase deploy --only storage
+// ============================================================================
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Documents PDF des chapitres et images de couverture, rangés par cours :
+    // courses/{courseId}/chapters/... et courses/{courseId}/cover...
+    // Lecture : tout utilisateur connecté. Écriture et suppression :
+    // l'enseignant propriétaire du cours (rôle vérifié dans Firestore),
+    // PDF jusqu'à 20 Mo, images jusqu'à 10 Mo.
+    match /courses/{courseId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && firestore.get(/databases/(default)/documents/courses/$(courseId)).data.teacherId == request.auth.uid
+        && request.resource.size < 20 * 1024 * 1024
+        && (request.resource.contentType.matches('application/pdf')
+            || request.resource.contentType.matches('image/.*'));
+      allow delete: if request.auth != null
+        && firestore.get(/databases/(default)/documents/courses/$(courseId)).data.teacherId == request.auth.uid;
+    }
+  }
+}
