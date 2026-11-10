@@ -116,19 +116,25 @@ class EvaluationsLocalService {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // CACHE QUIZ LIST (offline enseignant)
+  // CACHE QUIZ LIST (offline enseignant — isolé par utilisateur)
   // ════════════════════════════════════════════════════════════════════════
 
-  static const String _quizListKey = 'quiz_list';
+  static String _quizListKey(String userId) => 'quiz_list_$userId';
 
-  /// Sauvegarde la liste brute de quiz pour consultation hors-ligne.
-  Future<void> cacheQuizList(List<Map<String, dynamic>> quizzes) async {
-    await _draftBox.put(_quizListKey, jsonEncode(quizzes));
+  /// Sauvegarde la liste brute de quiz pour consultation hors-ligne,
+  /// isolée par [userId] pour éviter tout partage de cache entre comptes.
+  Future<void> cacheQuizList(
+    List<Map<String, dynamic>> quizzes, {
+    String userId = 'default',
+  }) async {
+    if (!Hive.isBoxOpen(_draftBoxName)) return;
+    await _draftBox.put(_quizListKey(userId), jsonEncode(quizzes));
   }
 
-  /// Lit la liste de quiz en cache. Retourne une liste vide si absent.
-  List<Map<String, dynamic>> getCachedQuizList() {
-    final raw = _draftBox.get(_quizListKey);
+  /// Lit la liste de quiz en cache pour [userId]. Retourne une liste vide si absent.
+  List<Map<String, dynamic>> getCachedQuizList({String userId = 'default'}) {
+    if (!Hive.isBoxOpen(_draftBoxName)) return [];
+    final raw = _draftBox.get(_quizListKey(userId));
     if (raw == null) return [];
     return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
   }
@@ -139,8 +145,8 @@ class EvaluationsLocalService {
 
   /// Vide toutes les boîtes de cache (déconnexion ou changement de compte).
   Future<void> clearAll() async {
-    await _upcomingBox.clear();
-    await _gradebookBox.clear();
-    await _draftBox.clear();
+    if (Hive.isBoxOpen(_upcomingBoxName)) await _upcomingBox.clear();
+    if (Hive.isBoxOpen(_gradebookBoxName)) await _gradebookBox.clear();
+    if (Hive.isBoxOpen(_draftBoxName)) await _draftBox.clear();
   }
 }

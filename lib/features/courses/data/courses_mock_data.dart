@@ -49,6 +49,10 @@ class CoursesController extends ChangeNotifier {
   /// sans effet sur la variante mock.
   Future<void> connectCloud() async {}
 
+  /// Réinitialise la session lors d'une déconnexion afin d'éviter toute fuite
+  /// de données (cours, inscriptions, notifications) entre deux comptes.
+  void resetSession() {}
+
   /// Indique si le profil actif dispose des droits enseignant sur l'interface.
   bool get isTeacher => currentUserRole == CourseRole.teacher;
 
@@ -1120,8 +1124,10 @@ class CoursesCloudController extends CoursesController {
       _subscribeToNotifications(user.uid);
       notifyListeners();
 
-      // Un enseignant sans cours reçoit le jeu de démonstration.
-      if (isTeacher && _courses.where((c) => c.teacherId == user.uid).isEmpty) {
+      // Uniquement si la base Firestore est totalement vide (aucun cours
+      // existant), on initialise le jeu de démonstration. On n'écrase JAMAIS
+      // les cours publiés appartenant à un autre enseignant.
+      if (isTeacher && _courses.isEmpty) {
         await seedDemoCourses();
       }
     } catch (e) {
@@ -1129,13 +1135,34 @@ class CoursesCloudController extends CoursesController {
     }
   }
 
-  /// Écrit le jeu de démonstration dans Firestore (une seule fois) : tous les
-  /// cours du seed deviennent la propriété du compte enseignant connecté.
+  @override
+  void resetSession() {
+    _notificationsSub?.cancel();
+    _notificationsSub = null;
+    _cloudReady = false;
+    currentUserId = 'user_me';
+    currentUserName = 'Yasmine Ben Ali';
+    currentUserRole = CourseRole.student;
+    _courses.clear();
+    _chaptersByCourse.clear();
+    _enrollments.clear();
+    _seedInitialData();
+    notifyListeners();
+  }
+
+  /// Écrit le jeu de démonstration dans Firestore uniquement pour les cours
+  /// qui n'appartiennent pas déjà à un autre enseignant réel.
   Future<void> seedDemoCourses() async {
     try {
       final uid = currentUserId;
       final batch = _db.batch();
       for (final course in _courses) {
+        // Sécurité : ne jamais s'approprier le cours d'un autre enseignant.
+        if (course.teacherId.isNotEmpty &&
+            course.teacherId != uid &&
+            !course.teacherId.startsWith('teacher_')) {
+          continue;
+        }
         course.teacherName = currentUserName;
         course.teacherVerified = true;
         batch.set(

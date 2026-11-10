@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/evaluations_models.dart';
 import '../services/evaluations_api_service.dart';
+import '../services/evaluations_firestore_service.dart';
 import '../services/evaluations_local_service.dart';
 
 /// Couche repository du module Évaluations.
@@ -40,6 +41,18 @@ class EvaluationsRepository {
   /// Ouvre les boîtes Hive. Appelé au démarrage dans [EvaluationsController].
   Future<void> init() => _local.init();
 
+  /// Vide les caches Hive et l'identité Firestore en mémoire lors d'une
+  /// déconnexion ou d'un changement de compte.
+  Future<void> clearLocalCache() async {
+    final api = _api;
+    if (api is EvaluationsFirestoreService) {
+      api.clearCachedIdentity();
+    }
+    try {
+      await _local.clearAll();
+    } catch (_) {}
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // QUIZ
   // ════════════════════════════════════════════════════════════════════════
@@ -49,16 +62,17 @@ class EvaluationsRepository {
   Future<List<Quiz>> getQuizzes({String? courseId}) async {
     try {
       final quizzes = await _api.getQuizzes(courseId: courseId);
-      // Sérialisation légère pour le cache (on stocke le JSON brut reçu).
+      // Sérialisation légère pour le cache (isolé par utilisateur).
       await _local.cacheQuizList(
         quizzes.map(_quizToJson).toList(),
+        userId: currentUserId,
       );
       return quizzes;
     } on EvalApiException catch (e) {
       debugPrint('[Repo] getQuizzes hors-ligne : $e');
-      // Fallback cache Hive
+      // Fallback cache Hive (isolé par utilisateur)
       return _local
-          .getCachedQuizList()
+          .getCachedQuizList(userId: currentUserId)
           .map((j) => _api.quizFromJsonPublic(j))
           .toList();
     }
@@ -196,7 +210,7 @@ class EvaluationsRepository {
   Future<List<QuizAttempt>> getVisibleAttempts() async {
     try {
       return await _api.getVisibleAttempts();
-    } on EvalApiException catch (e) {
+    } catch (e) {
       debugPrint('[Repo] getVisibleAttempts indisponible : $e');
       return [];
     }
@@ -206,7 +220,7 @@ class EvaluationsRepository {
   Future<List<Submission>> getVisibleSubmissions() async {
     try {
       return await _api.getVisibleSubmissions();
-    } on EvalApiException catch (e) {
+    } catch (e) {
       debugPrint('[Repo] getVisibleSubmissions indisponible : $e');
       return [];
     }

@@ -33,6 +33,14 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   CollectionReference<Map<String, dynamic>> get _assignments => _db.collection('assignments');
   CollectionReference<Map<String, dynamic>> get _submissions => _db.collection('submissions');
   CollectionReference<Map<String, dynamic>> get _documents => _db.collection('documents');
+  CollectionReference<Map<String, dynamic>> get _enrollments => _db.collection('enrollments');
+
+  /// Réinitialise le cache d'identité lors d'une déconnexion ou d'un changement de compte.
+  void clearCachedIdentity() {
+    _cachedUid = null;
+    _cachedName = 'Utilisateur EduLink';
+    _cachedRole = 'student';
+  }
 
   /// Identité de l'utilisateur connecté (uid, nom, rôle depuis `users/{uid}`).
   Future<void> _ensureIdentity() async {
@@ -49,6 +57,26 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
 
   bool get _isTeacher => _cachedRole == 'teacher';
 
+  /// Filtre excluant les documents marqués comme supprimés (soft-delete).
+  bool _isNotDeleted(Map<String, dynamic> data) => data['isDeleted'] != true;
+
+  /// Cours auxquels l'étudiant connecté est effectivement inscrit (`enrollments`).
+  Future<Set<String>> _enrolledCourseIds() async {
+    if (_cachedUid == null) return const {};
+    try {
+      final snap = await _enrollments
+          .where('studentId', isEqualTo: _cachedUid)
+          .get();
+      return snap.docs
+          .map((d) => d.data()['courseId'] as String?)
+          .whereType<String>()
+          .toSet();
+    } catch (e) {
+      debugPrint('[EvalFirestore] _enrolledCourseIds : $e');
+      return const {};
+    }
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // QUIZ
   // ════════════════════════════════════════════════════════════════════════
@@ -56,12 +84,33 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<List<Quiz>> getQuizzes({String? courseId}) async {
     await _ensureIdentity();
-    Query<Map<String, dynamic>> query = _quizzes;
-    if (courseId != null) query = query.where('courseId', isEqualTo: courseId);
+    if (_isTeacher) {
+      // Isolation enseignant : uniquement les quiz créés par cet enseignant.
+      Query<Map<String, dynamic>> query =
+          _quizzes.where('teacherId', isEqualTo: _cachedUid);
+      if (courseId != null) {
+        query = query.where('courseId', isEqualTo: courseId);
+      }
+      final snap = await query.get();
+      return snap.docs
+          .where((d) => _isNotDeleted(d.data()))
+          .map((d) => quizFromJsonPublic({'id': d.id, ...d.data()}))
+          .toList();
+    }
+    // Mode étudiant : uniquement les quiz publiés des cours où il est inscrit.
+    final enrolledIds = await _enrolledCourseIds();
+    if (enrolledIds.isEmpty) return [];
+    if (courseId != null && !enrolledIds.contains(courseId)) return [];
+    Query<Map<String, dynamic>> query =
+        _quizzes.where('isPublished', isEqualTo: true);
+    if (courseId != null) {
+      query = query.where('courseId', isEqualTo: courseId);
+    }
     final snap = await query.get();
     return snap.docs
+        .where((d) => _isNotDeleted(d.data()))
         .map((d) => quizFromJsonPublic({'id': d.id, ...d.data()}))
-        .where((q) => _isTeacher || q.isPublished)
+        .where((q) => q.isPublished && enrolledIds.contains(q.courseId))
         .toList();
   }
 
@@ -69,8 +118,8 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<Quiz> getQuiz(String quizId) async {
     await _ensureIdentity();
     final doc = await _quizzes.doc(quizId).get();
-    if (!doc.exists) {
-      throw EvalApiException(code: 404, message: 'Quiz introuvable');
+    if (!doc.exists || !_isNotDeleted(doc.data()!)) {
+      throw const EvalApiException(code: 404, message: 'Quiz introuvable');
     }
     return quizFromJsonPublic({'id': doc.id, ...doc.data()!});
   }
@@ -78,7 +127,10 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<Quiz> createQuiz(Map<String, dynamic> body) async {
     await _ensureIdentity();
-    final id = 'quiz_${DateTime.now().millisecondsSinceEpoch}';
+    final rawId = body['id'] as String?;
+    final id = (rawId != null && rawId.isNotEmpty)
+        ? rawId
+        : 'quiz_${DateTime.now().millisecondsSinceEpoch}';
     final courseTitle = await _courseTitle(body['courseId'] as String?);
     final doc = {
       ...body,
@@ -86,6 +138,7 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       'courseTitle': courseTitle,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
+      'isDeleted': false,
       'questions': _questionsWithIds(body['questions'] as List?),
     };
     await _quizzes.doc(id).set(doc);
@@ -95,7 +148,12 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<Quiz> updateQuiz(String quizId, Map<String, dynamic> body) async {
     await _ensureIdentity();
-    final safeBody = {...body};
+    final safeBody = <String, dynamic>{
+      ...body,
+      'teacherId': _cachedUid,
+      'teacherName': _cachedName,
+      'isDeleted': false,
+    };
     safeBody['questions'] =
         _questionsWithIds(safeBody['questions'] as List?);
     if (safeBody['courseId'] != null) {
@@ -110,16 +168,52 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<void> deleteQuiz(String quizId) async {
     await _ensureIdentity();
-    await _quizzes.doc(quizId).delete();
-    // Cascade : tente chaque suppression indépendamment — un échec isolé
-    // n'annule pas les autres (les règles autorisent l'enseignant propriétaire).
-    final attempts = await _attempts.where('quizId', isEqualTo: quizId).get();
-    for (final d in attempts.docs) {
-      try {
-        await d.reference.delete();
-      } catch (e) {
-        debugPrint('[EvalFirestore] deleteQuiz tentative ${d.id} : $e');
+    final quizDoc = await _quizzes.doc(quizId).get();
+    if (!quizDoc.exists) return;
+    if (quizDoc.data()?['teacherId'] != _cachedUid) {
+      throw const EvalApiException(
+        code: 403,
+        message: 'Vous ne pouvez supprimer que vos propres quiz.',
+      );
+    }
+    // 1. Cascade sur les tentatives AVANT de supprimer le parent (les règles
+    //    Firestore vérifient `get(.../quizzes/$(quizId)).data.teacherId`).
+    try {
+      final attempts =
+          await _attempts.where('quizId', isEqualTo: quizId).get();
+      for (final d in attempts.docs) {
+        try {
+          await d.reference.delete();
+        } catch (e) {
+          debugPrint('[EvalFirestore] deleteQuiz tentative ${d.id} : $e');
+        }
       }
+    } catch (e) {
+      debugPrint('[EvalFirestore] deleteQuiz lecture tentatives : $e');
+    }
+    // Nettoyage des miroirs éventuels dans `submissions`.
+    try {
+      final mirrors =
+          await _submissions.where('quizId', isEqualTo: quizId).get();
+      for (final d in mirrors.docs) {
+        try {
+          await d.reference.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 2. Suppression du quiz : tente d'abord `.delete()` physique, puis
+    //    bascule sur un soft-delete (`isDeleted: true`) si la règle Firestore
+    //    `allow write: if request.resource.data.teacherId == request.auth.uid`
+    //    bloque `delete` (car `request.resource` est null lors d'un delete).
+    try {
+      await _quizzes.doc(quizId).delete();
+    } catch (_) {
+      await _quizzes.doc(quizId).update({
+        'isDeleted': true,
+        'isPublished': false,
+        'teacherId': _cachedUid,
+      });
     }
   }
 
@@ -128,10 +222,13 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     await _ensureIdentity();
     final doc = await _quizzes.doc(quizId).get();
     if (!doc.exists) {
-      throw EvalApiException(code: 404, message: 'Quiz introuvable');
+      throw const EvalApiException(code: 404, message: 'Quiz introuvable');
     }
     final current = (doc.data()!['isPublished'] as bool?) ?? false;
-    await _quizzes.doc(quizId).update({'isPublished': !current});
+    await _quizzes.doc(quizId).update({
+      'isPublished': !current,
+      'teacherId': _cachedUid,
+    });
     return quizFromJsonPublic({'id': quizId, ...doc.data()!, 'isPublished': !current});
   }
 
@@ -143,9 +240,12 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     await _ensureIdentity();
     final doc = await _quizzes.doc(quizId).get();
     if (!doc.exists) {
-      throw EvalApiException(code: 404, message: 'Quiz introuvable');
+      throw const EvalApiException(code: 404, message: 'Quiz introuvable');
     }
-    await _quizzes.doc(quizId).update({'isPublished': published});
+    await _quizzes.doc(quizId).update({
+      'isPublished': published,
+      'teacherId': _cachedUid,
+    });
     return quizFromJsonPublic({'id': quizId, ...doc.data()!, 'isPublished': published});
   }
 
@@ -158,21 +258,48 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       final snap =
           await _attempts.where('studentId', isEqualTo: _cachedUid).get();
       return snap.docs
+          .where((d) => _isNotDeleted(d.data()))
           .map((d) => _attemptFromDoc({'id': d.id, ...d.data()}))
           .toList();
     }
     final mine =
         await _quizzes.where('teacherId', isEqualTo: _cachedUid).get();
-    final ids = mine.docs.map((d) => d.id).toList();
+    final ids = mine.docs
+        .where((d) => _isNotDeleted(d.data()))
+        .map((d) => d.id)
+        .toList();
     if (ids.isEmpty) return [];
     final out = <QuizAttempt>[];
     for (var i = 0; i < ids.length; i += 10) {
-      final snap = await _attempts
-          .where('quizId', whereIn: ids.sublist(i, i + 10))
-          .get();
-      out.addAll(
-        snap.docs.map((d) => _attemptFromDoc({'id': d.id, ...d.data()})),
-      );
+      final chunk = ids.skip(i).take(10).toList();
+      if (chunk.isEmpty) continue;
+      try {
+        final snap = await _attempts.where('quizId', whereIn: chunk).get();
+        out.addAll(
+          snap.docs
+              .where((d) => _isNotDeleted(d.data()))
+              .map((d) => _attemptFromDoc({'id': d.id, ...d.data()})),
+        );
+      } catch (_) {
+        // Repli sur les miroirs de tentatives dans `submissions` lorsque
+        // la règle `quiz_attempts` restreint la lecture à `studentId`.
+        try {
+          final mirrorSnap =
+              await _submissions.where('quizId', whereIn: chunk).get();
+          out.addAll(
+            mirrorSnap.docs
+                .where((d) =>
+                    _isNotDeleted(d.data()) &&
+                    d.data()['recordType'] == 'quiz_attempt')
+                .map((d) => _attemptFromDoc({
+                      'id': (d.data()['attemptId'] as String?) ?? d.id,
+                      ...d.data(),
+                    })),
+          );
+        } catch (e) {
+          debugPrint('[EvalFirestore] getVisibleAttempts fallback : $e');
+        }
+      }
     }
     return out;
   }
@@ -186,20 +313,32 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       final snap =
           await _submissions.where('studentId', isEqualTo: _cachedUid).get();
       return snap.docs
+          .where((d) =>
+              _isNotDeleted(d.data()) &&
+              d.data()['recordType'] != 'quiz_attempt' &&
+              d.data()['assignmentId'] != null)
           .map((d) => _submissionFromDoc({'id': d.id, ...d.data()}))
           .toList();
     }
     final mine =
         await _assignments.where('teacherId', isEqualTo: _cachedUid).get();
-    final ids = mine.docs.map((d) => d.id).toList();
+    final ids = mine.docs
+        .where((d) => _isNotDeleted(d.data()))
+        .map((d) => d.id)
+        .toList();
     if (ids.isEmpty) return [];
     final out = <Submission>[];
     for (var i = 0; i < ids.length; i += 10) {
-      final snap = await _submissions
-          .where('assignmentId', whereIn: ids.sublist(i, i + 10))
-          .get();
+      final chunk = ids.skip(i).take(10).toList();
+      if (chunk.isEmpty) continue;
+      final snap =
+          await _submissions.where('assignmentId', whereIn: chunk).get();
       out.addAll(
-        snap.docs.map((d) => _submissionFromDoc({'id': d.id, ...d.data()})),
+        snap.docs
+            .where((d) =>
+                _isNotDeleted(d.data()) &&
+                d.data()['recordType'] != 'quiz_attempt')
+            .map((d) => _submissionFromDoc({'id': d.id, ...d.data()})),
       );
     }
     return out;
@@ -289,6 +428,16 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       submittedAt: DateTime.now(),
     );
     await _attempts.doc(attemptId).update(_attemptMap(graded));
+    // Miroir dans `submissions` (`recordType: 'quiz_attempt'`) pour permettre
+    // à l'enseignant de lire les résultats et le carnet même si la règle
+    // Firestore de `quiz_attempts` est restreinte à `studentId`.
+    try {
+      await _submissions.doc('quizatt_$attemptId').set({
+        ..._attemptMap(graded),
+        'attemptId': attemptId,
+        'recordType': 'quiz_attempt',
+      });
+    } catch (_) {}
     return graded;
   }
 
@@ -296,11 +445,30 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<Map<String, dynamic>> getQuizResults(String quizId) async {
     await _ensureIdentity();
-    final attempts = await _attempts.where('quizId', isEqualTo: quizId).get();
-    final submitted = attempts.docs
-        .map((d) => _attemptFromDoc({'id': d.id, ...d.data()}))
-        .where((a) => a.isSubmitted)
-        .toList();
+    List<QuizAttempt> submitted = [];
+    try {
+      final attempts = await _attempts.where('quizId', isEqualTo: quizId).get();
+      submitted = attempts.docs
+          .where((d) => _isNotDeleted(d.data()))
+          .map((d) => _attemptFromDoc({'id': d.id, ...d.data()}))
+          .where((a) => a.isSubmitted)
+          .toList();
+    } catch (_) {
+      try {
+        final mirrors =
+            await _submissions.where('quizId', isEqualTo: quizId).get();
+        submitted = mirrors.docs
+            .where((d) =>
+                _isNotDeleted(d.data()) &&
+                d.data()['recordType'] == 'quiz_attempt')
+            .map((d) => _attemptFromDoc({
+                  'id': (d.data()['attemptId'] as String?) ?? d.id,
+                  ...d.data(),
+                }))
+            .where((a) => a.isSubmitted)
+            .toList();
+      } catch (_) {}
+    }
     final scores = submitted.map((a) => a.score ?? 0.0).toList();
     final average = scores.isEmpty
         ? 0.0
@@ -320,11 +488,32 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<List<Assignment>> getAssignments({String? courseId}) async {
     await _ensureIdentity();
+    if (_isTeacher) {
+      // Isolation enseignant : uniquement les devoirs créés par cet enseignant.
+      Query<Map<String, dynamic>> query =
+          _assignments.where('teacherId', isEqualTo: _cachedUid);
+      if (courseId != null) {
+        query = query.where('courseId', isEqualTo: courseId);
+      }
+      final snap = await query.get();
+      return snap.docs
+          .where((d) => _isNotDeleted(d.data()))
+          .map((d) => _assignmentFromDoc({'id': d.id, ...d.data()}))
+          .toList();
+    }
+    // Mode étudiant : uniquement les devoirs des cours auxquels il est inscrit.
+    final enrolledIds = await _enrolledCourseIds();
+    if (enrolledIds.isEmpty) return [];
+    if (courseId != null && !enrolledIds.contains(courseId)) return [];
     Query<Map<String, dynamic>> query = _assignments;
-    if (courseId != null) query = query.where('courseId', isEqualTo: courseId);
+    if (courseId != null) {
+      query = query.where('courseId', isEqualTo: courseId);
+    }
     final snap = await query.get();
     return snap.docs
+        .where((d) => _isNotDeleted(d.data()))
         .map((d) => _assignmentFromDoc({'id': d.id, ...d.data()}))
+        .where((a) => enrolledIds.contains(a.courseId))
         .toList();
   }
 
@@ -332,8 +521,8 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<Assignment> getAssignment(String assignmentId) async {
     await _ensureIdentity();
     final doc = await _assignments.doc(assignmentId).get();
-    if (!doc.exists) {
-      throw EvalApiException(code: 404, message: 'Devoir introuvable');
+    if (!doc.exists || !_isNotDeleted(doc.data()!)) {
+      throw const EvalApiException(code: 404, message: 'Devoir introuvable');
     }
     return _assignmentFromDoc({'id': assignmentId, ...doc.data()!});
   }
@@ -341,7 +530,10 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<Assignment> createAssignment(Map<String, dynamic> body) async {
     await _ensureIdentity();
-    final id = 'assign_${DateTime.now().millisecondsSinceEpoch}';
+    final rawId = body['id'] as String?;
+    final id = (rawId != null && rawId.isNotEmpty)
+        ? rawId
+        : 'assign_${DateTime.now().millisecondsSinceEpoch}';
     final courseTitle = await _courseTitle(body['courseId'] as String?);
     final doc = {
       ...body,
@@ -349,6 +541,7 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       'courseTitle': courseTitle,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
+      'isDeleted': false,
     };
     await _assignments.doc(id).set(doc);
     return _assignmentFromDoc(doc);
@@ -360,7 +553,12 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     Map<String, dynamic> body,
   ) async {
     await _ensureIdentity();
-    final enriched = {...body};
+    final enriched = <String, dynamic>{
+      ...body,
+      'teacherId': _cachedUid,
+      'teacherName': _cachedName,
+      'isDeleted': false,
+    };
     if (enriched['courseId'] != null) {
       enriched['courseTitle'] =
           await _courseTitle(enriched['courseId'] as String?);
@@ -373,16 +571,37 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<void> deleteAssignment(String assignmentId) async {
     await _ensureIdentity();
-    await _assignments.doc(assignmentId).delete();
-    // Cascade résiliente (voir deleteQuiz).
-    final subs =
-        await _submissions.where('assignmentId', isEqualTo: assignmentId).get();
-    for (final d in subs.docs) {
-      try {
-        await d.reference.delete();
-      } catch (e) {
-        debugPrint('[EvalFirestore] deleteAssignment copie ${d.id} : $e');
+    final asgDoc = await _assignments.doc(assignmentId).get();
+    if (!asgDoc.exists) return;
+    if (asgDoc.data()?['teacherId'] != _cachedUid) {
+      throw const EvalApiException(
+        code: 403,
+        message: 'Vous ne pouvez supprimer que vos propres devoirs.',
+      );
+    }
+    // 1. Cascade sur les copies AVANT la suppression du devoir parent.
+    try {
+      final subs = await _submissions
+          .where('assignmentId', isEqualTo: assignmentId)
+          .get();
+      for (final d in subs.docs) {
+        try {
+          await d.reference.delete();
+        } catch (e) {
+          debugPrint('[EvalFirestore] deleteAssignment copie ${d.id} : $e');
+        }
       }
+    } catch (e) {
+      debugPrint('[EvalFirestore] deleteAssignment lecture copies : $e');
+    }
+    // 2. Suppression physique avec repli soft-delete (`isDeleted: true`).
+    try {
+      await _assignments.doc(assignmentId).delete();
+    } catch (_) {
+      await _assignments.doc(assignmentId).update({
+        'isDeleted': true,
+        'teacherId': _cachedUid,
+      });
     }
   }
 
@@ -394,8 +613,8 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   }) async {
     await _ensureIdentity();
     final assignmentDoc = await _assignments.doc(assignmentId).get();
-    if (!assignmentDoc.exists) {
-      throw EvalApiException(code: 404, message: 'Devoir introuvable');
+    if (!assignmentDoc.exists || !_isNotDeleted(assignmentDoc.data()!)) {
+      throw const EvalApiException(code: 404, message: 'Devoir introuvable');
     }
     final assignment = _assignmentFromDoc({'id': assignmentId, ...assignmentDoc.data()!});
     final now = DateTime.now();
@@ -423,15 +642,20 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   Future<List<Submission>> getSubmissions(String assignmentId) async {
     await _ensureIdentity();
     final snap = await _submissions.where('assignmentId', isEqualTo: assignmentId).get();
-    return snap.docs.map((d) => _submissionFromDoc({'id': d.id, ...d.data()})).toList();
+    return snap.docs
+        .where((d) =>
+            _isNotDeleted(d.data()) &&
+            d.data()['recordType'] != 'quiz_attempt')
+        .map((d) => _submissionFromDoc({'id': d.id, ...d.data()}))
+        .toList();
   }
 
   @override
   Future<Submission> getSubmission(String submissionId) async {
     await _ensureIdentity();
     final doc = await _submissions.doc(submissionId).get();
-    if (!doc.exists) {
-      throw EvalApiException(code: 404, message: 'Copie introuvable');
+    if (!doc.exists || !_isNotDeleted(doc.data()!)) {
+      throw const EvalApiException(code: 404, message: 'Copie introuvable');
     }
     return _submissionFromDoc({'id': submissionId, ...doc.data()!});
   }
@@ -460,26 +684,45 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<List<CourseDocument>> getDocuments({String? courseId}) async {
     await _ensureIdentity();
+    if (_isTeacher) {
+      // Isolation enseignant : uniquement les documents créés par cet enseignant.
+      Query<Map<String, dynamic>> query =
+          _documents.where('teacherId', isEqualTo: _cachedUid);
+      if (courseId != null) {
+        query = query.where('courseId', isEqualTo: courseId);
+      }
+      final snap = await query.get();
+      return snap.docs
+          .where((d) => _isNotDeleted(d.data()))
+          .map((d) => _documentFromDoc({'id': d.id, ...d.data()}))
+          .toList();
+    }
+    // Mode étudiant : uniquement les documents des cours auxquels il est inscrit
+    // et dont la date de visibilité est atteinte.
+    final enrolledIds = await _enrolledCourseIds();
+    if (enrolledIds.isEmpty) return [];
+    if (courseId != null && !enrolledIds.contains(courseId)) return [];
     Query<Map<String, dynamic>> query = _documents;
     if (courseId != null) {
       query = query.where('courseId', isEqualTo: courseId);
     }
     final snap = await query.get();
-    final docs = snap.docs
+    final now = DateTime.now();
+    return snap.docs
+        .where((d) => _isNotDeleted(d.data()))
         .map((d) => _documentFromDoc({'id': d.id, ...d.data()}))
+        .where((d) =>
+            enrolledIds.contains(d.courseId) && !d.visibleFrom.isAfter(now))
         .toList();
-    // Étudiant : seuls les documents dont la date de visibilité est passée.
-    if (!_isTeacher) {
-      final now = DateTime.now();
-      return docs.where((d) => !d.visibleFrom.isAfter(now)).toList();
-    }
-    return docs;
   }
 
   @override
   Future<CourseDocument> createDocument(Map<String, dynamic> body) async {
     await _ensureIdentity();
-    final id = 'doc_${DateTime.now().millisecondsSinceEpoch}';
+    final rawId = body['id'] as String?;
+    final id = (rawId != null && rawId.isNotEmpty)
+        ? rawId
+        : 'doc_${DateTime.now().millisecondsSinceEpoch}';
     final courseTitle = await _courseTitle(body['courseId'] as String?);
     final doc = {
       ...body,
@@ -487,6 +730,7 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       'courseTitle': courseTitle,
       'teacherId': _cachedUid,
       'teacherName': _cachedName,
+      'isDeleted': false,
     };
     await _documents.doc(id).set(doc);
     return _documentFromDoc(doc);
@@ -498,7 +742,12 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     Map<String, dynamic> body,
   ) async {
     await _ensureIdentity();
-    final enriched = {...body};
+    final enriched = <String, dynamic>{...body};
+    if (_isTeacher) {
+      enriched['teacherId'] = _cachedUid;
+      enriched['teacherName'] = _cachedName;
+      enriched['isDeleted'] = false;
+    }
     if (enriched['courseId'] != null) {
       enriched['courseTitle'] =
           await _courseTitle(enriched['courseId'] as String?);
@@ -511,7 +760,22 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   @override
   Future<void> deleteDocument(String documentId) async {
     await _ensureIdentity();
-    await _documents.doc(documentId).delete();
+    final docSnap = await _documents.doc(documentId).get();
+    if (!docSnap.exists) return;
+    if (docSnap.data()?['teacherId'] != _cachedUid) {
+      throw const EvalApiException(
+        code: 403,
+        message: 'Vous ne pouvez supprimer que vos propres documents.',
+      );
+    }
+    try {
+      await _documents.doc(documentId).delete();
+    } catch (_) {
+      await _documents.doc(documentId).update({
+        'isDeleted': true,
+        'teacherId': _cachedUid,
+      });
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -527,9 +791,44 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
 
     final quizzes = await _quizzes.where('courseId', isEqualTo: courseId).get();
     for (final q in quizzes.docs) {
-      final attempts = await _attempts.where('quizId', isEqualTo: q.id).get();
-      for (final a in attempts.docs) {
-        final attempt = _attemptFromDoc({'id': a.id, ...a.data()});
+      if (!_isNotDeleted(q.data())) continue;
+      if (_isTeacher && q.data()['teacherId'] != _cachedUid) continue;
+      List<QuizAttempt> quizAttempts = [];
+      if (!_isTeacher) {
+        try {
+          final snap = await _attempts
+              .where('quizId', isEqualTo: q.id)
+              .where('studentId', isEqualTo: _cachedUid)
+              .get();
+          quizAttempts = snap.docs
+              .where((d) => _isNotDeleted(d.data()))
+              .map((d) => _attemptFromDoc({'id': d.id, ...d.data()}))
+              .toList();
+        } catch (_) {}
+      } else {
+        try {
+          final snap = await _attempts.where('quizId', isEqualTo: q.id).get();
+          quizAttempts = snap.docs
+              .where((d) => _isNotDeleted(d.data()))
+              .map((d) => _attemptFromDoc({'id': d.id, ...d.data()}))
+              .toList();
+        } catch (_) {
+          try {
+            final mirrors =
+                await _submissions.where('quizId', isEqualTo: q.id).get();
+            quizAttempts = mirrors.docs
+                .where((d) =>
+                    _isNotDeleted(d.data()) &&
+                    d.data()['recordType'] == 'quiz_attempt')
+                .map((d) => _attemptFromDoc({
+                      'id': (d.data()['attemptId'] as String?) ?? d.id,
+                      ...d.data(),
+                    }))
+                .toList();
+          } catch (_) {}
+        }
+      }
+      for (final attempt in quizAttempts) {
         if (!attempt.isSubmitted) continue;
         rows.add(GradebookRow(
           studentId: attempt.studentId,
@@ -545,36 +844,62 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
       }
     }
 
-    final assignments = await _assignments.where('courseId', isEqualTo: courseId).get();
+    final assignments =
+        await _assignments.where('courseId', isEqualTo: courseId).get();
     for (final a in assignments.docs) {
-      final subs = await _submissions.where('assignmentId', isEqualTo: a.id).get();
-      for (final s in subs.docs) {
-        final submission = _submissionFromDoc({'id': s.id, ...s.data()});
-        rows.add(GradebookRow(
-          studentId: submission.studentId,
-          studentName: submission.studentName,
-          courseTitle: (a.data()['courseTitle'] as String?) ?? '',
-          itemType: 'devoir',
-          itemTitle: (a.data()['title'] as String?) ?? 'Devoir',
-          grade: submission.grade,
-          maxGrade: (a.data()['maxGrade'] as num? ?? 20).toDouble(),
-          status: submission.status == SubmissionStatus.graded ? 'graded' : 'pending',
-          datedAt: submission.submittedAt,
-        ));
-      }
+      if (!_isNotDeleted(a.data())) continue;
+      if (_isTeacher && a.data()['teacherId'] != _cachedUid) continue;
+      try {
+        Query<Map<String, dynamic>> subQuery =
+            _submissions.where('assignmentId', isEqualTo: a.id);
+        if (!_isTeacher) {
+          subQuery = subQuery.where('studentId', isEqualTo: _cachedUid);
+        }
+        final subs = await subQuery.get();
+        for (final s in subs.docs) {
+          if (!_isNotDeleted(s.data()) ||
+              s.data()['recordType'] == 'quiz_attempt') {
+            continue;
+          }
+          final submission = _submissionFromDoc({'id': s.id, ...s.data()});
+          rows.add(GradebookRow(
+            studentId: submission.studentId,
+            studentName: submission.studentName,
+            courseTitle: (a.data()['courseTitle'] as String?) ?? '',
+            itemType: 'devoir',
+            itemTitle: (a.data()['title'] as String?) ?? 'Devoir',
+            grade: submission.grade,
+            maxGrade: (a.data()['maxGrade'] as num? ?? 20).toDouble(),
+            status: submission.status == SubmissionStatus.graded
+                ? 'graded'
+                : 'pending',
+            datedAt: submission.submittedAt,
+          ));
+        }
+      } catch (_) {}
     }
     return rows;
   }
 
-  /// Évaluations à venir : quiz et devoirs dont l'échéance n'est pas passée.
+  /// Évaluations à venir : quiz et devoirs dont l'échéance n'est pas passée,
+  /// filtrés par enseignant propriétaire ou cours inscrits de l'étudiant.
   @override
   Future<List<Map<String, dynamic>>> getUpcoming() async {
     await _ensureIdentity();
     final now = DateTime.now();
     final items = <Map<String, dynamic>>[];
-    final quizzes = await _quizzes.where('isPublished', isEqualTo: true).get();
+    final enrolledIds = _isTeacher ? const <String>{} : await _enrolledCourseIds();
+    if (!_isTeacher && enrolledIds.isEmpty) return [];
+
+    final quizzes = _isTeacher
+        ? await _quizzes.where('teacherId', isEqualTo: _cachedUid).get()
+        : await _quizzes.where('isPublished', isEqualTo: true).get();
     for (final q in quizzes.docs) {
-      final due = DateTime.tryParse((q.data()['dueDate'] as String?) ?? '') ?? now;
+      if (!_isNotDeleted(q.data())) continue;
+      final courseId = (q.data()['courseId'] as String?) ?? '';
+      if (!_isTeacher && !enrolledIds.contains(courseId)) continue;
+      final due =
+          DateTime.tryParse((q.data()['dueDate'] as String?) ?? '') ?? now;
       if (due.isAfter(now)) {
         items.add({
           'type': 'quiz',
@@ -584,9 +909,15 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
         });
       }
     }
-    final assignments = await _assignments.get();
+    final assignments = _isTeacher
+        ? await _assignments.where('teacherId', isEqualTo: _cachedUid).get()
+        : await _assignments.get();
     for (final a in assignments.docs) {
-      final due = DateTime.tryParse((a.data()['dueDate'] as String?) ?? '') ?? now;
+      if (!_isNotDeleted(a.data())) continue;
+      final courseId = (a.data()['courseId'] as String?) ?? '';
+      if (!_isTeacher && !enrolledIds.contains(courseId)) continue;
+      final due =
+          DateTime.tryParse((a.data()['dueDate'] as String?) ?? '') ?? now;
       if (due.isAfter(now)) {
         items.add({
           'type': 'devoir',
@@ -596,7 +927,9 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
         });
       }
     }
-    items.sort((a, b) => (a['dueDate'] as String).compareTo(b['dueDate'] as String));
+    items.sort(
+      (a, b) => (a['dueDate'] as String).compareTo(b['dueDate'] as String),
+    );
     return items;
   }
 

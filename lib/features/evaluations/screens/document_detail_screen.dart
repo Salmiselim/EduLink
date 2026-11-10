@@ -94,15 +94,15 @@ class DocumentDetailScreen extends StatelessWidget {
                       ),
                     );
                     if (ok != true || !context.mounted) return;
+                    final messenger = ScaffoldMessenger.of(context);
+                    Navigator.pop(context);
                     await controller.deleteDocument(doc.id);
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       const SnackBar(
                         duration: Duration(seconds: 2),
                         content: Text('Document supprimé.'),
                       ),
                     );
-                    Navigator.pop(context);
                   },
                   icon: const Icon(
                     Icons.delete_outline_rounded,

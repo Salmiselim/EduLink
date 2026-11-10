@@ -43,6 +43,8 @@ class EvaluationsAiService {
     'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
   ];
 
   final Dio _dio = Dio(
@@ -139,8 +141,8 @@ class EvaluationsAiService {
         await Future<void>.delayed(const Duration(seconds: 3));
         return _post(prompt, modelIndex: modelIndex, attempt: attempt + 1);
       }
-      if (status == 429) {
-        // Quota journalier du modèle épuisé : modèle suivant.
+      if (status == 429 || status == 404 || status == 503 || status == 500) {
+        // Quota journalier épuisé ou modèle indisponible : modèle suivant.
         return _post(prompt, modelIndex: modelIndex + 1);
       }
       rethrow;

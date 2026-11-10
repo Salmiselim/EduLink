@@ -72,11 +72,19 @@ Future<void> _initFirebase() async {
       // Ré-enregistre le jeton FCM pour le compte qui vient de se connecter.
       unawaited(CoursesPushService.refreshForCurrentUser());
     };
+    AuthService.onSignedOut = () async {
+      CoursesController.instance.resetSession();
+      await EvaluationsController.instance.resetSession();
+    };
     // Connexion aux collections Firestore en arrière-plan (amélioration QA)
     // pour ne jamais bloquer l'affichage initial ; les erreurs réseau sont
     // gérées à l'intérieur de chaque contrôleur (repli démonstration).
     unawaited(MarketplaceController.instance.connectFirestore());
-    unawaited(CoursesController.instance.connectCloud());
+    unawaited(
+      CoursesController.instance
+          .connectCloud()
+          .then((_) => EvaluationsController.instance.connectCloud()),
+    );
   } catch (e) {
     debugPrint('Firebase non configuré, mode hors Firestore : $e');
   }
@@ -709,34 +717,37 @@ class EvaluationsRoot extends StatelessWidget {
               ],
             ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ActionChip(
-                  tooltip: 'Changer de rôle simulé (RoleAware)',
-                  onPressed: controller.toggleRole,
-                  backgroundColor:
-                      isTeacher ? EduColors.infoBg : EduColors.neutralBg,
-                  avatar: Icon(
-                    isTeacher
-                        ? Icons.verified_rounded
-                        : Icons.school_outlined,
-                    size: 16,
-                    color: isTeacher
-                        ? const Color(0xFF1D4ED8)
-                        : const Color(0xFF475569),
-                  ),
-                  label: Text(
-                    isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+              // Bascule de rôle simulé — visible uniquement en mode démonstration
+              // (en mode réel, le rôle vient du compte Firebase).
+              if (controller.isDemoMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    tooltip: 'Changer de rôle simulé (RoleAware)',
+                    onPressed: controller.toggleRole,
+                    backgroundColor:
+                        isTeacher ? EduColors.infoBg : EduColors.neutralBg,
+                    avatar: Icon(
+                      isTeacher
+                          ? Icons.verified_rounded
+                          : Icons.school_outlined,
+                      size: 16,
                       color: isTeacher
                           ? const Color(0xFF1D4ED8)
-                          : const Color(0xFF334155),
+                          : const Color(0xFF475569),
+                    ),
+                    label: Text(
+                      isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isTeacher
+                            ? const Color(0xFF1D4ED8)
+                            : const Color(0xFF334155),
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: 4),
             ],
           ),

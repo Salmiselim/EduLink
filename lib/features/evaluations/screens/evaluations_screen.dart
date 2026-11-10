@@ -146,50 +146,54 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
           item.courseTitle.toLowerCase().contains(q);
     });
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: [
-        _searchBar(),
-        // Barre de filtres rapides par type d'évaluation disposée dans un Wrap adaptatif.
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Tout'),
-                selected: _typeFilter == 'all',
-                onSelected: (_) => setState(() => _typeFilter = 'all'),
-              ),
-              ChoiceChip(
-                label: const Text('Quiz'),
-                selected: _typeFilter == 'quiz',
-                onSelected: (_) => setState(() => _typeFilter = 'quiz'),
-              ),
-              ChoiceChip(
-                label: const Text('Devoirs'),
-                selected: _typeFilter == 'assignment',
-                onSelected: (_) => setState(() => _typeFilter = 'assignment'),
-              ),
-            ],
+    return RefreshIndicator(
+      onRefresh: _controller.loadAll,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          _searchBar(),
+          // Barre de filtres rapides par type d'évaluation disposée dans un Wrap adaptatif.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Tout'),
+                  selected: _typeFilter == 'all',
+                  onSelected: (_) => setState(() => _typeFilter = 'all'),
+                ),
+                ChoiceChip(
+                  label: const Text('Quiz'),
+                  selected: _typeFilter == 'quiz',
+                  onSelected: (_) => setState(() => _typeFilter = 'quiz'),
+                ),
+                ChoiceChip(
+                  label: const Text('Devoirs'),
+                  selected: _typeFilter == 'assignment',
+                  onSelected: (_) => setState(() => _typeFilter = 'assignment'),
+                ),
+              ],
+            ),
           ),
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: SectionHeader(
-            title: 'Évaluations à venir',
-            subtitle: 'GET /evaluations/upcoming',
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: SectionHeader(
+              title: 'Évaluations à venir',
+              subtitle: 'GET /evaluations/upcoming',
+            ),
           ),
-        ),
-        if (quizzes.isEmpty && assignments.isEmpty)
-          const EmptyState(
-            icon: Icons.event_available_rounded,
-            title: 'Rien à faire',
-            subtitle: 'Les quiz et devoirs de vos cours inscrits apparaîtront ici.',
-          ),
-        ...quizzes.map(_quizTile),
-        ...assignments.map(_assignmentTile),
-      ],
+          if (quizzes.isEmpty && assignments.isEmpty)
+            const EmptyState(
+              icon: Icons.event_available_rounded,
+              title: 'Rien à faire',
+              subtitle: 'Les quiz et devoirs de vos cours inscrits apparaîtront ici.',
+            ),
+          ...quizzes.map(_quizTile),
+          ...assignments.map(_assignmentTile),
+        ],
+      ),
     );
   }
 
@@ -348,6 +352,24 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
               '${sub == null ? '' : (sub.isLate ? ' · En retard' : ' · Déposé')}',
               style: const TextStyle(fontSize: 12.5, color: EduColors.muted),
             ),
+            if (sub?.feedback != null && sub!.feedback!.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: EduColors.primary.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Commentaire enseignant : ${sub.feedback}',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: EduColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             FilledButton(
               onPressed: canSubmit
@@ -361,7 +383,11 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                       );
                     }
                   : null,
-              child: Text(sub == null ? 'Déposer' : 'Modifier le dépôt'),
+              child: Text(
+                sub == null
+                    ? 'Déposer'
+                    : (sub.grade != null ? 'Copie corrigée' : 'Déjà déposé'),
+              ),
             ),
           ],
         ),
@@ -373,208 +399,252 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   /// consulter les statistiques ou supprimer avec confirmation les quiz et les devoirs.
   Widget _teacherEvaluations() {
     final q = _search.text.trim().toLowerCase();
-    final quizzes = _controller.quizzes.where((item) {
+    final quizzes = _controller.teacherQuizzes.where((item) {
       if (_typeFilter == 'assignment') return false;
-      return q.isEmpty || item.title.toLowerCase().contains(q);
-    });
-    final assignments = _controller.assignments.where((item) {
+      if (_courseFilter != null && item.courseId != _courseFilter) return false;
+      return q.isEmpty ||
+          item.title.toLowerCase().contains(q) ||
+          item.courseTitle.toLowerCase().contains(q);
+    }).toList();
+    final assignments = _controller.teacherAssignments.where((item) {
       if (_typeFilter == 'quiz') return false;
-      return q.isEmpty || item.title.toLowerCase().contains(q);
-    });
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 88),
-      children: [
-        _searchBar(),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Tout'),
-                selected: _typeFilter == 'all',
-                onSelected: (_) => setState(() => _typeFilter = 'all'),
-              ),
-              ChoiceChip(
-                label: const Text('Quiz'),
-                selected: _typeFilter == 'quiz',
-                onSelected: (_) => setState(() => _typeFilter = 'quiz'),
-              ),
-              ChoiceChip(
-                label: const Text('Devoirs'),
-                selected: _typeFilter == 'assignment',
-                onSelected: (_) => setState(() => _typeFilter = 'assignment'),
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: SectionHeader(
-            title: 'Quiz et dépôts',
-            subtitle: 'CRUD enseignant · publier · statistiques',
-          ),
-        ),
-        // Cartes de gestion enseignant pour chaque quiz (brouillon ou publié).
-        ...quizzes.map((quiz) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: evalCardDecoration(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      StatusChip(
-                        label: quiz.isPublished ? 'Publié' : 'Brouillon',
-                        color: quiz.isPublished
-                            ? EduColors.success
-                            : EduColors.muted,
-                      ),
-                      const SizedBox(width: 6),
-                      StatusChip(
-                        label: quiz.courseTitle,
-                        color: EduColors.primary,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    quiz.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  Text(
-                    '${quiz.questions.length} questions · ${quiz.timeLimitMin} min',
-                    style: const TextStyle(color: EduColors.muted, fontSize: 12.5),
-                  ),
-                  const SizedBox(height: 8),
-                  // Barre d'actions enveloppée dans un Wrap pour éviter tout débordement horizontal sur petit écran.
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(
-                            context,
-                            EvaluationsRoutes.quizWizard,
-                            arguments: QuizWizardArgs(existing: quiz),
-                          );
-                        },
-                        child: const Text('Modifier'),
-                      ),
-                      OutlinedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(
-                            context,
-                            EvaluationsRoutes.quizResults,
-                            arguments: QuizResultsArgs(quizId: quiz.id),
-                          );
-                        },
-                        child: const Text('Résultats'),
-                      ),
-                      FilledButton(
-                        onPressed: () =>
-                            _controller.publishQuizToggle(quiz.id, !quiz.isPublished),
-                        child: Text(quiz.isPublished ? 'Masquer' : 'Publier'),
-                      ),
-                      IconButton(
-                        tooltip: 'Supprimer',
-                        onPressed: () => _confirmDelete(
-                          'Supprimer ce quiz ?',
-                          () => _controller.deleteQuiz(quiz.id),
-                        ),
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: EduColors.danger,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+      if (_courseFilter != null && item.courseId != _courseFilter) return false;
+      return q.isEmpty ||
+          item.title.toLowerCase().contains(q) ||
+          item.courseTitle.toLowerCase().contains(q);
+    }).toList();
+    return RefreshIndicator(
+      onRefresh: _controller.loadAll,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 88),
+        children: [
+          _searchBar(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Tout'),
+                  selected: _typeFilter == 'all',
+                  onSelected: (_) => setState(() => _typeFilter = 'all'),
+                ),
+                ChoiceChip(
+                  label: const Text('Quiz'),
+                  selected: _typeFilter == 'quiz',
+                  onSelected: (_) => setState(() => _typeFilter = 'quiz'),
+                ),
+                ChoiceChip(
+                  label: const Text('Devoirs'),
+                  selected: _typeFilter == 'assignment',
+                  onSelected: (_) => setState(() => _typeFilter = 'assignment'),
+                ),
+              ],
             ),
-          );
-        }),
-        // Cartes de gestion enseignant pour chaque devoir avec compteur de copies en attente.
-        ...assignments.map((asg) {
-          final pending = _controller.submissions
-              .where(
-                (s) =>
-                    s.assignmentId == asg.id &&
-                    s.status == SubmissionStatus.submitted,
-              )
-              .length;
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: evalCardDecoration(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const StatusChip(
-                        label: 'Devoir',
-                        color: EduColors.warning,
-                      ),
-                      const SizedBox(width: 6),
-                      if (pending > 0)
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: SectionHeader(
+              title: 'Quiz et dépôts',
+              subtitle: 'CRUD enseignant · publier · statistiques',
+            ),
+          ),
+          if (quizzes.isEmpty && assignments.isEmpty)
+            const EmptyState(
+              icon: Icons.library_books_outlined,
+              title: 'Aucune évaluation',
+              subtitle:
+                  'Créez un quiz ou un devoir via le bouton « Créer » en bas à droite.',
+            ),
+          // Cartes de gestion enseignant pour chaque quiz (brouillon ou publié).
+          ...quizzes.map((quiz) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: evalCardDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
                         StatusChip(
-                          label: '$pending copie(s) à corriger',
-                          color: EduColors.danger,
+                          label: quiz.isPublished ? 'Publié' : 'Brouillon',
+                          color: quiz.isPublished
+                              ? EduColors.success
+                              : EduColors.muted,
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    asg.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                        const SizedBox(width: 6),
+                        StatusChip(
+                          label: quiz.courseTitle,
+                          color: EduColors.primary,
+                        ),
+                      ],
                     ),
-                  ),
-                  Text(
-                    '${asg.courseTitle} · max ${asg.maxGrade.toStringAsFixed(0)}',
-                    style: const TextStyle(color: EduColors.muted, fontSize: 12.5),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      OutlinedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(
-                            context,
-                            EvaluationsRoutes.assignmentWizard,
-                            arguments: AssignmentWizardArgs(existing: asg),
-                          );
-                        },
-                        child: const Text('Modifier'),
+                    const SizedBox(height: 8),
+                    Text(
+                      quiz.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
-                      IconButton(
-                        onPressed: () => _confirmDelete(
-                          'Supprimer ce devoir ?',
-                          () => _controller.deleteAssignment(asg.id),
-                        ),
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: EduColors.danger,
-                        ),
+                    ),
+                    Text(
+                      '${quiz.questions.length} questions · ${quiz.timeLimitMin} min',
+                      style: const TextStyle(
+                        color: EduColors.muted,
+                        fontSize: 12.5,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Barre d'actions enveloppée dans un Wrap pour éviter tout débordement horizontal sur petit écran.
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              EvaluationsRoutes.quizWizard,
+                              arguments: QuizWizardArgs(existing: quiz),
+                            );
+                          },
+                          child: const Text('Modifier'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              EvaluationsRoutes.quizResults,
+                              arguments: QuizResultsArgs(quizId: quiz.id),
+                            );
+                          },
+                          child: const Text('Résultats'),
+                        ),
+                        FilledButton(
+                          onPressed: () => _controller.publishQuizToggle(
+                            quiz.id,
+                            !quiz.isPublished,
+                          ),
+                          child: Text(quiz.isPublished ? 'Masquer' : 'Publier'),
+                        ),
+                        IconButton(
+                          tooltip: 'Supprimer',
+                          onPressed: () => _confirmDelete(
+                            'Supprimer ce quiz ?',
+                            () async {
+                              await _controller.deleteQuiz(quiz.id);
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  duration: Duration(seconds: 2),
+                                  content: Text('Quiz supprimé.'),
+                                ),
+                              );
+                            },
+                          ),
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: EduColors.danger,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        }),
-      ],
+            );
+          }),
+          // Cartes de gestion enseignant pour chaque devoir avec compteur de copies en attente.
+          ...assignments.map((asg) {
+            final pending = _controller.submissions
+                .where(
+                  (s) =>
+                      s.assignmentId == asg.id &&
+                      s.status == SubmissionStatus.submitted,
+                )
+                .length;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: evalCardDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const StatusChip(
+                          label: 'Devoir',
+                          color: EduColors.warning,
+                        ),
+                        const SizedBox(width: 6),
+                        if (pending > 0)
+                          StatusChip(
+                            label: '$pending copie(s) à corriger',
+                            color: EduColors.danger,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      asg.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${asg.courseTitle} · max ${asg.maxGrade.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        color: EduColors.muted,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              EvaluationsRoutes.assignmentWizard,
+                              arguments: AssignmentWizardArgs(existing: asg),
+                            );
+                          },
+                          child: const Text('Modifier'),
+                        ),
+                        IconButton(
+                          tooltip: 'Supprimer',
+                          onPressed: () => _confirmDelete(
+                            'Supprimer ce devoir ?',
+                            () async {
+                              await _controller.deleteAssignment(asg.id);
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  duration: Duration(seconds: 2),
+                                  content: Text('Devoir supprimé.'),
+                                ),
+                              );
+                            },
+                          ),
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: EduColors.danger,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -582,64 +652,73 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
   /// (ouvrant `SubmissionGradeScreen`) et le carnet de notes complet de la promotion.
   Widget _teacherCopies() {
     final copies = _controller.copiesToGrade();
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const SectionHeader(
-          title: 'Copies à corriger',
-          subtitle: 'PATCH /submissions/:id/grade',
-        ),
-        if (copies.isEmpty)
-          const EmptyState(
-            icon: Icons.task_alt_rounded,
-            title: 'Aucune copie en attente',
-            subtitle: 'Les dépôts étudiants apparaîtront ici.',
+    return RefreshIndicator(
+      onRefresh: _controller.loadAll,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SectionHeader(
+            title: 'Copies à corriger',
+            subtitle: 'PATCH /submissions/:id/grade',
           ),
-        ...copies.map((sub) {
-          final asg = _controller.assignmentById(sub.assignmentId);
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: evalCardDecoration(),
-            child: Material(
-              type: MaterialType.transparency,
-              child: ListTile(
-                title: Text(
-                  sub.studentName,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  '${asg?.title ?? ''} · ${formatDate(sub.submittedAt)}'
-                  '${sub.isLate ? ' · retard' : ''}',
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.pushNamed(
-                    context,
-                    EvaluationsRoutes.submissionGrade,
-                    arguments: SubmissionGradeArgs(submissionId: sub.id),
-                  );
-                },
-              ),
+          if (copies.isEmpty)
+            const EmptyState(
+              icon: Icons.task_alt_rounded,
+              title: 'Aucune copie en attente',
+              subtitle: 'Les dépôts étudiants apparaîtront ici.',
             ),
-          );
-        }),
-        const SizedBox(height: 16),
-        _gradebook(studentOnly: false),
-      ],
+          ...copies.map((sub) {
+            final asg = _controller.assignmentById(sub.assignmentId);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: evalCardDecoration(),
+              child: Material(
+                type: MaterialType.transparency,
+                child: ListTile(
+                  title: Text(
+                    sub.studentName,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    '${asg?.title ?? ''} · ${formatDate(sub.submittedAt)}'
+                    '${sub.isLate ? ' · retard' : ''}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    Navigator.pushNamed(
+                      context,
+                      EvaluationsRoutes.submissionGrade,
+                      arguments: SubmissionGradeArgs(submissionId: sub.id),
+                    );
+                  },
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+          _gradebook(studentOnly: false),
+        ],
+      ),
     );
   }
 
   /// Composant partagé du carnet de notes : affiche uniquement les notes de l'étudiant connecté
   /// lorsque [studentOnly] vaut `true`, ou l'ensemble de la classe côté enseignant, avec filtre par cours et export CSV.
   Widget _gradebook({required bool studentOnly}) {
+    final availableCourses = _controller.accessibleCourses;
+    final safeCourseFilter =
+        availableCourses.any((c) => c.id == _courseFilter) ? _courseFilter : null;
     final rows = _controller.gradebook(
-      courseId: _courseFilter,
+      courseId: safeCourseFilter,
       student: studentOnly ? _controller.currentUserId : null,
     );
-    return ListView(
+    final list = ListView(
       // Désactive le défilement interne (`shrinkWrap` + `NeverScrollableScrollPhysics`) lorsqu'il est imbriqué dans `_teacherCopies`.
       shrinkWrap: studentOnly ? false : true,
-      physics: studentOnly ? null : const NeverScrollableScrollPhysics(),
+      physics: studentOnly
+          ? const AlwaysScrollableScrollPhysics()
+          : const NeverScrollableScrollPhysics(),
       padding: studentOnly ? const EdgeInsets.all(16) : EdgeInsets.zero,
       children: [
         Row(
@@ -659,12 +738,12 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
         ),
         // Filtre déroulant par cours mettant à jour à la fois l'affichage et l'export CSV.
         DropdownButtonFormField<String?>(
-          initialValue: _courseFilter,
+          initialValue: safeCourseFilter,
           isExpanded: true,
           decoration: evalInputDecoration(label: 'Filtrer par cours'),
           items: [
             const DropdownMenuItem(value: null, child: Text('Tous les cours')),
-            ..._controller.accessibleCourses.map(
+            ...availableCourses.map(
               (c) => DropdownMenuItem(
                 value: c.id,
                 child: Text(
@@ -684,8 +763,11 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
             title: 'Pas encore de notes',
             subtitle: 'Passez un quiz ou attendez une correction.',
           ),
-        ...rows.map(
-          (r) => Container(
+        ...rows.map((r) {
+          final isGraded =
+              r.status == 'Noté' || r.status == 'graded' || r.grade != null;
+          final statusLabel = isGraded ? 'Noté' : 'En attente';
+          return Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(12),
             decoration: evalCardDecoration(),
@@ -718,105 +800,152 @@ class _EvaluationsScreenState extends State<EvaluationsScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     StatusChip(
-                      label: r.status,
-                      color: r.status == 'Noté'
-                          ? EduColors.success
-                          : EduColors.warning,
+                      label: statusLabel,
+                      color: isGraded ? EduColors.success : EduColors.warning,
                     ),
                   ],
                 ),
               ],
             ),
-          ),
-        ),
+          );
+        }),
       ],
+    );
+    if (!studentOnly) return list;
+    return RefreshIndicator(
+      onRefresh: _controller.loadAll,
+      child: list,
     );
   }
 
   /// Onglet « Documents » filtrable par cours (`DropdownButtonFormField`) et par dossier
   /// (`ChoiceChip` pour Polycopiés, Corrigés, Annales), ouvrant `DocumentDetailScreen` au clic.
   Widget _documents() {
+    final availableCourses = _controller.accessibleCourses;
+    final safeCourseFilter =
+        availableCourses.any((c) => c.id == _courseFilter) ? _courseFilter : null;
     final docs = _controller.visibleDocuments(
-      courseId: _courseFilter,
+      courseId: safeCourseFilter,
       folder: _folderFilter,
     );
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const SectionHeader(
-          title: 'Documents du cours',
-          subtitle: 'Polycopiés, corrigés, annales',
-        ),
-        DropdownButtonFormField<String?>(
-          initialValue: _courseFilter,
-          decoration: evalInputDecoration(label: 'Cours'),
-          items: [
-            const DropdownMenuItem(value: null, child: Text('Tous les cours')),
-            ..._controller.accessibleCourses.map(
-              (c) => DropdownMenuItem(
-                value: c.id,
-                child: Text(
-                  c.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    return RefreshIndicator(
+      onRefresh: _controller.loadAll,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SectionHeader(
+            title: 'Documents du cours',
+            subtitle: 'Polycopiés, corrigés, annales',
+          ),
+          DropdownButtonFormField<String?>(
+            initialValue: safeCourseFilter,
+            decoration: evalInputDecoration(label: 'Cours'),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Tous les cours')),
+              ...availableCourses.map(
+                (c) => DropdownMenuItem(
+                  value: c.id,
+                  child: Text(
+                    c.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-            ),
-          ],
-          onChanged: (v) => setState(() => _courseFilter = v),
-        ),
-        const SizedBox(height: 10),
-        // Filtres par répertoire thématique disposés en Wrap.
-        Wrap(
-          spacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('Tous'),
-              selected: _folderFilter == null,
-              onSelected: (_) => setState(() => _folderFilter = null),
-            ),
-            ...DocumentFolder.values.map(
-              (f) => ChoiceChip(
-                label: Text(f.label),
-                selected: _folderFilter == f,
-                onSelected: (_) => setState(() => _folderFilter = f),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (docs.isEmpty)
-          const EmptyState(
-            icon: Icons.folder_off_outlined,
-            title: 'Aucun document',
-            subtitle: 'Les fichiers publiés par l\'enseignant s\'affichent ici.',
+            ],
+            onChanged: (v) => setState(() => _courseFilter = v),
           ),
-        ...docs.map(
-          (d) => Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: evalCardDecoration(),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: d.folder.color.withValues(alpha: 0.1),
-                child: Icon(d.folder.icon, color: d.folder.color),
+          const SizedBox(height: 10),
+          // Filtres par répertoire thématique disposés en Wrap.
+          Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Tous'),
+                selected: _folderFilter == null,
+                onSelected: (_) => setState(() => _folderFilter = null),
               ),
-              title: Text(
-                d.title,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+              ...DocumentFolder.values.map(
+                (f) => ChoiceChip(
+                  label: Text(f.label),
+                  selected: _folderFilter == f,
+                  onSelected: (_) => setState(() => _folderFilter = f),
+                ),
               ),
-              subtitle: Text('${d.folder.label} · ${d.courseTitle}'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                Navigator.pushNamed(
-                  context,
-                  EvaluationsRoutes.documentDetail,
-                  arguments: DocumentDetailArgs(documentId: d.id),
-                );
-              },
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (docs.isEmpty)
+            const EmptyState(
+              icon: Icons.folder_off_outlined,
+              title: 'Aucun document',
+              subtitle: 'Les fichiers publiés par l\'enseignant s\'affichent ici.',
+            ),
+          ...docs.map(
+            (d) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: evalCardDecoration(),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: d.folder.color.withValues(alpha: 0.1),
+                  child: Icon(d.folder.icon, color: d.folder.color),
+                ),
+                title: Text(
+                  d.title,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text('${d.folder.label} · ${d.courseTitle}'),
+                trailing: _controller.isTeacher
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Modifier',
+                            onPressed: () {
+                              Navigator.pushNamed(
+                                context,
+                                EvaluationsRoutes.documentWizard,
+                                arguments: DocumentWizardArgs(existing: d),
+                              );
+                            },
+                            icon: const Icon(Icons.edit_outlined),
+                          ),
+                          IconButton(
+                            tooltip: 'Supprimer',
+                            onPressed: () => _confirmDelete(
+                              'Supprimer ce document ?',
+                              () async {
+                                await _controller.deleteDocument(d.id);
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    duration: Duration(seconds: 2),
+                                    content: Text('Document supprimé.'),
+                                  ),
+                                );
+                              },
+                            ),
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: EduColors.danger,
+                            ),
+                          ),
+                        ],
+                      )
+                    : const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    EvaluationsRoutes.documentDetail,
+                    arguments: DocumentDetailArgs(documentId: d.id),
+                  );
+                },
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

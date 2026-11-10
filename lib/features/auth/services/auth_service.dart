@@ -36,6 +36,10 @@ class AuthService {
   /// `main.dart` pour connecter les modules à Firestore avec le vrai uid.
   static Future<void> Function(User user)? onSignedIn;
 
+  /// Hook déclenché lors de la déconnexion — branché dans `main.dart` pour
+  /// purger l'état en mémoire et le cache local des contrôleurs.
+  static Future<void> Function()? onSignedOut;
+
   /// Vrai uniquement si Firebase a pu s'initialiser au démarrage.
   bool get isFirebaseReady => Firebase.apps.isNotEmpty;
 
@@ -120,6 +124,9 @@ class AuthService {
   Future<void> signOut() async {
     if (isFirebaseReady) {
       await _auth!.signOut();
+    }
+    if (onSignedOut != null) {
+      await onSignedOut!();
     }
   }
 

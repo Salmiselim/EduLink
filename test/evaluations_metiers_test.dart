@@ -181,6 +181,102 @@ void main() {
       expect(questions.first.points, lessThanOrEqualTo(20));
     },
   );
+
+  test(
+    'Isolation enseignant : un enseignant ne voit que ses propres quiz, devoirs et documents',
+    () async {
+      controller.currentUserRole = UserRole.teacher;
+      controller.currentUserId = 'tch_alice';
+
+      repo.quizzes = [
+        _quiz('quiz_alice', isPublished: true, teacherId: 'tch_alice'),
+        _quiz('quiz_bob', isPublished: true, teacherId: 'tch_bob'),
+      ];
+      repo.assignments = [
+        _assignment('asg_alice', teacherId: 'tch_alice', courseId: 'c_alice'),
+        _assignment('asg_bob', teacherId: 'tch_bob', courseId: 'c_bob'),
+      ];
+      repo.documents = [
+        _document('doc_alice', teacherId: 'tch_alice', courseId: 'c_alice'),
+        _document('doc_bob', teacherId: 'tch_bob', courseId: 'c_bob'),
+      ];
+      repo.submissions = [
+        _submission('sub_alice', 'asg_alice', 'stu_1', SubmissionStatus.submitted),
+        _submission('sub_bob', 'asg_bob', 'stu_2', SubmissionStatus.submitted),
+      ];
+
+      await controller.loadAll();
+
+      expect(controller.teacherQuizzes.map((q) => q.id), ['quiz_alice']);
+      expect(controller.teacherAssignments.map((a) => a.id), ['asg_alice']);
+      expect(controller.visibleDocuments().map((d) => d.id), ['doc_alice']);
+      expect(controller.copiesToGrade().map((s) => s.id), ['sub_alice']);
+    },
+  );
+
+  test(
+    'Mode étudiant : seuls les quiz, devoirs et documents des cours inscrits sont visibles',
+    () async {
+      controller.currentUserRole = UserRole.student;
+      controller.currentUserId = 'stu_amine';
+      controller.enrolledCourseIdsOverride = {'course_algo_1'};
+
+      repo.quizzes = [
+        _quiz('q_algo', isPublished: true, courseId: 'course_algo_1'),
+        _quiz('q_reseau', isPublished: true, courseId: 'course_reseau_1'),
+        _quiz('q_algo_draft', isPublished: false, courseId: 'course_algo_1'),
+      ];
+      repo.assignments = [
+        _assignment('asg_algo', teacherId: 'tch_x', courseId: 'course_algo_1'),
+        _assignment('asg_reseau', teacherId: 'tch_y', courseId: 'course_reseau_1'),
+      ];
+      repo.documents = [
+        _document('doc_algo', teacherId: 'tch_x', courseId: 'course_algo_1'),
+        _document('doc_reseau', teacherId: 'tch_y', courseId: 'course_reseau_1'),
+      ];
+
+      await controller.loadAll();
+
+      expect(controller.studentQuizzes.map((q) => q.id), ['q_algo']);
+      expect(controller.publishedQuizzesForStudent().map((q) => q.id), ['q_algo']);
+      expect(controller.studentAssignments.map((a) => a.id), ['asg_algo']);
+      expect(controller.assignmentsForStudent().map((a) => a.id), ['asg_algo']);
+      expect(controller.visibleDocuments().map((d) => d.id), ['doc_algo']);
+    },
+  );
+
+  test(
+    'Suppression enseignant : deleteQuiz, deleteAssignment et deleteDocument suppriment en mémoire et dans le repository',
+    () async {
+      controller.currentUserRole = UserRole.teacher;
+      controller.currentUserId = 'tch_x';
+
+      // Création via upsert (préservation de l'ID client) puis suppression.
+      final asg = _assignment('asg_custom_1', teacherId: 'tch_x', courseId: 'course_test');
+      final doc = _document('doc_custom_1', teacherId: 'tch_x', courseId: 'course_test');
+      final quiz = _quiz('quiz_custom_1', isPublished: false);
+
+      controller.upsertQuiz(quiz);
+      controller.upsertAssignment(asg);
+      controller.upsertDocument(doc);
+      await _drain();
+
+      expect(controller.quizById('quiz_custom_1'), isNotNull);
+      expect(controller.assignmentById('asg_custom_1'), isNotNull);
+      expect(controller.documentById('doc_custom_1'), isNotNull);
+
+      await controller.deleteQuiz('quiz_custom_1');
+      await controller.deleteAssignment('asg_custom_1');
+      await controller.deleteDocument('doc_custom_1');
+
+      expect(controller.quizById('quiz_custom_1'), isNull);
+      expect(controller.assignmentById('asg_custom_1'), isNull);
+      expect(controller.documentById('doc_custom_1'), isNull);
+      expect(repo.deletedQuizIds, contains('quiz_custom_1'));
+      expect(repo.deletedAssignmentIds, contains('asg_custom_1'));
+      expect(repo.deletedDocumentIds, contains('doc_custom_1'));
+    },
+  );
 }
 
 /// Vidange complète des micro-tâches (persistance optimiste du contrôleur).
@@ -211,9 +307,15 @@ class _FakeRepo extends EvaluationsRepository {
         );
 
   List<Quiz> quizzes = [];
+  List<Assignment> assignments = [];
+  List<CourseDocument> documents = [];
   List<QuizAttempt> attempts = [];
   List<Submission> submissions = [];
   List<GradebookRow> gradebookRows = [];
+
+  final List<String> deletedQuizIds = [];
+  final List<String> deletedAssignmentIds = [];
+  final List<String> deletedDocumentIds = [];
 
   /// Corps reçus par createQuiz (vérification du champ isPublished).
   final List<Map<String, dynamic>> createdBodies = [];
@@ -229,11 +331,12 @@ class _FakeRepo extends EvaluationsRepository {
   Future<List<Quiz>> getQuizzes({String? courseId}) async => quizzes;
 
   @override
-  Future<List<Assignment>> getAssignments({String? courseId}) async => const [];
+  Future<List<Assignment>> getAssignments({String? courseId}) async =>
+      assignments;
 
   @override
   Future<List<CourseDocument>> getDocuments({String? courseId}) async =>
-      const [];
+      documents;
 
   @override
   Future<List<Map<String, dynamic>>> getUpcoming() async => const [];
@@ -247,9 +350,12 @@ class _FakeRepo extends EvaluationsRepository {
   @override
   Future<Quiz> createQuiz(Map<String, dynamic> body) async {
     createdBodies.add(body);
+    final rawId = body['id'] as String?;
     final stored = _quizFromBody(
       body,
-      id: 'quiz_${createdBodies.length}',
+      id: (rawId != null && rawId.isNotEmpty)
+          ? rawId
+          : 'quiz_${createdBodies.length}',
       isPublished: forceCreateAsDraft ? false : (body['isPublished'] == true),
     );
     quizzes = [...quizzes, stored];
@@ -268,7 +374,44 @@ class _FakeRepo extends EvaluationsRepository {
 
   @override
   Future<void> deleteQuiz(String quizId) async {
+    deletedQuizIds.add(quizId);
     quizzes = quizzes.where((q) => q.id != quizId).toList();
+  }
+
+  @override
+  Future<Assignment> createAssignment(Map<String, dynamic> body) async {
+    final rawId = (body['id'] as String?) ?? 'asg_new';
+    final stored = _assignment(
+      rawId,
+      teacherId: 'tch_x',
+      courseId: (body['courseId'] as String?) ?? 'course_test',
+    );
+    assignments = [...assignments, stored];
+    return stored;
+  }
+
+  @override
+  Future<void> deleteAssignment(String assignmentId) async {
+    deletedAssignmentIds.add(assignmentId);
+    assignments = assignments.where((a) => a.id != assignmentId).toList();
+  }
+
+  @override
+  Future<CourseDocument> createDocument(Map<String, dynamic> body) async {
+    final rawId = (body['id'] as String?) ?? 'doc_new';
+    final stored = _document(
+      rawId,
+      teacherId: 'tch_x',
+      courseId: (body['courseId'] as String?) ?? 'course_test',
+    );
+    documents = [...documents, stored];
+    return stored;
+  }
+
+  @override
+  Future<void> deleteDocument(String documentId) async {
+    deletedDocumentIds.add(documentId);
+    documents = documents.where((d) => d.id != documentId).toList();
   }
 
   @override
@@ -292,12 +435,17 @@ class _FakeRepo extends EvaluationsRepository {
       gradebookRows;
 }
 
-Quiz _quiz(String id, {required bool isPublished}) {
+Quiz _quiz(
+  String id, {
+  required bool isPublished,
+  String teacherId = 'tch_x',
+  String courseId = 'course_test',
+}) {
   return Quiz(
     id: id,
-    courseId: 'course_test',
+    courseId: courseId,
     courseTitle: 'Cours Test',
-    teacherId: 'tch_x',
+    teacherId: teacherId,
     teacherName: 'Prof Test',
     title: 'Quiz de test',
     timeLimitMin: 20,
@@ -316,6 +464,47 @@ Quiz _quiz(String id, {required bool isPublished}) {
         explanation: 'Explication de test.',
       ),
     ],
+  );
+}
+
+Assignment _assignment(
+  String id, {
+  required String teacherId,
+  required String courseId,
+}) {
+  return Assignment(
+    id: id,
+    courseId: courseId,
+    courseTitle: 'Cours Test',
+    teacherId: teacherId,
+    teacherName: 'Prof Test',
+    title: 'Devoir de test',
+    instructions: 'Instructions de test suffisamment détaillées pour valider.',
+    attachments: const ['sujet.pdf'],
+    dueDate: DateTime(2026, 12, 31),
+    maxGrade: 20,
+    allowLate: true,
+  );
+}
+
+CourseDocument _document(
+  String id, {
+  required String teacherId,
+  required String courseId,
+}) {
+  return CourseDocument(
+    id: id,
+    courseId: courseId,
+    courseTitle: 'Cours Test',
+    teacherId: teacherId,
+    teacherName: 'Prof Test',
+    title: 'Document de test',
+    description: 'Description valide du support pédagogique de test.',
+    folder: DocumentFolder.polycopies,
+    fileUrl: 'poly_test.pdf',
+    order: 1,
+    visibleFrom: DateTime(2026, 1, 1),
+    downloadsCount: 0,
   );
 }
 
