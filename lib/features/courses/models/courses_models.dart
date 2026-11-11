@@ -245,9 +245,22 @@ class CourseNotification {
   });
 
   /// Icône Material associée au type de notification dans la cloche du module.
-  IconData get icon => type == 'course_published'
-      ? Icons.publish_rounded
-      : Icons.note_add_rounded;
+  IconData get icon {
+    switch (type) {
+      case 'course_published':
+        return Icons.publish_rounded;
+      case 'quiz_published':
+        return Icons.quiz_rounded;
+      case 'assignment_published':
+        return Icons.assignment_rounded;
+      case 'document_published':
+        return Icons.folder_rounded;
+      case 'submission_graded':
+        return Icons.grading_rounded;
+      default:
+        return Icons.note_add_rounded;
+    }
+  }
 }
 
 /// Modèle d'inscription reliant un étudiant à un cours (`courseId` + `studentId`).
