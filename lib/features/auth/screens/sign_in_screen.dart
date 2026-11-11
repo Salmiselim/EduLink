@@ -40,7 +40,12 @@ class _SignInScreenState extends State<SignInScreen> {
   /// Affiche éventuellement un [SnackBar] d'information puis redirige vers
   /// `EduLinkShell` via `Navigator.pushAndRemoveUntil` en vidant toute la pile
   /// de navigation pour empêcher un retour arrière vers l'authentification.
-  void _enterApp({String? message}) {
+  Future<void> _enterApp({String? message}) async {
+    final user = AuthService.instance.currentUser;
+    if (user != null && AuthService.onSignedIn != null) {
+      await AuthService.onSignedIn!(user);
+    }
+    if (!mounted) return;
     if (message != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(duration: const Duration(seconds: 2), content: Text(message)),

@@ -1,8 +1,13 @@
 import 'package:edulink/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  // Le Forum enregistre ses données avec SharedPreferences : on simule le stockage.
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   /// Tolère l'avertissement cosmétique 'ListTile background color' (tuiles
   /// du forum — hors périmètre) ; tout autre échec reste bloquant.
@@ -131,12 +136,31 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// Publie une question valide (titre, description, tags) et ouvre son détail.
+    Future<void> publishQuestion(
+      WidgetTester tester, {
+      String title = 'Comment utiliser Provider ?',
+    }) async {
+      await tester.tap(find.text('Poser une question'));
+      await tester.pumpAndSettle();
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), title);
+      await tester.enterText(fields.at(1),
+          'Je voudrais comprendre la différence entre read et watch.');
+      await tester.enterText(fields.at(2), 'flutter, #provider');
+      await tester.tap(find.text('Publier ma question'));
+      await tester.pumpAndSettle();
+    }
+
     testWidgets("L'onglet Forum affiche le fil de questions", (tester) async {
       await openForum(tester);
 
       expect(find.text('EduLink · Forum'), findsOneWidget);
       expect(find.text('Questions, réponses & réactions'), findsOneWidget);
       expect(find.text('Poser une question'), findsOneWidget);
+      expect(find.text('Sans réponse'), findsOneWidget);
+      expect(find.text('Résolues'), findsOneWidget);
     });
 
     testWidgets('Le formulaire refuse une question vide', (tester) async {
@@ -151,22 +175,29 @@ void main() {
       expect(find.text('Veuillez décrire votre question'), findsOneWidget);
     });
 
-    testWidgets('Une question valide est publiée et son détail s\'ouvre',
-        (tester) async {
+    testWidgets('Le formulaire refuse un mot inapproprié', (tester) async {
       await openForum(tester);
 
       await tester.tap(find.text('Poser une question'));
       await tester.pumpAndSettle();
 
       final fields = find.byType(TextFormField);
-      await tester.enterText(fields.at(0), 'Comment utiliser Provider ?');
-      await tester.enterText(fields.at(1),
-          'Je voudrais comprendre la différence entre read et watch.');
+      await tester.enterText(fields.at(0), 'Question sur Flutter');
+      await tester.enterText(fields.at(1), 'Quel idiot a écrit cette doc ?');
       await tester.tap(find.text('Publier ma question'));
       await tester.pumpAndSettle();
 
+      expect(find.textContaining('rester courtois'), findsOneWidget);
+    });
+
+    testWidgets('Une question valide est publiée et son détail s\'ouvre',
+        (tester) async {
+      await openForum(tester);
+      await publishQuestion(tester);
+
       expect(find.text('Détail de la question'), findsOneWidget);
       expect(find.text('Comment utiliser Provider ?'), findsOneWidget);
+      expect(find.text('#provider'), findsOneWidget);
     });
 
     testWidgets('Une réponse vide affiche un message d\'erreur',
@@ -181,6 +212,144 @@ void main() {
 
       expect(find.text("Écrivez votre réponse avant de l'envoyer"),
           findsOneWidget);
+    });
+
+    testWidgets("L'auteur peut modifier sa question", (tester) async {
+      await openForum(tester);
+      await publishQuestion(tester);
+
+      await tester.tap(find.byTooltip('Options de la question'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Modifier'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Modifier la question'), findsOneWidget);
+      await tester.enterText(
+          find.byType(TextFormField).at(0), 'Titre modifié par le test');
+      await tester.tap(find.text('Enregistrer les modifications'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Titre modifié par le test'), findsOneWidget);
+    });
+
+    testWidgets("L'auteur peut supprimer sa question", (tester) async {
+      await openForum(tester);
+      await publishQuestion(tester);
+
+      await tester.tap(find.byTooltip('Options de la question'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Supprimer'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Supprimer la question ?'), findsOneWidget);
+      await tester.tap(find.text('Supprimer'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Comment utiliser Provider ?'), findsNothing);
+      expect(find.text('EduLink · Forum'), findsOneWidget);
+    });
+
+    testWidgets("Le menu d'options est absent sur la question d'un autre",
+        (tester) async {
+      await openForum(tester);
+
+      await tester.tap(find.text(
+          'Comment bien organiser les dossiers dans un projet Flutter ?'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Détail de la question'), findsOneWidget);
+      expect(find.byTooltip('Options de la question'), findsNothing);
+    });
+
+    testWidgets('Un extrait de code propose le bouton Exécuter',
+        (tester) async {
+      await openForum(tester);
+
+      await tester.tap(find.text(
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Exécuter'), findsWidgets);
+      expect(find.text('Python'), findsWidgets);
+    });
+
+    testWidgets('Une réaction se pose puis se retire', (tester) async {
+      await openForum(tester);
+
+      await tester.tap(find.text(
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?'));
+      await tester.pumpAndSettle();
+
+      // Données d'exemple : l'utilisateur a déjà « aimé » cette question.
+      expect(find.text("J'aime · 1"), findsOneWidget);
+      await tester.tap(find.text("J'aime · 1"));
+      await tester.pumpAndSettle();
+      expect(find.text("J'aime · 1"), findsNothing);
+    });
+
+    testWidgets('Une question se note avec les étoiles', (tester) async {
+      await openForum(tester);
+
+      await tester.tap(find.text(
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?'));
+      await tester.pumpAndSettle();
+
+      // Question de Nour sans aucune note : Selim peut la noter.
+      expect(find.text('Soyez le premier à noter'), findsWidgets);
+      final star = find.byTooltip('Noter 4 sur 5').first;
+      await tester.ensureVisible(star);
+      await tester.pumpAndSettle();
+      await tester.tap(star);
+      await tester.pumpAndSettle();
+
+      expect(find.text('4.0 · 1 avis'), findsOneWidget);
+    });
+
+    testWidgets('Le tri « Mieux notées » remonte la question la mieux notée',
+        (tester) async {
+      await openForum(tester);
+
+      const best = 'Comment bien organiser les dossiers dans un projet Flutter ?';
+      const newest =
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?';
+      // Par défaut : la plus récente en premier.
+      expect(tester.getTopLeft(find.text(newest)).dy,
+          lessThan(tester.getTopLeft(find.text(best)).dy));
+
+      await tester.tap(find.text('Mieux notées'));
+      await tester.pumpAndSettle();
+
+      expect(tester.getTopLeft(find.text(best)).dy,
+          lessThan(tester.getTopLeft(find.text(newest)).dy));
+    });
+
+    testWidgets("Le chip de rôle ouvre la boîte « Questions à traiter »",
+        (tester) async {
+      await openForum(tester);
+
+      expect(find.byTooltip('Questions à traiter'), findsNothing);
+      await tester.tap(find.text('Rôle: Étudiant'));
+      await tester.pumpAndSettle();
+      expect(find.text('Rôle: Enseignant'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Questions à traiter'));
+      await tester.pumpAndSettle();
+      expect(find.text('Questions à traiter'), findsOneWidget);
+      expect(find.text('Quelle différence entre find() et findOne() dans Mongoose ?'),
+          findsOneWidget);
+    });
+
+    testWidgets('Le bouton Ressources ouvre les suggestions du Marketplace',
+        (tester) async {
+      await openForum(tester);
+
+      await tester.tap(find.text(
+          'Pourquoi mon tri à bulles est-il si lent sur de grands tableaux ?'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Trouver une ressource ou un tuteur'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ressources et tuteurs suggérés'), findsOneWidget);
     });
   });
 

@@ -1,93 +1,236 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/forum_provider.dart';
-import '../routes/app_routes.dart';
-import '../widgets/forum_ui.dart';
+import '../features/forum/routes/app_routes.dart';
+import '../utils/content_filter.dart';
+import '../services/stack_overflow_service.dart';
+import '../utils/tag_utils.dart';
+import '../widgets/code_editor.dart';
+import '../widgets/similar_questions_panel.dart';
+import '../features/forum/widgets/forum_ui.dart';
 
-/// Écran de saisie permettant de publier une nouvelle question sur le Forum.
-/// Accessible depuis le bouton flottant de `ForumFeedScreen` via `ForumRoutes.forumAsk`.
+/// Formulaire de création d'une question, ou de modification si [postId] est fourni.
 class AskQuestionScreen extends StatefulWidget {
-  const AskQuestionScreen({super.key});
+  /// Identifiant de la question à modifier (null = nouvelle question).
+  final String? postId;
+
+  /// Cours à présélectionner pour une nouvelle question (ex. depuis un cours).
+  final String? initialCourse;
+
+  const AskQuestionScreen({super.key, this.postId, this.initialCourse});
 
   @override
   State<AskQuestionScreen> createState() => _AskQuestionScreenState();
 }
 
 class _AskQuestionScreenState extends State<AskQuestionScreen> {
-  /// Bornes de longueur appliquées lors de la validation du titre et de la description.
   static const int _titleMin = 5;
   static const int _titleMax = 120;
   static const int _bodyMin = 10;
   static const int _bodyMax = 2000;
 
-  /// Clé globale pilotant la validation simultanée des champs du `Form`.
   final _formKey = GlobalKey<FormState>();
-
-  /// Contrôleurs de saisie pour l'intitulé et le détail de la question.
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _bodyController = TextEditingController();
+  final TextEditingController _tagsController = TextEditingController();
+  final TextEditingController _codeController = TextEditingController();
 
-  /// Cours rattaché à la question en cours de rédaction.
   late String _selectedCourse;
+  String _codeLanguage = 'python';
+  bool _withCode = false;
+
+  // Questions similaires (API Stack Exchange), recherchées pendant la saisie du titre.
+  Timer? _similarTimer;
+  String _lastSearchedTitle = '';
+  int _similarRequest = 0;
+  bool _similarLoading = false;
+  List<StackQuestion> _similar = const [];
+  String? _similarError;
+
+  bool get _isEditing => widget.postId != null;
 
   @override
   void initState() {
     super.initState();
-    // Lecture ponctuelle (`context.read`) du provider pour pré-sélectionner le cours actif du fil.
     final provider = context.read<ForumProvider>();
     final courses =
         provider.courses.where((c) => c != ForumProvider.allCourses).toList();
-    _selectedCourse = courses.contains(provider.selectedCourse)
-        ? provider.selectedCourse
-        : courses.first;
+
+    // Pré-sélectionne le cours demandé (fiche d'un cours), sinon le cours filtré
+    // dans le fil, sinon le premier de la liste.
+    final requested = widget.initialCourse;
+    if (requested != null && requested.isNotEmpty && !courses.contains(requested)) {
+      courses.insert(0, requested);
+    }
+    _selectedCourse = (requested != null && courses.contains(requested))
+        ? requested
+        : courses.contains(provider.selectedCourse)
+            ? provider.selectedCourse
+            : courses.first;
+
+    // Mode modification : préremplit les champs avec la question existante.
+    final existing =
+        _isEditing ? provider.getPostById(widget.postId!) : null;
+    if (existing != null) {
+      _titleController.text = existing.title;
+      _bodyController.text = existing.body;
+      _tagsController.text = existing.tags.join(', ');
+      if (courses.contains(existing.courseName)) {
+        _selectedCourse = existing.courseName;
+      }
+      if (existing.hasCode) {
+        _withCode = true;
+        _codeController.text = existing.codeSnippet!;
+        _codeLanguage = existing.codeLanguage ?? 'python';
+      }
+    }
+
+    // Les suggestions ne servent qu'à la création d'une nouvelle question.
+    if (!_isEditing) _titleController.addListener(_scheduleSimilarSearch);
   }
 
   @override
   void dispose() {
+    _similarTimer?.cancel();
     _titleController.dispose();
     _bodyController.dispose();
+    _tagsController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
-  /// Vérifie que le titre est renseigné et respecte la longueur minimale `_titleMin`.
   String? _validateTitle(String? val) {
     final text = val?.trim() ?? '';
     if (text.isEmpty) return 'Veuillez saisir un titre';
     if (text.length < _titleMin) {
       return 'Le titre doit contenir au moins $_titleMin caractères';
     }
-    return null;
+    return ContentFilter.validate(text);
   }
 
-  /// Vérifie que le corps de la question est renseigné et atteint au moins `_bodyMin` caractères.
   String? _validateBody(String? val) {
     final text = val?.trim() ?? '';
     if (text.isEmpty) return 'Veuillez décrire votre question';
     if (text.length < _bodyMin) {
       return 'La description doit contenir au moins $_bodyMin caractères';
     }
-    return null;
+    return ContentFilter.validate(text);
   }
 
-  /// Valide le formulaire, enregistre la question dans `ForumProvider`, affiche un `SnackBar`
-  /// puis ouvre son écran de détail en remplaçant la page de création dans la pile.
-  void _submitQuestion() {
+  String? _validateTags(String? val) => validateTags(val ?? '');
+
+  /// Relance la recherche Stack Overflow 900 ms après la dernière frappe.
+  void _scheduleSimilarSearch() {
+    if (_isEditing) return;
+    final title = _titleController.text.trim();
+    if (title == _lastSearchedTitle) return; // simple déplacement du curseur
+    _lastSearchedTitle = title;
+    _similarTimer?.cancel();
+    if (title.length < StackOverflowService.minQueryLength) {
+      _similarRequest++; // ignore une réponse encore en vol
+      if (_similarLoading || _similar.isNotEmpty || _similarError != null) {
+        setState(() {
+          _similarLoading = false;
+          _similar = const [];
+          _similarError = null;
+        });
+      }
+      return;
+    }
+    _similarTimer = Timer(const Duration(milliseconds: 900), _searchSimilar);
+  }
+
+  Future<void> _searchSimilar() async {
+    if (!mounted) return;
+    final provider = context.read<ForumProvider>();
+    final request = ++_similarRequest;
+    setState(() {
+      _similarLoading = true;
+      _similarError = null;
+    });
+    try {
+      final results = await provider.findSimilarQuestions(
+        title: _titleController.text,
+        codeLanguage: _withCode ? _codeLanguage : null,
+      );
+      if (!mounted || request != _similarRequest) return;
+      setState(() {
+        _similar = results;
+        _similarLoading = false;
+      });
+    } on StackOverflowException catch (error) {
+      if (!mounted || request != _similarRequest) return;
+      setState(() {
+        _similar = const [];
+        _similarError = error.message;
+        _similarLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _similarRequest) return;
+      setState(() {
+        _similar = const [];
+        _similarError = 'Suggestions indisponibles pour le moment.';
+        _similarLoading = false;
+      });
+    }
+  }
+
+  /// Ajoute un tag suggéré au champ, sans doublon et dans la limite autorisée.
+  void _addSuggestedTag(String tag) {
+    final tags = parseTags(_tagsController.text);
+    if (tags.contains(tag) || tags.length >= kMaxTags) return;
+    setState(() => _tagsController.text = [...tags, tag].join(', '));
+  }
+
+  void _submit() {
     if (!_formKey.currentState!.validate()) return;
 
-    final postId = context.read<ForumProvider>().createPost(
-          title: _titleController.text,
-          body: _bodyController.text,
-          courseName: _selectedCourse,
-        );
+    final provider = context.read<ForumProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final tags = parseTags(_tagsController.text);
+    final code = _withCode ? _codeController.text : null;
+    final language = _withCode ? _codeLanguage : null;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    if (_isEditing) {
+      final ok = provider.updatePost(
+        widget.postId!,
+        title: _titleController.text,
+        body: _bodyController.text,
+        courseName: _selectedCourse,
+        tags: tags,
+        codeSnippet: code,
+        codeLanguage: language,
+      );
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Votre question a été modifiée !'
+              : 'Modification impossible : vous n\'êtes pas l\'auteur.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      Navigator.pop(context);
+      return;
+    }
+
+    final postId = provider.createPost(
+      title: _titleController.text,
+      body: _bodyController.text,
+      courseName: _selectedCourse,
+      tags: tags,
+      codeSnippet: code,
+      codeLanguage: language,
+    );
+
+    messenger.showSnackBar(
       const SnackBar(
         content: Text('Votre question a été publiée !'),
         duration: Duration(seconds: 2),
       ),
     );
 
-    // Remplace l'écran de rédaction par `QuestionDetailScreen` via la route nommée.
+    // Ouvre directement la question publiée (remplace l'écran de saisie).
     Navigator.pushReplacementNamed(
       context,
       ForumRoutes.forumQuestion,
@@ -97,11 +240,13 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Écoute réactive de `ForumProvider` pour disposer de la liste à jour des cours.
     final provider = context.watch<ForumProvider>();
     final courses = provider.courses
         .where((c) => c != ForumProvider.allCourses)
         .toList();
+    // Le cours choisi doit toujours figurer dans la liste du menu déroulant.
+    if (!courses.contains(_selectedCourse)) courses.insert(0, _selectedCourse);
+    final suggestions = provider.popularTags.take(8).toList();
 
     return Scaffold(
       backgroundColor: ForumColors.scaffold,
@@ -114,9 +259,10 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
           icon: const Icon(Icons.close_rounded, color: ForumColors.text),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const ForumPageTitle('Poser une question'),
+        title: ForumPageTitle(
+          _isEditing ? 'Modifier la question' : 'Poser une question',
+        ),
       ),
-      // Formulaire validé au fil de la saisie grâce à `AutovalidateMode.onUserInteraction`.
       body: Form(
         key: _formKey,
         autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -134,7 +280,6 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Liste déroulante de sélection du cours concerné par la question.
             DropdownButtonFormField<String>(
               initialValue: _selectedCourse,
               isExpanded: true,
@@ -164,7 +309,6 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
 
             const SizedBox(height: 16),
 
-            // Champ du titre limité à `_titleMax` caractères et validé par `_validateTitle`.
             TextFormField(
               controller: _titleController,
               maxLength: _titleMax,
@@ -178,9 +322,18 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
               ),
             ),
 
+            if (!_isEditing &&
+                (_similarLoading || _similar.isNotEmpty || _similarError != null)) ...[
+              SimilarQuestionsPanel(
+                loading: _similarLoading,
+                questions: _similar,
+                error: _similarError,
+              ),
+              const SizedBox(height: 8),
+            ],
+
             const SizedBox(height: 8),
 
-            // Champ multiligne de description détaillée validé par `_validateBody`.
             TextFormField(
               controller: _bodyController,
               maxLines: 6,
@@ -193,13 +346,77 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
               ).copyWith(alignLabelWithHint: true),
             ),
 
+            const SizedBox(height: 8),
+
+            TextFormField(
+              controller: _tagsController,
+              textInputAction: TextInputAction.done,
+              validator: _validateTags,
+              decoration: forumInputDecoration(
+                label: 'Tags (optionnel)',
+                hint: 'flutter, provider, état',
+                icon: Icons.sell_outlined,
+              ),
+            ),
+
+            if (suggestions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: suggestions
+                    .map((tag) =>
+                        ForumTag(label: tag, onTap: () => _addSuggestedTag(tag)))
+                    .toList(),
+              ),
+            ],
+
+            const SizedBox(height: 8),
+
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              activeThumbColor: ForumColors.primary,
+              title: const Text(
+                'Ajouter un extrait de code',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: ForumColors.text,
+                ),
+              ),
+              subtitle: const Text(
+                'Les lecteurs pourront l\'exécuter depuis la question.',
+                style: TextStyle(fontSize: 12.5, color: ForumColors.muted),
+              ),
+              value: _withCode,
+              onChanged: (value) {
+                setState(() => _withCode = value);
+                _lastSearchedTitle = ''; // le tag du langage change la recherche
+                _scheduleSimilarSearch();
+              },
+            ),
+
+            if (_withCode) ...[
+              const SizedBox(height: 8),
+              ForumCodeEditor(
+                controller: _codeController,
+                language: _codeLanguage,
+                onLanguageChanged: (value) {
+                  setState(() => _codeLanguage = value);
+                  _lastSearchedTitle = '';
+                  _scheduleSimilarSearch();
+                },
+              ),
+            ],
+
             const SizedBox(height: 16),
 
-            // Bouton d'action principal soumettant le formulaire.
             ForumPrimaryCta(
-              label: 'Publier ma question',
-              icon: Icons.send_rounded,
-              onPressed: _submitQuestion,
+              label: _isEditing
+                  ? 'Enregistrer les modifications'
+                  : 'Publier ma question',
+              icon: _isEditing ? Icons.save_rounded : Icons.send_rounded,
+              onPressed: _submit,
             ),
           ],
         ),

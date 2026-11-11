@@ -139,6 +139,12 @@ class EvaluationsLocalService {
     return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
   }
 
+  /// Supprime un quiz précis du cache local.
+  Future<void> removeCachedQuiz(String quizId) async {
+    final list = getCachedQuizList().where((q) => q['id'] != quizId).toList();
+    await cacheQuizList(list);
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // UTILITAIRES
   // ════════════════════════════════════════════════════════════════════════

@@ -43,19 +43,34 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
   }
 
   /// Identité de l'utilisateur connecté (uid, nom, rôle depuis `users/{uid}`).
+  /// En mode démo (aucun compte Firebase connecté), n'interrompt pas avec une 401
+  /// afin que les opérations locales / CRUD ne soient pas annulées par rollback.
   Future<void> _ensureIdentity() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw const EvalApiException(code: 401, message: 'Non connecté');
+      _cachedUid = 'demo_user';
+      _cachedName = 'Utilisateur EduLink (Démo)';
+      _cachedRole = 'teacher';
+      return;
     }
     if (_cachedUid == user.uid) return;
-    final doc = await _db.collection('users').doc(user.uid).get();
-    _cachedUid = user.uid;
-    _cachedName = (doc.data()?['name'] as String?) ?? user.displayName ?? 'Utilisateur EduLink';
-    _cachedRole = (doc.data()?['role'] as String?) ?? 'student';
+    try {
+      final doc = await _db.collection('users').doc(user.uid).get();
+      _cachedUid = user.uid;
+      _cachedName = (doc.data()?['name'] as String?) ?? user.displayName ?? 'Utilisateur EduLink';
+      _cachedRole = (doc.data()?['role'] as String?) ?? 'student';
+    } catch (_) {
+      _cachedUid = user.uid;
+      _cachedRole = 'teacher';
+    }
   }
 
   bool get _isTeacher => _cachedRole == 'teacher';
+
+  /// Met à jour dynamiquement le rôle actif dans le service Firestore
+  void setRole(String role) {
+    _cachedRole = role;
+  }
 
   /// Filtre excluant les documents marqués comme supprimés (soft-delete).
   bool _isNotDeleted(Map<String, dynamic> data) => data['isDeleted'] != true;

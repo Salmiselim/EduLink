@@ -28,7 +28,7 @@ import 'features/marketplace/services/marketplace_firestore_service.dart';
 import 'features/marketplace/screens/marketplace_screen.dart';
 import 'features/profil/screens/profile_screen.dart';
 import 'providers/forum_provider.dart';
-import 'routes/app_routes.dart';
+import 'features/forum/routes/app_routes.dart';
 import 'screens/forum_feed_screen.dart';
 
 /// Point d'entrée principal de l'application EduLink.
@@ -59,7 +59,8 @@ Future<void> _initFirebase() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
-    );
+      // Garde-fou QA : ne jamais bloquer le démarrage si le réseau est lent.
+    ).timeout(const Duration(seconds: 5));
     // Notifications push (FCM) : permission + jeton enregistré dans
     // users/{uid} ; sans effet hors Android/iOS (repli silencieux).
     unawaited(CoursesPushService.init());
@@ -102,7 +103,7 @@ class EduLinkApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         // Forum (M3)
-        ChangeNotifierProvider(create: (_) => ForumProvider()),
+        ChangeNotifierProvider(create: (_) => ForumProvider()..init()),
       ],
       child: MaterialApp(
         title: 'EduLink',

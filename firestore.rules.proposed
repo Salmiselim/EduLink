@@ -1,0 +1,255 @@
+rules_version = '2';
+
+// ============================================================================
+// RÈGLES DE SÉCURITÉ FIRESTORE — EduLink
+// Remplacent le RolesGuard du backend : ce fichier EST la couche de droits.
+// Déploiement : firebase deploy --only firestore:rules
+// ============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isTeacher() {
+      return isSignedIn() && userRole() == 'teacher';
+    }
+
+    function isStudent() {
+      return isSignedIn() && userRole() == 'student';
+    }
+
+    // ── users ────────────────────────────────────────────────────────────────
+    // Chacun crée son propre document à l'inscription ; le rôle est choisi à
+    // la création et ne peut plus être modifié.
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+      allow delete: if false;
+    }
+
+    // ── badges & user_badges ─────────────────────────────────────────────────
+    // Catalogue public en lecture ; attribution uniquement par Cloud Functions.
+    match /badges/{badgeId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /user_badges/{entryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── invite_codes ─────────────────────────────────────────────────────────
+    // Secrets : jamais lisibles par les clients (validation via Cloud Function).
+    match /invite_codes/{code} {
+      allow read, write: if false;
+    }
+
+    // ── courses ──────────────────────────────────────────────────────────────
+    // Un brouillon n'est visible que de son enseignant ; un cours publié est
+    // lisible par tous les comptes connectés.
+    match /courses/{courseId} {
+      allow read: if isSignedIn()
+        && (resource.data.isPublished == true || resource.data.teacherId == request.auth.uid);
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      // Un étudiant ne peut qu'incrémenter le compteur d'inscrits de un,
+      // lors de sa propre inscription.
+      allow update: if isTeacher() && resource.data.teacherId == request.auth.uid
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enrollmentsCount'])
+            && request.resource.data.enrollmentsCount == resource.data.enrollmentsCount + 1);
+      allow delete: if isTeacher() && resource.data.teacherId == request.auth.uid;
+
+      // ── chapters (sous-collection) ─────────────────────────────────────────
+      // Écriture réservée à l'enseignant propriétaire du cours parent.
+      match /chapters/{chapterId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isTeacher()
+          && get(/databases/$(database)/documents/courses/$(courseId)).data.teacherId == request.auth.uid;
+      }
+    }
+
+    // ── enrollments ──────────────────────────────────────────────────────────
+    // id = courseId_studentId : un étudiant ne s'inscrit qu'à son propre nom.
+    match /enrollments/{enrollmentId} {
+      allow read: if isSignedIn()
+        && (resource.data.studentId == request.auth.uid
+            || get(/databases/$(database)/documents/courses/$(resource.data.courseId)).data.teacherId == request.auth.uid);
+      allow create: if isStudent()
+        && request.resource.data.studentId == request.auth.uid
+        && enrollmentId == request.resource.data.courseId + '_' + request.auth.uid;
+      allow update: if isSignedIn()
+        && (resource.data.studentId == request.auth.uid
+            || get(/databases/$(database)/documents/courses/$(resource.data.courseId)).data.teacherId == request.auth.uid);
+      allow delete: if isSignedIn()
+        && (resource.data.studentId == request.auth.uid
+            || get(/databases/$(database)/documents/courses/$(resource.data.courseId)).data.teacherId == request.auth.uid);
+    }
+
+    // ── forum : posts, replies, reactions ────────────────────────────────────
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+    match /replies/{replyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      // L'auteur modifie sa réponse ; un enseignant peut seulement la (dé)vérifier.
+      allow update: if isSignedIn() && (
+        resource.data.authorId == request.auth.uid
+        || (isTeacher()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isTeacherVerified', 'verifiedAt']))
+      );
+      // L'auteur de la réponse ou l'auteur de la question peut la supprimer.
+      allow delete: if isSignedIn() && (
+        resource.data.authorId == request.auth.uid
+        || get(/databases/$(database)/documents/posts/$(resource.data.postId)).data.authorId == request.auth.uid
+      );
+    }
+    // id = targetType_targetId_userId : une réaction par personne (le uid est
+    // le dernier segment de l'identifiant).
+    match /reactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isSignedIn()
+        && reactionId.split('_')[reactionId.split('_').size() - 1] == request.auth.uid;
+    }
+
+    // id = targetType_targetId_userId : une note (1 à 5) par personne et par cible.
+    match /ratings/{ratingId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && ratingId.split('_')[ratingId.split('_').size() - 1] == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.stars is int
+        && request.resource.data.stars >= 1 && request.resource.data.stars <= 5;
+      allow delete: if isSignedIn()
+        && ratingId.split('_')[ratingId.split('_').size() - 1] == request.auth.uid;
+    }
+
+    // ── évaluations : quizzes, attempts, assignments, submissions, documents ─
+    match /quizzes/{quizId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+    }
+    match /quiz_attempts/{attemptId} {
+      allow read: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow delete: if false;
+    }
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+    }
+    match /submissions/{submissionId} {
+      allow read: if isSignedIn()
+        && (resource.data.studentId == request.auth.uid || isTeacher());
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      // Correction : l'enseignant modifie note et feedback, rien d'autre.
+      allow update: if isTeacher()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'grade', 'feedback', 'gradedAt']);
+      allow delete: if false;
+    }
+    match /documents/{documentId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+    }
+
+    // ── marketplace : offers, availabilities ─────────────────────────────────
+    match /offers/{offerId} {
+      allow read: if isSignedIn()
+        && (resource.data.status == 'published' || resource.data.sellerId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.sellerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.sellerId == request.auth.uid;
+    }
+    match /availabilities/{slotId} {
+      allow read: if isSignedIn();
+      // Le vendeur de l'offre parente crée / supprime ses créneaux.
+      allow create: if isSignedIn()
+        && get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data.sellerId == request.auth.uid;
+      allow delete: if isSignedIn()
+        && get(/databases/$(database)/documents/offers/$(resource.data.offerId)).data.sellerId == request.auth.uid;
+      // Le vendeur modifie librement ; un acheteur ne peut que verrouiller un
+      // créneau libre (isBooked + orderId) au moment de sa réservation.
+      allow update: if isSignedIn() && (
+        get(/databases/$(database)/documents/offers/$(resource.data.offerId)).data.sellerId == request.auth.uid
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBooked', 'orderId', 'updatedAt'])
+            && request.resource.data.isBooked == true)
+      );
+    }
+
+    // ── orders ───────────────────────────────────────────────────────────────
+    // Règle 5 : impossible de commander sa propre offre. Seul le vendeur fait
+    // évoluer le statut ; l'acheteur ne peut qu'annuler une demande en attente.
+    match /orders/{orderId} {
+      allow read: if isSignedIn()
+        && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.buyerId == request.auth.uid
+        && request.resource.data.buyerId != get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data.sellerId
+        && request.resource.data.status == 'requested';
+      allow update: if isSignedIn() && (
+        (resource.data.sellerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'meetingLink', 'updatedAt']))
+        || (resource.data.buyerId == request.auth.uid
+          && resource.data.status == 'requested'
+          && request.resource.data.status == 'cancelled')
+      );
+      allow delete: if false;
+    }
+
+    // ── reviews ──────────────────────────────────────────────────────────────
+    // id = orderId : un seul avis par commande, écrit par l'acheteur d'une
+    // commande terminée.
+    match /reviews/{orderId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && orderId == request.resource.data.orderId
+        && request.auth.uid == get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'completed';
+      allow update, delete: if false;
+    }
+
+    // ── favorites ────────────────────────────────────────────────────────────
+    // id = {userId}_{offerId} : le uid ne contient pas de tiret bas, donc le
+    // premier segment identifie toujours le propriétaire.
+    match /favorites/{favoriteId} {
+      allow read, write: if isSignedIn() && favoriteId.split('_')[0] == request.auth.uid;
+    }
+
+    // ── reports ──────────────────────────────────────────────────────────────
+    // Un rapport se dépose mais ne se lit pas côté client (traitement serveur).
+    match /reports/{reportId} {
+      allow create: if isSignedIn() && request.resource.data.reporterId == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
+    // ── conversations & messages ─────────────────────────────────────────────
+    // Réservés aux deux participants de la commande liée.
+    match /conversations/{orderId} {
+      allow read, write: if isSignedIn()
+        && (get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId == request.auth.uid
+            || get(/databases/$(database)/documents/orders/$(orderId)).data.sellerId == request.auth.uid);
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn()
+          && (get(/databases/$(database)/documents/orders/$(orderId)).data.buyerId == request.auth.uid
+              || get(/databases/$(database)/documents/orders/$(orderId)).data.sellerId == request.auth.uid);
+        allow create: if isSignedIn()
+          && request.resource.data.senderId == request.auth.uid;
+        allow update: if isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+        allow delete: if false;
+      }
+    }
+  }
+}

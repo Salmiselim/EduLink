@@ -442,8 +442,8 @@ class _QuizWizardScreenState extends State<QuizWizardScreen> {
               TextFormField(
                 controller: _geminiHint,
                 decoration: evalInputDecoration(
-                  label: 'Chapitre source',
-                  hint: 'Ex. Chapitre 2 — Récursivité',
+                  label: 'Chapitre ou extrait de cours',
+                  hint: 'Ex. Chapitre 2 — Récursivité et arbres binaires',
                 ),
               ),
               const SizedBox(height: 10),

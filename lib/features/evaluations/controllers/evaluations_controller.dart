@@ -155,6 +155,9 @@ class EvaluationsController extends ChangeNotifier {
       _repo.currentUserId = currentUserId;
       _repo.currentUserName = currentUserName;
       _repo.currentUserRole = currentUserRole;
+      if (_repo.api is EvaluationsFirestoreService) {
+        (_repo.api as EvaluationsFirestoreService).setRole(currentUserRole == UserRole.teacher ? 'teacher' : 'student');
+      }
     }
     loadAll();
     notifyListeners();
@@ -872,19 +875,67 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
+  /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
   /// Correctif : le filtre recevait un IDENTIFIANT de cours et le comparait
   /// au TITRE stocké dans la ligne — aucun résultat n'apparaissait dès
   /// qu'un cours était sélectionné.
+  /// Si `gradebookRows` est vide (hors-ligne, démonstration), consolide en
+  /// temps réel avec les quiz complétés et devoirs notés en mémoire.
   List<GradebookRow> gradebook({String? courseId, String? student}) {
     String? courseTitle;
     if (courseId != null) {
       courseTitle = _courseTitleFor(courseId) ?? courseId;
     }
-    return gradebookRows.where((r) {
-      if (courseTitle != null && r.courseTitle != courseTitle) return false;
-      if (student != null && r.studentId != student) return false;
-      return true;
-    }).toList();
+    // Si des lignes sont déjà synchronisées du serveur, on les filtre
+    if (gradebookRows.isNotEmpty) {
+      return gradebookRows.where((r) {
+        if (courseTitle != null && r.courseTitle != courseTitle) return false;
+        if (student != null && r.studentId != student) return false;
+        return true;
+      }).toList();
+    }
+
+    // Sinon, synthèse dynamique immédiate à partir des objets en mémoire
+    final synthesized = <GradebookRow>[];
+    for (final q in quizzes) {
+      if (courseId != null && q.courseId != courseId) continue;
+      final atts = attempts.where((a) => a.quizId == q.id && a.isSubmitted).toList();
+      for (final a in atts) {
+        if (student != null && a.studentId != student) continue;
+        synthesized.add(GradebookRow(
+          studentId: a.studentId,
+          studentName: a.studentName.isNotEmpty ? a.studentName : 'Étudiant',
+          courseTitle: q.courseTitle,
+          itemType: 'Quiz',
+          itemTitle: q.title,
+          grade: a.score,
+          maxGrade: 20,
+          status: 'Noté',
+          datedAt: a.submittedAt,
+        ));
+      }
+    }
+
+    for (final asg in assignments) {
+      if (courseId != null && asg.courseId != courseId) continue;
+      final subs = submissions.where((s) => s.assignmentId == asg.id).toList();
+      for (final s in subs) {
+        if (student != null && s.studentId != student) continue;
+        synthesized.add(GradebookRow(
+          studentId: s.studentId,
+          studentName: s.studentName.isNotEmpty ? s.studentName : 'Étudiant',
+          courseTitle: asg.courseTitle,
+          itemType: 'Devoir',
+          itemTitle: asg.title,
+          grade: s.grade,
+          maxGrade: asg.maxGrade,
+          status: s.status == SubmissionStatus.graded ? 'Noté' : 'En attente',
+          datedAt: s.submittedAt,
+        ));
+      }
+    }
+
+    return synthesized;
   }
 
   /// Documents visibles filtrés par propriétaire (enseignant) ou cours inscrits
@@ -1231,8 +1282,10 @@ class EvaluationsController extends ChangeNotifier {
       error = null;
     } on EvalApiException catch (e) {
       error = e.message;
+      rethrow;
     } catch (e) {
       error = e.toString();
+      rethrow;
     } finally {
       _setLoading(false);
     }

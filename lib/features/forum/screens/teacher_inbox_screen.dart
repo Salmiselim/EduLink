@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/forum_provider.dart';
+import '../../../providers/forum_provider.dart';
 import '../widgets/forum_ui.dart';
-import '../widgets/post_card.dart';
+import '../../../widgets/post_card.dart';
 
 /// Boîte de réception enseignant accessible via la route `ForumRoutes.forumInbox`.
 /// Regroupe les questions d'étudiants n'ayant encore reçu ni réponse enseignant ni réponse vérifiée.
