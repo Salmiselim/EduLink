@@ -20,6 +20,7 @@ import 'features/evaluations/data/evaluations_mock_data.dart';
 import 'features/evaluations/models/evaluations_models.dart';
 import 'features/evaluations/routes/evaluations_routes.dart';
 import 'features/evaluations/screens/evaluations_screen.dart';
+import 'features/evaluations/services/evaluations_push_service.dart';
 import 'features/evaluations/widgets/eval_ui.dart';
 import 'features/marketplace/data/marketplace_mock_data.dart';
 import 'features/marketplace/models/marketplace_models.dart';
@@ -63,6 +64,7 @@ Future<void> _initFirebase() async {
     // Notifications push (FCM) : permission + jeton enregistré dans
     // users/{uid} ; sans effet hors Android/iOS (repli silencieux).
     unawaited(CoursesPushService.init());
+    unawaited(EvaluationsPushService.instance.init());
     MarketplaceFirestoreService.enableOfflinePersistence();
     CoursesController.firebaseReady = true;
     AuthService.onSignedIn = (user) async {
@@ -71,6 +73,7 @@ Future<void> _initFirebase() async {
       await EvaluationsController.instance.connectCloud();
       // Ré-enregistre le jeton FCM pour le compte qui vient de se connecter.
       unawaited(CoursesPushService.refreshForCurrentUser());
+      unawaited(EvaluationsPushService.instance.init());
     };
     AuthService.onSignedOut = () async {
       CoursesController.instance.resetSession();
@@ -170,10 +173,55 @@ class _EduLinkShellState extends State<EduLinkShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    EvaluationsPushService.instance.onForegroundNotification = (notif) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF0F172A),
+          duration: const Duration(seconds: 4),
+          content: Row(
+            children: [
+              Icon(notif.icon, color: const Color(0xFF60A5FA), size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${notif.title} · ${notif.courseTitle}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      notif.body,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFCBD5E1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    };
   }
 
   @override
   void dispose() {
+    EvaluationsPushService.instance.onForegroundNotification = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -319,7 +367,7 @@ class CoursesRoot extends StatelessWidget {
               // publications) alimentée en temps réel par Firestore.
               IconButton(
                 tooltip: 'Notifications',
-                onPressed: () => _showNotificationsSheet(context, controller),
+                onPressed: () => showNotificationsSheet(context, controller),
                 icon: Badge(
                   isLabelVisible: controller.unreadNotificationCount > 0,
                   label: Text('${controller.unreadNotificationCount}'),
@@ -387,8 +435,9 @@ class CoursesRoot extends StatelessWidget {
   }
 
   /// Feuille modale listant les notifications in-app de l'utilisateur
-  /// (nouveaux chapitres, publications de cours), avec marquage « lu ».
-  void _showNotificationsSheet(
+  /// (nouveaux chapitres, publications de cours, quiz, devoirs, documents),
+  /// avec marquage « lu ».
+  static void showNotificationsSheet(
     BuildContext context,
     CoursesController controller,
   ) {
@@ -665,9 +714,10 @@ class EvaluationsRoot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = EvaluationsController.instance;
+    final coursesController = CoursesController.instance;
 
     return ListenableBuilder(
-      listenable: controller,
+      listenable: Listenable.merge([controller, coursesController]),
       builder: (context, _) {
         final isTeacher = controller.currentUserRole == UserRole.teacher;
 
@@ -717,6 +767,25 @@ class EvaluationsRoot extends StatelessWidget {
               ],
             ),
             actions: [
+              // Cloche des notifications push (quiz, devoirs/dépôts, documents,
+              // corrections et cours) alimentée en temps réel.
+              IconButton(
+                tooltip: 'Notifications',
+                onPressed: () => CoursesRoot.showNotificationsSheet(
+                  context,
+                  coursesController,
+                ),
+                icon: Badge(
+                  isLabelVisible:
+                      coursesController.unreadNotificationCount > 0,
+                  label: Text('${coursesController.unreadNotificationCount}'),
+                  backgroundColor: const Color(0xFFDC2626),
+                  child: const Icon(
+                    Icons.notifications_outlined,
+                    color: EduColors.primary,
+                  ),
+                ),
+              ),
               // Bascule de rôle simulé — visible uniquement en mode démonstration
               // (en mode réel, le rôle vient du compte Firebase).
               if (controller.isDemoMode)

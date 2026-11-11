@@ -5,6 +5,7 @@ import 'package:edulink/features/evaluations/repositories/evaluations_repository
 import 'package:edulink/features/evaluations/services/evaluations_api_service.dart';
 import 'package:edulink/features/evaluations/services/evaluations_ai_service.dart';
 import 'package:edulink/features/evaluations/services/evaluations_local_service.dart';
+import 'package:edulink/features/evaluations/services/evaluations_push_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Logique métier du module Évaluations, vérifiée avec un repository
@@ -277,6 +278,113 @@ void main() {
       expect(repo.deletedDocumentIds, contains('doc_custom_1'));
     },
   );
+
+  test(
+    'Notifications push : la publication d\'un quiz, dépôt ou document notifie uniquement les étudiants inscrits au cours',
+    () async {
+      final coursesCtrl = CoursesController.instance;
+      // user_me est inscrit à course_algo_1 et course_bdd_1 dans les données
+      // de démo, mais PAS à course_reseau_1.
+      final initialEnrolledNotifCount =
+          coursesCtrl.notificationsFor('user_me').length;
+      final initialOtherStudentNotifCount =
+          coursesCtrl.notificationsFor('stu_unregistered').length;
+
+      controller.currentUserRole = UserRole.teacher;
+      controller.currentUserId = 'tch_leila';
+
+      // 1. Enregistrer un quiz en brouillon ne doit PAS envoyer de push.
+      EvaluationsPushService.instance.clearHistory();
+      final draftQuiz = _quiz(
+        'quiz_draft_push',
+        isPublished: false,
+        courseId: 'course_algo_1',
+      );
+      controller.upsertQuiz(draftQuiz, publish: false);
+      await _drain();
+      expect(EvaluationsPushService.instance.sentHistory, isEmpty);
+      expect(
+        coursesCtrl.notificationsFor('user_me').length,
+        initialEnrolledNotifCount,
+      );
+
+      // 2. Publier ce quiz (via publishQuizToggle) envoie un push 'quiz_published'
+      // aux étudiants inscrits à course_algo_1 (dont user_me).
+      await controller.publishQuizToggle('quiz_draft_push', true);
+      expect(EvaluationsPushService.instance.sentHistory.length, 1);
+      expect(
+        EvaluationsPushService.instance.sentHistory.first.type,
+        'quiz_published',
+      );
+      expect(
+        EvaluationsPushService.instance.sentHistory.first.recipientStudentIds,
+        containsAll(['user_me', 'student_sara', 'student_mehdi', 'student_rania']),
+      );
+      expect(
+        EvaluationsPushService.instance.sentHistory.first.recipientStudentIds,
+        isNot(contains('stu_unregistered')),
+      );
+
+      // 3. Créer un devoir/dépôt sur course_algo_1 envoie un push 'assignment_published'.
+      controller.upsertAssignment(
+        _assignment(
+          'asg_push_1',
+          teacherId: 'tch_leila',
+          courseId: 'course_algo_1',
+        ),
+      );
+      await _drain();
+      expect(EvaluationsPushService.instance.sentHistory.length, 2);
+      expect(
+        EvaluationsPushService.instance.sentHistory.first.type,
+        'assignment_published',
+      );
+
+      // 4. Créer un document sur course_algo_1 envoie un push 'document_published'.
+      controller.upsertDocument(
+        _document(
+          'doc_push_1',
+          teacherId: 'tch_leila',
+          courseId: 'course_algo_1',
+        ),
+      );
+      await _drain();
+      expect(EvaluationsPushService.instance.sentHistory.length, 3);
+      expect(
+        EvaluationsPushService.instance.sentHistory.first.type,
+        'document_published',
+      );
+
+      // user_me a bien reçu les 3 nouvelles notifications dans son centre de notifications.
+      final enrolledNotifs = coursesCtrl.notificationsFor('user_me');
+      expect(enrolledNotifs.length, initialEnrolledNotifCount + 3);
+      expect(
+        enrolledNotifs.take(3).map((n) => n.type).toList(),
+        ['document_published', 'assignment_published', 'quiz_published'],
+      );
+
+      // Un étudiant non inscrit à course_algo_1 n'a reçu aucune notification.
+      expect(
+        coursesCtrl.notificationsFor('stu_unregistered').length,
+        initialOtherStudentNotifCount,
+      );
+
+      // 5. Publier sur un cours où user_me n'est PAS inscrit (course_reseau_1)
+      // ne lui envoie aucune notification.
+      controller.upsertDocument(
+        _document(
+          'doc_push_reseau',
+          teacherId: 'tch_leila',
+          courseId: 'course_reseau_1',
+        ),
+      );
+      await _drain();
+      expect(
+        coursesCtrl.notificationsFor('user_me').length,
+        initialEnrolledNotifCount + 3,
+      );
+    },
+  );
 }
 
 /// Vidange complète des micro-tâches (persistance optimiste du contrôleur).
@@ -421,7 +529,9 @@ class _FakeRepo extends EvaluationsRepository {
   }) async {
     setPublishedCalls.add((quizId, published));
     final index = quizzes.indexWhere((q) => q.id == quizId);
-    final updated = _quiz(quizId, isPublished: published);
+    final updated = index >= 0
+        ? quizzes[index].copyWith(isPublished: published)
+        : _quiz(quizId, isPublished: published);
     if (index >= 0) {
       quizzes = [...quizzes]..[index] = updated;
     } else {
