@@ -1,6 +1,14 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
+import '../services/courses_ai_service.dart';
+import '../services/courses_document_service.dart';
+import '../services/youtube_oembed_service.dart';
+import 'ai_tools.dart';
 import 'courses_ui.dart';
 
 // Feuille modale réutilisable de création et d'édition de chapitre (`ChapterEditSheet`).
@@ -143,6 +151,8 @@ class ChapterEditSheet {
                         controller: contentController,
                         setSheetState: setSheetState,
                         sheetContext: sheetContext,
+                        courseId: courseId,
+                        titleController: titleController,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -237,31 +247,70 @@ class ChapterEditSheet {
   }
 
   /// Construit le champ de formulaire correspondant à [type] avec son `validator` dédié :
-  /// texte long (>= 20 car.), sélecteur de document PDF, URL YouTube ou URI HTTP/HTTPS externe.
+  /// texte long (avec outils IA : brouillon + orthographe), sélecteur de document PDF
+  /// (copie locale dans l'app, visualisable et téléchargeable), URL YouTube ou URI HTTP/HTTPS externe.
   static Widget _typeSpecificField({
     required ChapterType type,
     required TextEditingController controller,
     required void Function(void Function()) setSheetState,
     required BuildContext sheetContext,
+    required String courseId,
+    required TextEditingController titleController,
   }) {
     switch (type) {
       case ChapterType.text:
-        return TextFormField(
-          controller: controller,
-          maxLines: 6,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          decoration: courseInputDecoration(
-            label: 'Contenu du chapitre',
-            hint: 'Rédigez le contenu (séparez les paragraphes par une ligne vide)',
-            icon: Icons.notes_rounded,
-          ),
-          validator: (value) {
-            final v = value?.trim() ?? '';
-            if (v.trim().isEmpty) {
-              return 'Rédigez le contenu du chapitre.';
-            }
-            return null;
-          },
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              controller: controller,
+              maxLines: 6,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              decoration: courseInputDecoration(
+                label: 'Contenu du chapitre',
+                hint:
+                    'Rédigez le contenu (séparez les paragraphes par une ligne vide)',
+                icon: Icons.notes_rounded,
+              ),
+              validator: (value) {
+                final v = value?.trim() ?? '';
+                if (v.trim().isEmpty) {
+                  return 'Rédigez le contenu du chapitre.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            // Outils IA du module Cours : brouillon rédigé à partir du titre
+            // du chapitre, et relecture orthographique titre + contenu.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                AiToolButton(
+                  'Brouillon IA',
+                  compact: true,
+                  onPressed: () => _draftContentWithAi(
+                    sheetContext,
+                    setSheetState,
+                    courseId,
+                    titleController,
+                    controller,
+                  ),
+                ),
+                AiToolButton(
+                  "Vérifier l'orthographe",
+                  compact: true,
+                  onPressed: () => _checkSheetSpelling(
+                    sheetContext,
+                    type,
+                    titleController,
+                    controller,
+                  ),
+                ),
+              ],
+            ),
+          ],
         );
 
       case ChapterType.pdf:
@@ -272,22 +321,12 @@ class ChapterEditSheet {
               width: double.infinity,
               height: 46,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  // Génère une URI de stockage média pour illustrer le rattachement d'un document PDF.
-                  setSheetState(() {
-                    controller.text =
-                        '/documents/edulink/chapters/chapitre_${DateTime.now().millisecondsSinceEpoch}.pdf';
-                  });
-                  ScaffoldMessenger.of(sheetContext).showSnackBar(
-                    const SnackBar(
-                      duration: Duration(seconds: 2),
-                      content: Text(
-                        'Fichier simulé — upload via le service média '
-                        '— intégration à venir.',
-                      ),
-                    ),
-                  );
-                },
+                onPressed: () => _pickChapterPdf(
+                  sheetContext,
+                  setSheetState,
+                  courseId,
+                  controller,
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: CourseColors.primary,
                   side: const BorderSide(color: CourseColors.primary),
@@ -330,22 +369,36 @@ class ChapterEditSheet {
         );
 
       case ChapterType.video:
-        return TextFormField(
-          controller: controller,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          keyboardType: TextInputType.url,
-          decoration: courseInputDecoration(
-            label: 'URL de la vidéo YouTube',
-            hint: 'https://www.youtube.com/watch?v=...',
-            icon: Icons.smart_display_rounded,
-          ),
-          validator: (value) {
-            final v = value?.trim() ?? '';
-            if (!v.contains('youtube.com') && !v.contains('youtu.be')) {
-              return 'Entrez une URL YouTube valide.';
-            }
-            return null;
-          },
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              controller: controller,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              keyboardType: TextInputType.url,
+              decoration: courseInputDecoration(
+                label: 'URL de la vidéo YouTube',
+                hint: 'https://www.youtube.com/watch?v=...',
+                icon: Icons.smart_display_rounded,
+              ),
+              validator: (value) {
+                // Validation réelle : extraction de l'identifiant de la
+                // vidéo (watch, youtu.be, shorts…) au lieu d'une simple
+                // recherche de sous-chaîne.
+                if (YouTubeOEmbedService.extractVideoId(value ?? '') ==
+                    null) {
+                  return 'Entrez une URL YouTube valide.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            // Aperçu en direct : quelques instants après le collage du lien,
+            // la miniature et le titre réels de la vidéo s'affichent —
+            // l'enseignant vérifie d'un coup d'œil qu'il a attaché la bonne
+            // vidéo avant d'enregistrer.
+            _VideoUrlPreview(controller),
+          ],
         );
 
       case ChapterType.link:
@@ -370,5 +423,336 @@ class ChapterEditSheet {
           },
         );
     }
+  }
+
+  /// Génère un brouillon de contenu via l'IA à partir du titre du chapitre
+  /// et du contexte du cours (type « texte » uniquement).
+  static Future<void> _draftContentWithAi(
+    BuildContext sheetContext,
+    void Function(void Function()) setSheetState,
+    String courseId,
+    TextEditingController titleController,
+    TextEditingController contentController,
+  ) async {
+    final chapterTitle = titleController.text.trim();
+    if (chapterTitle.isEmpty) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text("Donnez d'abord un titre au chapitre."),
+        ),
+      );
+      return;
+    }
+    final course = CoursesController.instance.courseById(courseId);
+    final text = await runWithAiLoader<String>(
+      sheetContext,
+      "L'IA rédige un brouillon…",
+      () => CoursesAiService.instance.draftChapterContent(
+        courseTitle: course?.title ?? 'Cours',
+        subject: course?.subject ?? 'Général',
+        chapterTitle: chapterTitle,
+      ),
+    );
+    if (text == null || !sheetContext.mounted) return;
+    setSheetState(() => contentController.text = text);
+  }
+
+  /// Vérifie l'orthographe du titre (et du contenu pour un chapitre texte),
+  /// puis propose les corrections dans une feuille d'application au choix.
+  static Future<void> _checkSheetSpelling(
+    BuildContext sheetContext,
+    ChapterType type,
+    TextEditingController titleController,
+    TextEditingController contentController,
+  ) async {
+    final title = titleController.text.trim();
+    final content =
+        type == ChapterType.text ? contentController.text.trim() : '';
+    if (title.isEmpty && content.isEmpty) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Rien à vérifier : les champs sont vides.'),
+        ),
+      );
+      return;
+    }
+    final corrections = await runWithAiLoader<List<AiFieldCorrection>>(
+      sheetContext,
+      "Vérification de l'orthographe…",
+      () async {
+        final results = <AiFieldCorrection>[];
+        if (title.isNotEmpty) {
+          results.add(
+            AiFieldCorrection(
+              label: 'Titre du chapitre',
+              controller: titleController,
+              corrected: await CoursesAiService.instance.correctSpelling(
+                label: 'Titre du chapitre',
+                text: title,
+              ),
+            ),
+          );
+        }
+        if (content.isNotEmpty) {
+          results.add(
+            AiFieldCorrection(
+              label: 'Contenu du chapitre',
+              controller: contentController,
+              corrected: await CoursesAiService.instance.correctSpelling(
+                label: 'Contenu du chapitre',
+                text: content,
+              ),
+            ),
+          );
+        }
+        return results;
+      },
+    );
+    if (corrections == null || !sheetContext.mounted) return;
+    await showSpellingReviewSheet(sheetContext, corrections);
+  }
+
+  /// Ouvre un PDF (galerie / fichiers de l'appareil) et le copie dans le
+  /// stockage local de l'application : l'étudiant pourra le visualiser dans
+  /// l'app ou le télécharger. En cas d'échec, aucun chemin fictif n'est
+  /// écrit et un message invite à réessayer.
+  static Future<void> _pickChapterPdf(
+    BuildContext sheetContext,
+    void Function(void Function()) setSheetState,
+    String courseId,
+    TextEditingController contentController,
+  ) async {
+    String? pickedPath;
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+      );
+      pickedPath = files.isEmpty ? null : files.first.path;
+    } catch (error) {
+      debugPrint('[ChapterEditSheet] Sélection impossible : $error');
+    }
+    if (pickedPath == null || !sheetContext.mounted) return;
+    // Garde-fou avant copie : 20 Mo maximum.
+    final file = File(pickedPath);
+    if (file.lengthSync() > CoursesDocumentService.maxPdfBytes) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('PDF trop volumineux — 20 Mo maximum.'),
+        ),
+      );
+      return;
+    }
+    final reference = await CoursesDocumentService.instance.importChapterPdf(
+      courseId: courseId,
+      file: file,
+    );
+    if (!sheetContext.mounted) return;
+    if (reference != null) {
+      setSheetState(() => contentController.text = reference);
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text(
+            'PDF ajouté depuis vos fichiers — les étudiants pourront le '
+            'visualiser et le télécharger.',
+          ),
+        ),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(sheetContext).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 3),
+        content: Text("Impossible d'importer ce PDF — réessayez."),
+      ),
+    );
+  }
+}
+
+/// Aperçu en direct d'un lien YouTube collé dans la feuille de chapitre :
+/// après une courte temporisation de frappe, la miniature et le titre réels
+/// de la vidéo (via oEmbed, gratuit et sans clé) s'affichent sous le champ.
+/// En cas de lien non reconnu, un message discret le signale — l'enseignant
+/// vérifie la bonne vidéo AVANT d'enregistrer le chapitre.
+class _VideoUrlPreview extends StatefulWidget {
+  final TextEditingController controller;
+
+  const _VideoUrlPreview(this.controller);
+
+  @override
+  State<_VideoUrlPreview> createState() => _VideoUrlPreviewState();
+}
+
+class _VideoUrlPreviewState extends State<_VideoUrlPreview> {
+  static const Duration _debounce = Duration(milliseconds: 900);
+
+  Timer? _debounceTimer;
+  YouTubeVideoInfo? _info;
+  bool _loading = false;
+  String _checkedSignature = '';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onChanged);
+    // Préremplissage (mode édition) : analyser le lien existant.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleFetch());
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChanged);
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onChanged() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounce, _scheduleFetch);
+  }
+
+  void _scheduleFetch() {
+    final text = widget.controller.text.trim();
+    final id = YouTubeOEmbedService.extractVideoId(text);
+    final signature = id ?? text;
+    // Rien à faire si le contenu analysé n'a pas changé depuis le dernier
+    // affichage (frappe de caractères non significatifs, même lien).
+    if (signature == _checkedSignature && !_loading) return;
+    _checkedSignature = signature;
+    if (id == null) {
+      setState(() {
+        _info = null;
+        _loading = false;
+      });
+      return;
+    }
+    setState(() => _loading = true);
+    _fetch(id, text);
+  }
+
+  Future<void> _fetch(String id, String url) async {
+    final info = await YouTubeOEmbedService.instance.fetch(url);
+    if (!mounted) return;
+    // Ignore une réponse périmée si le champ a changé entre-temps.
+    if (widget.controller.text.trim() != url) return;
+    setState(() {
+      _info = info;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = widget.controller.text.trim();
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    final invalid = _checkedSignature.isNotEmpty &&
+        !_loading &&
+        _info == null &&
+        YouTubeOEmbedService.extractVideoId(text) == null;
+
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Vérification de la vidéo…',
+              style: TextStyle(fontSize: 11, color: CourseColors.muted),
+            ),
+          ],
+        ),
+      );
+    }
+    if (invalid) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Text(
+          'Lien YouTube non reconnu (watch, youtu.be, shorts…).',
+          style: TextStyle(
+            fontSize: 11,
+            color: CourseColors.danger,
+          ),
+        ),
+      );
+    }
+    if (_info == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: CourseColors.neutralBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.network(
+              _info!.thumbnailUrl,
+              width: 96,
+              height: 54,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                width: 96,
+                height: 54,
+                color: const Color(0xFF0F172A),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.play_circle_rounded,
+                  size: 22,
+                  color: Colors.white70,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _info!.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: CourseColors.text,
+                  ),
+                ),
+                if (_info!.author.isNotEmpty)
+                  Text(
+                    _info!.author,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: CourseColors.muted,
+                    ),
+                  ),
+                const Text(
+                  'Vidéo reconnue — miniature affichée aux étudiants.',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: CourseColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

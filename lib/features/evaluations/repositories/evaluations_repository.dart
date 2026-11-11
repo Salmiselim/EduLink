@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/evaluations_models.dart';
 import '../services/evaluations_api_service.dart';
+import '../services/evaluations_firestore_service.dart';
 import '../services/evaluations_local_service.dart';
 
 /// Couche repository du module Évaluations.
@@ -42,6 +43,18 @@ class EvaluationsRepository {
   /// Ouvre les boîtes Hive. Appelé au démarrage dans [EvaluationsController].
   Future<void> init() => _local.init();
 
+  /// Vide les caches Hive et l'identité Firestore en mémoire lors d'une
+  /// déconnexion ou d'un changement de compte.
+  Future<void> clearLocalCache() async {
+    final api = _api;
+    if (api is EvaluationsFirestoreService) {
+      api.clearCachedIdentity();
+    }
+    try {
+      await _local.clearAll();
+    } catch (_) {}
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // QUIZ
   // ════════════════════════════════════════════════════════════════════════
@@ -51,16 +64,17 @@ class EvaluationsRepository {
   Future<List<Quiz>> getQuizzes({String? courseId}) async {
     try {
       final quizzes = await _api.getQuizzes(courseId: courseId);
-      // Sérialisation légère pour le cache (on stocke le JSON brut reçu).
+      // Sérialisation légère pour le cache (isolé par utilisateur).
       await _local.cacheQuizList(
         quizzes.map(_quizToJson).toList(),
+        userId: currentUserId,
       );
       return quizzes;
     } on EvalApiException catch (e) {
       debugPrint('[Repo] getQuizzes hors-ligne : $e');
-      // Fallback cache Hive
+      // Fallback cache Hive (isolé par utilisateur)
       return _local
-          .getCachedQuizList()
+          .getCachedQuizList(userId: currentUserId)
           .map((j) => _api.quizFromJsonPublic(j))
           .toList();
     }
@@ -80,6 +94,12 @@ class EvaluationsRepository {
   }
 
   Future<Quiz> publishQuiz(String quizId) => _api.publishQuiz(quizId);
+
+  /// Positionne explicitement l'état de publication (pas de bascule) :
+  /// corrige le bug de l'assistant « Publier » qui repassait le quiz en
+  /// brouillon à cause du toggle.
+  Future<Quiz> setQuizPublished(String quizId, {required bool published}) =>
+      _api.setQuizPublished(quizId, published: published);
 
   /// Génère un brouillon de quiz via Gemini (L — API externe).
   Future<List<Map<String, dynamic>>> generateQuizDraft({
@@ -187,6 +207,29 @@ class EvaluationsRepository {
 
   Future<Submission> getSubmission(String submissionId) =>
       _api.getSubmission(submissionId);
+
+  /// Tentatives visibles par l'utilisateur courant (tentatives de ses quiz
+  /// pour un enseignant, les siennes pour un étudiant). Retourne une liste
+  /// vide si la source ne les expose pas — le reste du module doit continuer
+  /// de fonctionner.
+  Future<List<QuizAttempt>> getVisibleAttempts() async {
+    try {
+      return await _api.getVisibleAttempts();
+    } catch (e) {
+      debugPrint('[Repo] getVisibleAttempts indisponible : $e');
+      return [];
+    }
+  }
+
+  /// Copies visibles par l'utilisateur courant (avec le même repli sûr).
+  Future<List<Submission>> getVisibleSubmissions() async {
+    try {
+      return await _api.getVisibleSubmissions();
+    } catch (e) {
+      debugPrint('[Repo] getVisibleSubmissions indisponible : $e');
+      return [];
+    }
+  }
 
   /// Note une copie. L8 : notifie l'étudiant. L2 : badge copies corrigées.
   Future<Submission> gradeSubmission({

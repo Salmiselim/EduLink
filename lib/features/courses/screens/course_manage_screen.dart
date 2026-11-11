@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
+import '../services/courses_ai_service.dart';
 import '../widgets/chapter_edit_sheet.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
@@ -42,6 +43,195 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
         ),
       ),
     );
+  }
+
+  // ── Traduction du cours assistée par IA (couche Service) ─────────────────
+
+  /// Choisit les langues cibles puis traduit la description et tous les
+  /// chapitres texte du cours en UNE SEULE requête par langue (économie de
+  /// quota — chaque modèle gratuit n'accepte que 20 requêtes par jour) ;
+  /// les traductions sont enregistrées dans Firestore et deviennent
+  /// disponibles pour tous les étudiants.
+  Future<void> _translateCourse(Course course) async {
+    final languages = await _pickTranslationLanguages();
+    if (languages.isEmpty || !mounted) return;
+
+    final textChapters = _controller
+        .chaptersOf(course.id)
+        .where(
+          (c) =>
+              c.type == ChapterType.text &&
+              (c.content ?? '').trim().isNotEmpty,
+        )
+        .toList();
+
+    final progress = ValueNotifier<int>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (context, done, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.translate_rounded,
+                color: Color(0xFF7C3AED),
+                size: 28,
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Traduction du cours en cours…',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              LinearProgressIndicator(
+                value: languages.isEmpty ? null : done / languages.length,
+                color: CourseColors.primary,
+                backgroundColor: CourseColors.neutralBg,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Langues traduites : $done / ${languages.length}',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: CourseColors.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    var translatedLanguages = 0;
+    try {
+      for (final language in languages) {
+        final bundle = await CoursesAiService.instance.translateCourseBundle(
+          description: course.description,
+          items: {
+            for (final chapter in textChapters)
+              chapter.id: (chapter.content ?? '').trim(),
+          },
+          language: language,
+          courseTitle: course.title,
+        );
+        if (bundle == null) {
+          throw AiUnavailableException(
+            'Traduction ${language.label} indisponible — réessaie plus tard.',
+          );
+        }
+        final translatedDescription = bundle['description'];
+        if (translatedDescription != null &&
+            translatedDescription.trim().isNotEmpty) {
+          _controller.saveCourseDescriptionTranslation(
+            course.id,
+            language.code,
+            translatedDescription,
+          );
+        }
+        for (final chapter in textChapters) {
+          final translated = bundle[chapter.id];
+          if (translated != null && translated.trim().isNotEmpty) {
+            _controller.saveChapterTranslation(
+              course.id,
+              chapter.id,
+              language.code,
+              translated,
+            );
+          }
+        }
+        progress.value = ++translatedLanguages;
+      }
+    } on AiUnavailableException catch (error) {
+      progress.dispose();
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          content: Text(error.message),
+        ),
+      );
+      return;
+    }
+    progress.dispose();
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 3),
+        content: Text(
+          'Traduction terminée : ${languages.length} langue(s) — la '
+          'description et ${textChapters.length} chapitre(s) sont '
+          'disponibles pour les étudiants.',
+        ),
+      ),
+    );
+  }
+
+  /// Sélecteur des langues cibles (Anglais, Arabe, Espagnol).
+  Future<List<CourseLanguage>> _pickTranslationLanguages() async {
+    final selected = <CourseLanguage>{};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Traduire le cours',
+            style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "L'IA traduit la description et les chapitres texte ; les "
+                'traductions sont enregistrées et lisibles par tous les '
+                'étudiants (sans coût supplémentaire).',
+                style: TextStyle(fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 8),
+              for (final language in CourseLanguage.available)
+                CheckboxListTile(
+                  value: selected.contains(language),
+                  onChanged: (checked) => setDialogState(
+                    () => checked == true
+                        ? selected.add(language)
+                        : selected.remove(language),
+                  ),
+                  title: Text(
+                    language.label,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: CourseColors.primary,
+              ),
+              child: const Text('Traduire'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return confirmed == true ? selected.toList() : [];
   }
 
   /// Ouvre une `ModalBottomSheet` contextuelle permettant d'éditer le chapitre
@@ -106,8 +296,49 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
                     'Supprimer le chapitre',
                     style: TextStyle(color: CourseColors.danger),
                   ),
-                  onTap: () {
+                  // Confirmation préalable : suppression d'un contenu
+                  // destructrice pour la progression des étudiants.
+                  onTap: () async {
                     Navigator.pop(sheetContext);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        title: const Text(
+                          'Supprimer ce chapitre ?',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        content: Text(
+                          '« ${chapter.title} » sera définitivement retiré '
+                          'du cours et la progression des étudiants sera '
+                          'ajustée.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Annuler'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: CourseColors.danger,
+                            ),
+                            child: const Text('Supprimer'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !mounted) return;
                     _controller.deleteChapter(course.id, chapter.id);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -289,6 +520,14 @@ class _CourseManageScreenState extends State<CourseManageScreen> {
               ),
             ),
             actions: [
+              IconButton(
+                tooltip: 'Traduire le cours (IA)',
+                onPressed: () => _translateCourse(course),
+                icon: const Icon(
+                  Icons.translate_rounded,
+                  color: Color(0xFF7C3AED),
+                ),
+              ),
               IconButton(
                 tooltip: course.isPublished
                     ? 'Masquer le cours'

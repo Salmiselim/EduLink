@@ -50,3 +50,6 @@ image.png
 
 # Clés API du Forum (ne jamais versionner)
 dart_defines.json
+
+# Artefacts de build Android
+android/build/

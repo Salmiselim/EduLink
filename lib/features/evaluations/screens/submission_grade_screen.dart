@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../data/evaluations_mock_data.dart';
 import '../widgets/eval_ui.dart';
 
@@ -24,11 +24,22 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
   void initState() {
     super.initState();
     // Préremplit la note et le feedback si la copie a déjà fait l'objet d'une évaluation.
-    final sub = _controller.submissionById(widget.submissionId)!;
+    // Garde : la copie peut être absente de la mémoire (liste non chargée) —
+    // l'écran affiche alors un état vide au lieu de planter (ancien `!` direct).
+    final sub = _controller.submissionById(widget.submissionId);
     _grade = TextEditingController(
-      text: sub.grade?.toStringAsFixed(0) ?? '',
+      text: sub?.grade?.toStringAsFixed(0) ?? '',
     );
-    _feedback = TextEditingController(text: sub.feedback ?? '');
+    _feedback = TextEditingController(text: sub?.feedback ?? '');
+    if (sub == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Copie introuvable.')),
+        );
+        Navigator.pop(context);
+      });
+    }
   }
 
   @override
@@ -40,8 +51,16 @@ class _SubmissionGradeScreenState extends State<SubmissionGradeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sub = _controller.submissionById(widget.submissionId)!;
-    final assignment = _controller.assignmentById(sub.assignmentId)!;
+    final sub = _controller.submissionById(widget.submissionId);
+    final assignment = sub == null
+        ? null
+        : _controller.assignmentById(sub.assignmentId);
+    if (sub == null || assignment == null) {
+      return const Scaffold(
+        backgroundColor: EduColors.scaffold,
+        body: Center(child: Text('Copie introuvable')),
+      );
+    }
 
     return Scaffold(
       backgroundColor: EduColors.scaffold,

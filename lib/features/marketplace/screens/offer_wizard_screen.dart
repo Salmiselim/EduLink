@@ -3,6 +3,10 @@
 // RadioGroup, RadioListTile, AlertDialog, OutlinedButton et FilledButton.
 import 'package:flutter/material.dart';
 
+// Liaison inter-modules : les cours rattachables aux offres sont les cours
+// RÉELLEMENT PUBLIÉS du module Cours (mêmes identifiants Firestore).
+import '../../courses/data/courses_mock_data.dart';
+
 // Liaisons avec le contrôleur d'état (`addOffer` / `updateOffer`) et les modèles de données :
 import '../data/marketplace_mock_data.dart';
 import '../models/marketplace_models.dart';
@@ -496,10 +500,9 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
     final linkedCourse = _selectedCourseId == null
         ? null
-        : MarketplaceController.availableCoursesL6.firstWhere(
-            (c) => c['id'] == _selectedCourseId,
-            orElse: () => MarketplaceController.availableCoursesL6.first,
-          );
+        : _linkableCourses
+            .where((c) => c['id'] == _selectedCourseId)
+            .firstOrNull;
 
     final offerId = widget.existingOffer?.id ??
         'offer_${DateTime.now().millisecondsSinceEpoch}';
@@ -1620,7 +1623,24 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
 
   /// Étape 5 : sélection optionnelle d'un cours académique via [RadioGroup] et [RadioListTile]
   /// afin de faire remonter l'offre dans les recommandations ciblées.
+  ///
+  /// Liaison inter-modules corrigée : la liste provient des cours
+  /// RÉELLEMENT PUBLIÉS du module Cours (`CoursesController.publishedCourses`)
+  /// et non plus de la liste statique historique `availableCoursesL6` — les
+  /// offres pointent donc vers de vrais identifiants de cours Firestore.
+  List<Map<String, String>> get _linkableCourses => CoursesController
+      .instance.publishedCourses
+      .map(
+        (c) => <String, String>{
+          'id': c.id,
+          'title': c.title,
+          'subject': c.subject,
+        },
+      )
+      .toList();
+
   Widget _buildStep5LinkedCourse() {
+    final linkable = _linkableCourses;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1649,6 +1669,19 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 14),
+          if (linkable.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                "Aucun cours publié pour l'instant — publiez un cours dans "
+                "l'onglet Cours pour pouvoir rattacher vos offres.",
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.5,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
           // Groupe radio rattachant optionnellement l'offre à un cours existant (ou `null` pour une offre libre)
           RadioGroup<String?>(
             groupValue: _selectedCourseId,
@@ -1663,7 +1696,7 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
                   ),
                 ),
                 const Divider(),
-                ...MarketplaceController.availableCoursesL6.map((course) {
+                ...linkable.map((course) {
                   return RadioListTile<String?>(
                     value: course['id'],
                     title: Text(
@@ -1693,10 +1726,9 @@ class _OfferWizardScreenState extends State<OfferWizardScreen> {
             0.0;
     final linkedCourse = _selectedCourseId == null
         ? null
-        : MarketplaceController.availableCoursesL6.firstWhere(
-            (c) => c['id'] == _selectedCourseId,
-            orElse: () => MarketplaceController.availableCoursesL6.first,
-          );
+        : _linkableCourses
+            .where((c) => c['id'] == _selectedCourseId)
+            .firstOrNull;
 
     return Container(
       padding: const EdgeInsets.all(18),

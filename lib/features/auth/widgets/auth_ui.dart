@@ -25,11 +25,13 @@ InputDecoration authInputDecoration({
   IconData? icon,
   Widget? suffixIcon,
   String? helperText,
+  String? counterText,
 }) {
   return InputDecoration(
     labelText: label,
     hintText: hint,
     helperText: helperText,
+    counterText: counterText,
     prefixIcon: icon == null ? null : Icon(icon, color: AuthColors.muted),
     suffixIcon: suffixIcon,
     filled: true,

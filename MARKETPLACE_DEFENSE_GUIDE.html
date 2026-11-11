@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EduLink Marketplace (Module M5) — Complete Code Walkthrough & Defense Guide</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-alt: #f1f5f9;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --purple: #7c3aed;
+      --purple-soft: #f3e8ff;
+      --emerald: #059669;
+      --emerald-soft: #d1fae5;
+      --amber: #d97706;
+      --amber-soft: #fef3c7;
+      --rose: #e11d48;
+      --rose-soft: #ffe4e6;
+      --cyan: #0891b2;
+      --cyan-soft: #cffafe;
+      --radius: 16px;
+      --shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      padding-bottom: 90px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #3b0764 100%);
+      color: #ffffff;
+      padding: 48px 24px 40px;
+      border-bottom: 4px solid #3b82f6;
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      background: rgba(255, 255, 255, 0.14);
+      color: #e0f2fe;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    header h1 {
+      font-size: clamp(26px, 4vw, 38px);
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      font-size: 16.5px;
+      color: #cbd5e1;
+      max-width: 880px;
+    }
+
+    .sticky-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 0;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 7px 12px;
+      border-radius: 10px;
+      transition: all 0.18s ease;
+    }
+
+    .nav-links a:hover {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .print-btn {
+      margin-left: auto;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .print-btn:hover {
+      background: #1d4ed8;
+    }
+
+    section {
+      margin-top: 44px;
+      scroll-margin-top: 76px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .section-subtitle {
+      color: var(--muted);
+      font-size: 15px;
+      margin-bottom: 22px;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 20px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h3 {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card p {
+      color: var(--muted);
+      font-size: 14.5px;
+      margin-bottom: 12px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .tag-blue { background: var(--primary-soft); color: var(--primary); }
+    .tag-purple { background: var(--purple-soft); color: var(--purple); }
+    .tag-green { background: var(--emerald-soft); color: var(--emerald); }
+    .tag-amber { background: var(--amber-soft); color: var(--amber); }
+    .tag-rose { background: var(--rose-soft); color: var(--rose); }
+    .tag-cyan { background: var(--cyan-soft); color: var(--cyan); }
+
+    code {
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 12.8px;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2px 7px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+
+    pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 18px 20px;
+      border-radius: 14px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      border: 1px solid #1e293b;
+      margin: 12px 0;
+    }
+
+    pre .comment { color: #94a3b8; }
+    pre .folder { color: #38bdf8; font-weight: 700; }
+    pre .file { color: #a7f3d0; }
+    pre .kw { color: #c084fc; font-weight: 700; }
+    pre .fn { color: #60a5fa; }
+    pre .str { color: #fde047; }
+
+    /* File Walkthrough Cards */
+    .file-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: 5px solid var(--primary);
+      border-radius: var(--radius);
+      padding: 26px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .file-card.purple { border-top-color: var(--purple); }
+    .file-card.green { border-top-color: var(--emerald); }
+    .file-card.amber { border-top-color: var(--amber); }
+    .file-card.rose { border-top-color: var(--rose); }
+    .file-card.cyan { border-top-color: var(--cyan); }
+
+    .file-card-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 14px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .file-card-header h3 {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .file-path-badge {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 12.5px;
+      background: #0f172a;
+      color: #38bdf8;
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+
+    .say-to-teacher {
+      background: #eff6ff;
+      border-left: 4px solid #2563eb;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14.5px;
+      color: #1e3a8a;
+      margin-bottom: 16px;
+    }
+
+    .method-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .method-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .method-box h4 {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #1d4ed8;
+      margin-bottom: 6px;
+    }
+
+    .method-box p {
+      font-size: 13.8px;
+      color: #334155;
+      margin: 0;
+    }
+
+    ul.clean-list {
+      padding-left: 20px;
+      margin: 8px 0;
+    }
+
+    ul.clean-list li {
+      margin-bottom: 7px;
+      font-size: 14.5px;
+      color: #334155;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 14px 18px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    td {
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14.2px;
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .demo-step {
+      display: flex;
+      gap: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+      align-items: flex-start;
+      box-shadow: var(--shadow);
+    }
+
+    .demo-step input[type="checkbox"] {
+      width: 22px;
+      height: 22px;
+      margin-top: 3px;
+      accent-color: var(--emerald);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .demo-step-content h4 {
+      font-size: 16.5px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .demo-step-content p {
+      font-size: 14.5px;
+      color: var(--muted);
+    }
+
+    .qa-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .qa-question {
+      font-size: 17px;
+      font-weight: 800;
+      color: #1e3a8a;
+      margin-bottom: 10px;
+    }
+
+    .qa-answer {
+      background: #f0fdf4;
+      border-left: 4px solid #16a34a;
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 14.8px;
+      color: #14532d;
+    }
+
+    @media print {
+      .sticky-nav { display: none; }
+      body { background: #fff; padding: 0; }
+      .card, .file-card, .qa-card, .demo-step { box-shadow: none; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HERO HEADER -->
+  <header>
+    <div class="container">
+      <div class="badge-row">
+        <span class="pill">🎓 Module M5 — Marketplace Académique</span>
+        <span class="pill">📂 All 14 Code Files Explained</span>
+        <span class="pill">🗺️ OpenStreetMap + Nominatim API</span>
+        <span class="pill">📅 Nager.Date Holiday API + Google Calendar</span>
+        <span class="pill">🎥 Jitsi Meet + 🔥 Cloud Firestore</span>
+      </div>
+      <h1>EduLink Marketplace — Complete Code Walkthrough &amp; Defense Guide</h1>
+      <p>
+        Every single file in your Marketplace module explained in plain language: what classes, variables,
+        widgets, and functions are inside each file, how the code works, and what to say when your teacher opens any file.
+      </p>
+    </div>
+  </header>
+
+  <!-- STICKY NAVIGATION -->
+  <nav class="sticky-nav">
+    <div class="container nav-links">
+      <a href="#overview">1. Overview</a>
+      <a href="#core-files">2. Models, Controller &amp; Routes</a>
+      <a href="#service-files">3. API Services (3 Files)</a>
+      <a href="#widget-files">4. Widgets (4 Files)</a>
+      <a href="#screen-files">5. Screens (5 Files)</a>
+      <a href="#demo">6. Live Demo Script</a>
+      <a href="#qa">7. Teacher Q&amp;A</a>
+      <button class="print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- SECTION 1: BIG PICTURE -->
+    <section id="overview">
+      <div class="section-title">
+        <span class="step-number">1</span>
+        <span>Architecture Overview: How All 14 Files Connect Together</span>
+      </div>
+      <p class="section-subtitle">
+        Your Marketplace uses a clean <strong>MVC / Observer Architecture</strong> divided into 5 folders inside <code>lib/features/marketplace/</code>:
+      </p>
+
+      <div class="grid-4">
+        <div class="card">
+          <span class="tag tag-blue">1. Models (1 File)</span>
+          <h3 style="margin-top:10px;">🧱 Data Blueprint</h3>
+          <p><code>marketplace_models.dart</code> defines the classes (<code>Offer</code>, <code>AvailabilitySlot</code>, <code>MarketplaceOrder</code>, <code>OfferReview</code>, <code>ChatMessage</code>) and converts them to/from Firebase JSON (<code>toMap</code> / <code>fromMap</code>).</p>
+        </div>
+        <div class="card">
+          <span class="tag tag-purple">2. Controller (1 File)</span>
+          <h3 style="margin-top:10px;">🧠 State &amp; Rules</h3>
+          <p><code>marketplace_mock_data.dart</code> holds <code>MarketplaceController extends ChangeNotifier</code>. Whenever data changes, it calls <code>notifyListeners()</code> and updates all screens automatically.</p>
+        </div>
+        <div class="card">
+          <span class="tag tag-green">3. Services (3 Files)</span>
+          <h3 style="margin-top:10px;">🌐 External APIs</h3>
+          <p><code>calendar_api_service.dart</code> (Holidays + Google Calendar), <code>nominatim_service.dart</code> (OpenStreetMap Geocoding), and <code>marketplace_firestore_service.dart</code> (Cloud Firestore).</p>
+        </div>
+        <div class="card">
+          <span class="tag tag-amber">4. UI (9 Files)</span>
+          <h3 style="margin-top:10px;">📱 5 Screens + 4 Widgets</h3>
+          <p>The 5 screens subscribe to <code>MarketplaceController</code> using Flutter's <code>ListenableBuilder</code> and open the 4 reusable widgets (Map picker, Calendar picker, Offer card, Review sheet).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: CORE FILES (MODELS, CONTROLLER, ROUTES) -->
+    <section id="core-files">
+      <div class="section-title">
+        <span class="step-number">2</span>
+        <span>Core Layer Explained: Models, Controller &amp; Routes (3 Files)</span>
+      </div>
+      <p class="section-subtitle">
+        If the teacher asks <em>"How is your data structured and how do you manage state?"</em>, open these 3 files:
+      </p>
+
+      <!-- FILE 1: marketplace_models.dart -->
+      <div class="file-card">
+        <div class="file-card-header">
+          <h3>📄 File 1: Domain Models &amp; Enums</h3>
+          <span class="file-path-badge">lib/features/marketplace/models/marketplace_models.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This file contains all our immutable data models and enums. Every class has a <code>copyWith()</code> method to update state safely and <code>toMap()</code> / <code>fromMap()</code> methods to serialize objects to and from Firebase Cloud Firestore."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>Enums (OfferType, OfferStatus, OrderStatus, SellerRole)</h4>
+            <p>Each enum has a Dart <code>extension</code> attached to it that returns its French label (e.g. <code>'Cours particulier (1 h)'</code>), its Material <code>IconData</code>, and its theme <code>Color</code> so UI screens don't hardcode colors or strings.</p>
+          </div>
+          <div class="method-box">
+            <h4>class OfferLocation</h4>
+            <p>Stores the pickup point for an offer: <code>address</code> (street), <code>city</code>, <code>lat</code> (latitude), and <code>lng</code> (longitude) returned by OpenStreetMap.</p>
+          </div>
+          <div class="method-box">
+            <h4>class Offer</h4>
+            <p>Represents an announcement in the catalog: <code>id</code>, <code>title</code>, <code>description</code>, <code>type</code>, <code>subject</code>, <code>price</code>, <code>sellerId</code>, <code>sellerRole</code>, <code>status</code>, <code>viewsCount</code>, <code>salesCount</code>, <code>ratingAvg</code>, <code>reportsCount</code>, and <code>location</code>.</p>
+          </div>
+          <div class="method-box">
+            <h4>class AvailabilitySlot</h4>
+            <p>Represents a 1-hour tutoring slot: <code>id</code>, <code>offerId</code>, <code>date</code> (e.g. <code>'Mar 10 Nov 2026'</code>), <code>startTime</code>, <code>endTime</code>, <code>isBooked</code> (boolean lock), and <code>orderId</code>. Includes <code>clearOrderId: true</code> in <code>copyWith()</code> to unlock a slot when an order is rejected.</p>
+          </div>
+          <div class="method-box">
+            <h4>class MarketplaceOrder</h4>
+            <p>Represents a transaction between buyer and seller: stores <code>offerId</code>, <code>buyerId</code>, <code>sellerId</code>, <code>amount</code>, <code>slotId</code>, <code>slotLabel</code>, <code>meetingLink</code> (Jitsi URL), <code>status</code>, and <code>unreadCount</code>.</p>
+          </div>
+          <div class="method-box">
+            <h4>class OfferReview &amp; ChatMessage</h4>
+            <p><code>OfferReview</code> stores 1-to-5 star verified ratings after an order is completed. <code>ChatMessage</code> stores messages (and system notifications) inside an order's chat room.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 2: marketplace_mock_data.dart -->
+      <div class="file-card purple">
+        <div class="file-card-header">
+          <h3>🧠 File 2: Central State Controller (The Brain)</h3>
+          <span class="file-path-badge">lib/features/marketplace/data/marketplace_mock_data.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This is our central controller using Flutter's <code>ChangeNotifier</code> (Observer pattern) and the Singleton pattern (<code>MarketplaceController.instance</code>). It enforces all business rules—like locking slots, auto-hiding reported offers at 3 reports, and generating Jitsi links—and syncs in real time with Cloud Firestore."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>connectFirestore()</h4>
+            <p>Subscribes to 4 real-time Firestore streams (<code>watchOffers</code>, <code>watchSlots</code>, <code>watchOrders</code>, <code>watchReviews</code>). If the cloud collection is empty on first run, it seeds the initial catalog automatically.</p>
+          </div>
+          <div class="method-box">
+            <h4>createOffer(...) &amp; updateOffer(...)</h4>
+            <p>Creates or updates an <code>Offer</code> + its list of 1-hour <code>AvailabilitySlot</code> objects, persists them to Firestore, and calls <code>notifyListeners()</code> so the catalog refreshes immediately.</p>
+          </div>
+          <div class="method-box">
+            <h4>reportOffer(offerId, reason, details)</h4>
+            <p>Increments <code>reportsCount</code> on the offer and writes a document to the Firestore <code>reports</code> collection. <strong>Rule:</strong> If <code>reportsCount &gt;= 3</code>, status becomes <code>OfferStatus.hidden</code> automatically.</p>
+          </div>
+          <div class="method-box">
+            <h4>createOrder(...)</h4>
+            <p>Creates a new <code>MarketplaceOrder</code>. If the offer is a private lesson with a chosen <code>slotId</code>, it immediately sets <code>slot.isBooked = true</code> so no other student can double-book that hour.</p>
+          </div>
+          <div class="method-box">
+            <h4>updateOrderStatus(orderId, newStatus)</h4>
+            <p>Handles the order lifecycle:<br/>
+            • If <code>accepted</code> on a lesson &rarr; generates <code>https://meet.jit.si/edulink-$orderId</code>.<br/>
+            • If <code>rejected</code> or <code>cancelled</code> &rarr; frees the slot (<code>isBooked: false</code>).<br/>
+            • If <code>completed</code> &rarr; increments <code>salesCount</code> and awards seller badges.</p>
+          </div>
+          <div class="method-box">
+            <h4>submitReview(order, rating, comment)</h4>
+            <p>Saves an <code>OfferReview</code>, marks <code>order.hasReview = true</code>, and recalculates the offer's weighted average rating (<code>ratingAvg</code>) and <code>ratingCount</code>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 3: marketplace_routes.dart -->
+      <div class="file-card cyan">
+        <div class="file-card-header">
+          <h3>🧭 File 3: Named Navigation Routes &amp; Arguments</h3>
+          <span class="file-path-badge">lib/features/marketplace/routes/marketplace_routes.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This file centralizes all named route constants (<code>/marketplace</code>, <code>/marketplace/offer-detail</code>, <code>/marketplace/offer-wizard</code>, <code>/marketplace/order-checkout</code>, <code>/marketplace/order-chat</code>) and strongly-typed route argument classes (<code>OfferDetailArgs</code>, <code>OfferWizardArgs</code>, <code>OrderCheckoutArgs</code>, <code>OrderChatArgs</code>) passed via <code>Navigator.pushNamed</code>."
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: THE 3 API SERVICE FILES -->
+    <section id="service-files">
+      <div class="section-title">
+        <span class="step-number">3</span>
+        <span>Services Layer Explained: External APIs &amp; Cloud Firestore (3 Files)</span>
+      </div>
+      <p class="section-subtitle">
+        These 3 files handle all external HTTP requests, deep links, and database operations:
+      </p>
+
+      <!-- FILE 4: calendar_api_service.dart -->
+      <div class="file-card purple">
+        <div class="file-card-header">
+          <h3>📅 File 4: Calendar API Service (Today Rule + Holidays API + Google Calendar)</h3>
+          <span class="file-path-badge">lib/features/marketplace/services/calendar_api_service.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This service does 3 things: (1) it enforces that all availability dates start from today (<code>DateTime.now()</code>) and parses/formats French dates, (2) it calls the <strong>Nager.Date REST API</strong> to check if a selected date is an official Tunisian public holiday or weekend, and (3) it builds <strong>Google Calendar</strong> event deep links."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>todayNormalized() &amp; formatRelativeDay(days)</h4>
+            <p><code>todayNormalized()</code> strips hours/minutes from <code>DateTime.now()</code> to get midnight today. <code>formatRelativeDay(0)</code> formats today in French (e.g. <code>'Mar 10 Nov 2026'</code>), <code>formatRelativeDay(1)</code> formats tomorrow, etc.</p>
+          </div>
+          <div class="method-box">
+            <h4>parseSlotDate(raw) &amp; isPastDateString(raw)</h4>
+            <p>Parses a French date string back into a Dart <code>DateTime</code> object and checks <code>parsed.isBefore(todayNormalized())</code> to reject any past date in forms.</p>
+          </div>
+          <div class="method-box">
+            <h4>inspectDate(DateTime date)</h4>
+            <p>Calls <code>GET https://date.nager.at/api/v3/PublicHolidays/{year}/TN</code> using the <code>http</code> package (with in-memory cache <code>_holidaysCacheByYear</code> and offline fallback). Returns a <code>CalendarDayInfo</code> telling the UI if the day is a holiday, weekend, or recommended academic day.</p>
+          </div>
+          <div class="method-box">
+            <h4>buildGoogleCalendarUri(...) &amp; openGoogleCalendarSlot(...)</h4>
+            <p>Converts the slot date + start/end time into Google Calendar UTC format (<code>YYYYMMDDTHHMMSSZ/YYYYMMDDTHHMMSSZ</code>) and launches <code>https://calendar.google.com/calendar/render?action=TEMPLATE&amp;...</code> via <code>url_launcher</code>.</p>
+          </div>
+        </div>
+
+<pre><span class="comment">// Key snippet from calendar_api_service.dart:</span>
+<span class="kw">static</span> DateTime <span class="fn">todayNormalized</span>() {
+  <span class="kw">final</span> now = DateTime.<span class="fn">now</span>();
+  <span class="kw">return</span> <span class="fn">DateTime</span>(now.year, now.month, now.day); <span class="comment">// Blocks anything before today!</span>
+}
+
+<span class="comment">// Querying Nager.Date Public Holidays API for Tunisia (TN):</span>
+<span class="kw">final</span> uri = Uri.<span class="fn">parse</span>(<span class="str">'https://date.nager.at/api/v3/PublicHolidays/$year/TN'</span>);
+<span class="kw">final</span> response = <span class="kw">await</span> http.<span class="fn">get</span>(uri).<span class="fn">timeout</span>(<span class="kw">const</span> <span class="fn">Duration</span>(seconds: 4));</pre>
+      </div>
+
+      <!-- FILE 5: nominatim_service.dart -->
+      <div class="file-card">
+        <div class="file-card-header">
+          <h3>🗺️ File 5: OpenStreetMap Nominatim Geocoding Service</h3>
+          <span class="file-path-badge">lib/features/marketplace/services/nominatim_service.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This service connects our app to the <strong>OpenStreetMap Nominatim REST API</strong>. It supports both forward geocoding (searching an address by text) and reverse geocoding (converting tapped map coordinates into a street address and city), plus an offline fallback list of Tunisian universities."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>class NominatimPlace</h4>
+            <p>Holds a geocoded location: <code>displayName</code> (street + neighborhood), <code>city</code>, <code>lat</code> (double), and <code>lng</code> (double).</p>
+          </div>
+          <div class="method-box">
+            <h4>searchTunisPlaces(String query)</h4>
+            <p>Calls <code>GET https://nominatim.openstreetmap.org/search?format=jsonv2&amp;countrycodes=tn&amp;addressdetails=1&amp;limit=6&amp;q=...</code>. Parses the JSON array into <code>List&lt;NominatimPlace&gt;</code>. If offline, filters <code>_fallbackPlaces</code> (ESPRIT, INSAT, FST, ENIT, IHEC, ISAMM...).</p>
+          </div>
+          <div class="method-box">
+            <h4>reverseGeocode(double lat, double lng)</h4>
+            <p>Called when the user taps directly on the map! Sends <code>GET https://nominatim.openstreetmap.org/reverse?format=jsonv2&amp;lat=$lat&amp;lon=$lng&amp;addressdetails=1</code> and extracts the road/suburb/building name and city so the text input updates automatically.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 6: marketplace_firestore_service.dart -->
+      <div class="file-card green">
+        <div class="file-card-header">
+          <h3>🔥 File 6: Firebase Cloud Firestore Service</h3>
+          <span class="file-path-badge">lib/features/marketplace/services/marketplace_firestore_service.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This service encapsulates all Cloud Firestore reads, writes, batch operations, and real-time <code>snapshots()</code> streams across our 6 collections: <code>offers</code>, <code>availabilities</code>, <code>orders</code>, <code>reviews</code>, <code>reports</code>, and <code>conversations/{orderId}/messages</code>."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>watchOffers(), watchSlots(), watchOrders(), watchReviews()</h4>
+            <p>Real-time Firestore <code>Stream</code> methods that listen to collection changes via <code>.snapshots()</code> and map each document into our Dart model using <code>fromMap()</code>.</p>
+          </div>
+          <div class="method-box">
+            <h4>saveOffer(), saveSlot(), deleteSlot(), replaceSlotsForOffer()</h4>
+            <p>Writes or updates offers and availability slots in Firestore using <code>.set(map, SetOptions(merge: true))</code> and Firestore <code>WriteBatch</code> for atomic multi-slot updates.</p>
+          </div>
+          <div class="method-box">
+            <h4>saveOrder(), saveReview(), saveReport(), sendChatMessage()</h4>
+            <p>Persists orders, verified reviews, moderation reports (in the <code>reports</code> collection), and chat messages (inside <code>conversations/{orderId}/messages</code>).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: THE 4 WIDGET FILES -->
+    <section id="widget-files">
+      <div class="section-title">
+        <span class="step-number">4</span>
+        <span>Widgets Layer Explained: Reusable UI Components (4 Files)</span>
+      </div>
+      <p class="section-subtitle">
+        These 4 files inside <code>lib/features/marketplace/widgets/</code> provide the interactive popups and cards used by the screens:
+      </p>
+
+      <!-- FILE 7: calendar_slot_picker_dialog.dart -->
+      <div class="file-card purple">
+        <div class="file-card-header">
+          <h3>🗓️ File 7: Interactive Calendar &amp; Time Slot Picker Dialog</h3>
+          <span class="file-path-badge">lib/features/marketplace/widgets/calendar_slot_picker_dialog.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This StatefulWidget renders the popup dialog when a tutor clicks 'Ajouter un créneau'. It embeds Flutter's <code>CalendarDatePicker</code> with <code>firstDate: CalendarApiService.todayNormalized()</code> so past dates are blocked, calls the Nager.Date Holiday API whenever the user picks a day, and lets them choose 1-hour preset chips or custom start/end times."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>CalendarSlotPickerDialog.show(context)</h4>
+            <p>Static helper that opens the dialog and returns a <code>CalendarSlotPickResult(dateLabel, startTime, endTime, dayInfo)</code> when the user clicks <em>Ajouter ce créneau</em>.</p>
+          </div>
+          <div class="method-box">
+            <h4>_inspectSelectedDate(DateTime date)</h4>
+            <p>Runs automatically in <code>initState()</code> and whenever the user clicks a new day on the calendar. Calls <code>CalendarApiService.inspectDate(date)</code> and updates the green/orange Holiday API banner.</p>
+          </div>
+          <div class="method-box">
+            <h4>CalendarDatePicker + ChoiceChip + showTimePicker</h4>
+            <p>Combines the Material calendar grid (locked <code>&gt;= today</code>), 6 quick 1-hour <code>ChoiceChip</code> presets (<code>09:00-10:00</code> to <code>20:00-21:00</code>), and custom <code>showTimePicker</code> buttons.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 8: osm_map_picker_sheet.dart -->
+      <div class="file-card">
+        <div class="file-card-header">
+          <h3>📍 File 8: Interactive OpenStreetMap Picker &amp; Mini-Map Widget</h3>
+          <span class="file-path-badge">lib/features/marketplace/widgets/osm_map_picker_sheet.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This file contains two widgets powered by <code>flutter_map</code>: (1) <code>OsmMapPickerSheet</code>, the full interactive bottom sheet where you can either type an address or tap directly on the map to reverse-geocode the location, and (2) <code>OsmMiniMapPreview</code>, the small embedded map preview shown inside the Wizard and Offer Detail screen."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>_onMapTap(TapPosition, LatLng point)</h4>
+            <p>Triggered when you tap on the map! Moves the red pin (<code>_pin = point</code>), shows a loading indicator, calls <code>NominatimService.reverseGeocode(point.latitude, point.longitude)</code>, and updates <code>_searchCtrl.text</code> with the street name.</p>
+          </div>
+          <div class="method-box">
+            <h4>_runSearch(String query) &amp; _selectPlace(NominatimPlace)</h4>
+            <p>Debounced search (350ms timer) that queries Nominatim as you type, displays suggestion chips, and moves the <code>MapController</code> camera when a suggestion is clicked.</p>
+          </div>
+          <div class="method-box">
+            <h4>class OsmMiniMapPreview</h4>
+            <p>Renders a 150px high non-scrolling <code>FlutterMap</code> with OpenStreetMap tiles and a red location marker on the Offer Detail screen and Wizard Step 2.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 9 & 10: offer_card.dart & review_dialog.dart -->
+      <div class="grid-2">
+        <div class="file-card amber">
+          <div class="file-card-header">
+            <h3>🪪 File 9: Catalog Offer Card</h3>
+            <span class="file-path-badge">widgets/offer_card.dart</span>
+          </div>
+          <p>
+            StatelessWidget that renders each offer in the catalogue list: displays the colored <code>OfferType</code> badge, the verified teacher badge (<code>SellerRole.teacher</code>), the favorite heart button (<code>onToggleFavorite</code>), rating stars, view count, and price in TND (or <em>Gratuit</em>).
+          </p>
+        </div>
+
+        <div class="file-card green">
+          <div class="file-card-header">
+            <h3>⭐ File 10: 5-Star Review Sheet</h3>
+            <span class="file-path-badge">widgets/review_dialog.dart</span>
+          </div>
+          <p>
+            StatefulWidget opened via <code>showModalBottomSheet</code> once an order is marked <code>completed</code>. Lets the buyer tap 1 to 5 interactive star icons, validates a comment inside a <code>Form</code> / <code>TextFormField</code>, and calls <code>submitReview()</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: THE 5 SCREEN FILES -->
+    <section id="screen-files">
+      <div class="section-title">
+        <span class="step-number">5</span>
+        <span>Screens Layer Explained: All 5 User Interface Screens</span>
+      </div>
+      <p class="section-subtitle">
+        Every screen in <code>lib/features/marketplace/screens/</code> listens to <code>MarketplaceController.instance</code> using <code>ListenableBuilder</code>:
+      </p>
+
+      <!-- FILE 11: marketplace_screen.dart -->
+      <div class="file-card">
+        <div class="file-card-header">
+          <h3>🏠 File 11: Main Marketplace Screen (3 Tabs + Manage Slots Modal)</h3>
+          <span class="file-path-badge">lib/features/marketplace/screens/marketplace_screen.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This is the main entry screen of Module M5. It uses a <code>TabController</code> with 3 tabs: <em>Catalogue</em> (search, filter by subject/type/verified teacher, sort), <em>Mes offres</em> (seller dashboard with KPIs and slot management), and <em>Commandes</em> (buyer purchases &amp; seller incoming requests with Google Calendar export)."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>Tab 1: _CatalogTab</h4>
+            <p>Contains the search <code>TextField</code>, horizontal filter chips for <code>OfferType</code> and subjects, the <em>Enseignants vérifiés</em> switch, sorting dropdown, and list of <code>OfferCard</code> widgets.</p>
+          </div>
+          <div class="method-box">
+            <h4>Tab 2: _MyOffersTab &amp; _openManageSlotsModal(Offer)</h4>
+            <p>Shows seller KPIs (total views, sales, active offers) and action buttons on each offer: Edit, Pause/Publish, Delete, and <strong>Gérer créneaux</strong> (which opens <code>CalendarSlotPickerDialog</code> starting from today to add/delete 1h slots).</p>
+          </div>
+          <div class="method-box">
+            <h4>Tab 3: _OrdersTab &amp; _OrderCard</h4>
+            <p>Splits orders into <em>Mes achats</em> (buyer view) and <em>Demandes reçues</em> (seller view). Shows Accept/Reject/Complete buttons, a <strong>Google Agenda</strong> export button on booked slots, and opens the Order Chat screen.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 12: offer_wizard_screen.dart -->
+      <div class="file-card purple">
+        <div class="file-card-header">
+          <h3>🪄 File 12: 3-Step Offer Creation &amp; Edit Wizard</h3>
+          <span class="file-path-badge">lib/features/marketplace/screens/offer_wizard_screen.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This screen implements our 3-step guided form (<code>Form</code> + <code>GlobalKey&lt;FormState&gt;</code>) for creating or editing an offer. Step 1 validates the type, subject, title, and description; Step 2 handles dynamic pricing, the <strong>Calendar Slot Picker</strong>, and the <strong>OpenStreetMap Picker</strong>; Step 3 shows a full preview before publishing or saving as draft."
+        </div>
+
+        <div class="method-grid">
+          <div class="method-box">
+            <h4>_draftSlots (Initialized to Today &amp; Tomorrow)</h4>
+            <p>In <code>initState()</code>, default slots use <code>CalendarApiService.formatRelativeDay(0)</code> and <code>formatRelativeDay(1)</code> so new offers always start on today's date.</p>
+          </div>
+          <div class="method-box">
+            <h4>_showAddDraftSlotDialog()</h4>
+            <p>Calls <code>CalendarSlotPickerDialog.show(context)</code>. When the user picks a date and 1h time range, it adds the slot to <code>_draftSlots</code> and shows a SnackBar with the Nager.Date Holiday API status.</p>
+          </div>
+          <div class="method-box">
+            <h4>_openOsmPicker()</h4>
+            <p>Calls <code>OsmMapPickerSheet.show(context, ...)</code>. Whether the user searches by text or taps on the map, the returned <code>NominatimPlace</code> updates <code>_addressController.text</code>, <code>_selectedCity</code>, <code>_selectedLat</code>, and <code>_selectedLng</code>, and renders <code>OsmMiniMapPreview</code>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILE 13: offer_detail_screen.dart -->
+      <div class="file-card amber">
+        <div class="file-card-header">
+          <h3>🔍 File 13: Offer Detail Screen (Slots, Map Preview &amp; Moderation)</h3>
+          <span class="file-path-badge">lib/features/marketplace/screens/offer_detail_screen.dart</span>
+        </div>
+        <div class="say-to-teacher">
+          <strong>💬 What to tell the teacher when opening this file:</strong>
+          "This screen increments the offer's view counter on open, displays the embedded OpenStreetMap mini-map (<code>OsmMiniMapPreview</code>), renders interactive <code>ChoiceChip</code> buttons for free 1-hour slots with a <strong>Google Calendar preview button</strong>, and includes the <code>_showReportDialog()</code> moderation form."
+        </div>
+      </div>
+
+      <!-- FILE 14 & 15: order_checkout_screen.dart & order_chat_screen.dart -->
+      <div class="grid-2">
+        <div class="file-card green">
+          <div class="file-card-header">
+            <h3>🛒 File 14: Order Checkout Screen</h3>
+            <span class="file-path-badge">screens/order_checkout_screen.dart</span>
+          </div>
+          <p>
+            Validates that the buyer has selected an available 1-hour <code>AvailabilitySlot</code> (for private lessons), collects a personalized message/note for the seller in a validated <code>TextFormField</code>, calls <code>_controller.createOrder(...)</code> (which locks the slot), and navigates straight to the Order Chat screen.
+          </p>
+        </div>
+
+        <div class="file-card rose">
+          <div class="file-card-header">
+            <h3>💬 File 15: Real-Time Order Chat &amp; Jitsi Screen</h3>
+            <span class="file-path-badge">screens/order_chat_screen.dart</span>
+          </div>
+          <p>
+            Resets unread messages on open, displays the top summary header with status action buttons (Accept, Reject, Complete), the <strong>Ajouter à Google Agenda</strong> chip, the <strong>Rejoindre (Jitsi Meet)</strong> button (<code>launchUrl</code>), private PDF download, 5-star review trigger, and real-time scrolling chat bubbles.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 6: LIVE DEMO CHECKLIST -->
+    <section id="demo">
+      <div class="section-title">
+        <span class="step-number">6</span>
+        <span>Interactive Live Demo Script (Check Off During Your Presentation!)</span>
+      </div>
+      <p class="section-subtitle">
+        Follow these 5 steps in order in front of the teacher to demonstrate every feature smoothly:
+      </p>
+
+      <div class="demo-step">
+        <input type="checkbox" />
+        <div class="demo-step-content">
+          <h4>Step 1 — Catalogue, Filters &amp; Role Switcher (<code>marketplace_screen.dart</code>)</h4>
+          <p>
+            Show the 3 tabs (<em>Catalogue</em>, <em>Mes offres</em>, <em>Commandes</em>), filter by subject or verified teachers, and tap the top-right chip to switch between <strong>Étudiant</strong> and <strong>Enseignant vérifié</strong>.
+          </p>
+        </div>
+      </div>
+
+      <div class="demo-step">
+        <input type="checkbox" />
+        <div class="demo-step-content">
+          <h4>Step 2 — Calendar API: Starts Today + Holiday API Banner (<code>calendar_slot_picker_dialog.dart</code>)</h4>
+          <p>
+            Click <strong>+ Publier une offre</strong> &rarr; select <strong>Cours particulier (1 h)</strong> &rarr; enter a title &rarr; go to Step 2.<br/>
+            Point out that slots start on <strong>Today's date</strong>. Click <strong>+ Ajouter un créneau</strong>: show that past dates before today are greyed out, and click different days to show the live <strong>Nager.Date Holiday API</strong> banner!
+          </p>
+        </div>
+      </div>
+
+      <div class="demo-step">
+        <input type="checkbox" />
+        <div class="demo-step-content">
+          <h4>Step 3 — OpenStreetMap API: Tap on Map Updates Address Text (<code>osm_map_picker_sheet.dart</code>)</h4>
+          <p>
+            Still in Step 2 of the Wizard, click <strong>"Choisir sur la carte interactive (OpenStreetMap)"</strong>.<br/>
+            Tap anywhere on the map: show how the red pin moves and the <strong>address text field updates automatically</strong> via Reverse Geocoding! Confirm and publish the offer.
+          </p>
+        </div>
+      </div>
+
+      <div class="demo-step">
+        <input type="checkbox" />
+        <div class="demo-step-content">
+          <h4>Step 4 — Slot Selection &amp; Google Calendar Preview (<code>offer_detail_screen.dart</code>)</h4>
+          <p>
+            Open a <strong>Cours particulier</strong> offer in the Catalogue &rarr; select a free 1h slot chip &rarr; point out the <strong>"Prévisualiser dans Google Agenda"</strong> button, then click <strong>Réserver un créneau</strong>.
+          </p>
+        </div>
+      </div>
+
+      <div class="demo-step">
+        <input type="checkbox" />
+        <div class="demo-step-content">
+          <h4>Step 5 — Order Chat, Jitsi Meet Video Call &amp; Google Calendar Export (<code>order_chat_screen.dart</code>)</h4>
+          <p>
+            Open an accepted lesson order in <strong>Commandes</strong> &rarr; show the <strong>Ajouter à Google Agenda</strong> chip, the <strong>Rejoindre (Jitsi Meet)</strong> button, and send a message in the real-time chat.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 7: TEACHER Q&A -->
+    <section id="qa">
+      <div class="section-title">
+        <span class="step-number">7</span>
+        <span>Teacher Q&amp;A Cheat Sheet (Exact Answers to Give)</span>
+      </div>
+
+      <div class="qa-card">
+        <div class="qa-question">❓ Q1: "How did you make sure nobody can pick a past date like October 30?"</div>
+        <div class="qa-answer">
+          <strong>Your Answer:</strong> "In <code>calendar_api_service.dart</code>, <code>todayNormalized()</code> returns <code>DateTime.now()</code> at midnight. We pass it as <code>firstDate</code> to Flutter's <code>CalendarDatePicker</code> in <code>calendar_slot_picker_dialog.dart</code>, which disables all dates before today. We also validate dates with <code>isPastDateString()</code> and generate all default slots relative to today with <code>formatRelativeDay()</code>."
+        </div>
+      </div>
+
+      <div class="qa-card">
+        <div class="qa-question">❓ Q2: "What Calendar API did you use and where is it in the code?"</div>
+        <div class="qa-answer">
+          <strong>Your Answer:</strong> "In <code>lib/features/marketplace/services/calendar_api_service.dart</code>, we integrated two APIs:<br/>
+          1. <strong>Nager.Date Public Holidays REST API</strong> (<code>GET https://date.nager.at/api/v3/PublicHolidays/{year}/TN</code>) inside <code>inspectDate()</code> to detect Tunisian public holidays and weekends.<br/>
+          2. <strong>Google Calendar Template API</strong> inside <code>openGoogleCalendarSlot()</code> to export booked 1-hour slots (with the Jitsi Meet link or pickup address) directly into Google Calendar."
+        </div>
+      </div>
+
+      <div class="qa-card">
+        <div class="qa-question">❓ Q3: "How does clicking on the map update the address text box?"</div>
+        <div class="qa-answer">
+          <strong>Your Answer:</strong> "In <code>osm_map_picker_sheet.dart</code>, the <code>FlutterMap</code> widget has an <code>onTap</code> callback (<code>_onMapTap</code>). When tapped, it moves the red pin to the tapped <code>LatLng</code> and calls <code>NominatimService.reverseGeocode(lat, lng)</code> (<code>GET https://nominatim.openstreetmap.org/reverse</code>). When the JSON response arrives, it updates the search controller text and populates <code>_addressController.text</code> in <code>offer_wizard_screen.dart</code>."
+        </div>
+      </div>
+
+      <div class="qa-card">
+        <div class="qa-question">❓ Q4: "How do all the screens stay synchronized when an offer or order changes?"</div>
+        <div class="qa-answer">
+          <strong>Your Answer:</strong> "<code>MarketplaceController</code> in <code>marketplace_mock_data.dart</code> extends Flutter's <code>ChangeNotifier</code> and is shared as a singleton (<code>MarketplaceController.instance</code>). All 5 screens wrap their UI in a <code>ListenableBuilder</code> listening to that controller, and the controller also listens to real-time Cloud Firestore streams via <code>MarketplaceFirestoreService</code>."
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+</body>
+</html>

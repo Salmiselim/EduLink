@@ -99,7 +99,9 @@ class _CoursesScreenState extends State<CoursesScreen> {
       builder: (context, _) {
         final isTeacher = _controller.isTeacher;
 
-        return Column(
+        return RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: Column(
           children: [
             // Sélecteur segmenté (`SegmentedButton`) adaptant ses deux onglets au rôle actif.
             Padding(
@@ -147,9 +149,18 @@ class _CoursesScreenState extends State<CoursesScreen> {
                       : _buildCatalog()),
             ),
           ],
+        ),
         );
       },
     );
+  }
+
+  /// Rafraîchissement manuel (glisser vers le bas) : recharge les données
+  /// Firestore du module Cours — utile au cas où, par exemple pour voir
+  /// tout de suite les cours ou chapitres ajoutés par un collègue sans
+  /// attendre la prochaine reprise de l'application.
+  Future<void> _onRefresh() async {
+    await CoursesController.instance.connectCloud();
   }
 
   // Vue étudiant — section « Mes cours » : carrousel de reprise et liste des cours suivis.
@@ -177,6 +188,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
         .toList();
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         if (inProgress.isNotEmpty) ...[
@@ -385,6 +397,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
     final courses = _controller.teacherCourses;
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         Row(
@@ -626,6 +639,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
         .toList();
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         Row(

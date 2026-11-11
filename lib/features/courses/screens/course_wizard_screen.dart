@@ -1,6 +1,12 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../data/courses_mock_data.dart';
 import '../models/courses_models.dart';
+import '../services/courses_ai_service.dart';
+import '../services/courses_document_service.dart';
+import '../widgets/ai_tools.dart';
 import '../widgets/chapter_edit_sheet.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
@@ -42,6 +48,12 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
   String? _level;
   int _step = 0;
 
+  /// Image de couverture choisie localement via le sélecteur de fichiers ;
+  /// téléversée vers Firebase Storage à l'enregistrement des informations
+  /// (une seule fois par image sélectionnée).
+  File? _coverFile;
+  bool _coverUploaded = false;
+
   /// Indique si l'assistant a été ouvert à partir d'un cours existant plutôt qu'en création pure.
   bool get _isEditing => widget.existingCourse != null;
 
@@ -69,8 +81,9 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
       _course == null ? [] : _controller.chaptersOf(_course!.id);
 
   /// Persiste les champs du formulaire dans `CoursesController` : crée le brouillon initial
-  /// lors du premier passage de l'étape 1, ou met à jour l'entité existante lors des passages suivants.
-  void _commitCourseInfo() {
+  /// lors du premier passage de l'étape 1, ou met à jour l'entité existante lors des passages
+  /// suivants, puis téléverse l'image de couverture choisie si nécessaire.
+  Future<void> _commitCourseInfo() async {
     if (_course == null) {
       _course = _controller.createCourse(
         title: _titleController.text.trim(),
@@ -87,20 +100,44 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
         description: _descriptionController.text.trim(),
       );
     }
+    // Copie de la couverture dans le stockage local de l'application (une
+    // seule fois par image sélectionnée) ; en cas d'échec, l'aperçu local
+    // reste affiché et la référence n'est pas modifiée.
+    final cover = _coverFile;
+    if (cover != null && !_coverUploaded) {
+      _coverUploaded = true;
+      final reference = await CoursesDocumentService.instance.importCoverImage(
+        courseId: _course!.id,
+        file: cover,
+      );
+      if (reference != null) {
+        _controller.setCoverImageUrl(_course!.id, reference);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 3),
+            content: Text(
+              "Couverture non enregistrée — l'import a échoué, réessayez.",
+            ),
+          ),
+        );
+      }
+    }
   }
 
   /// Valide le formulaire de l'étape 1 via `_formKey`, enregistre le cours puis passe à l'étape suivante.
-  void _goNext() {
+  Future<void> _goNext() async {
     if (_step == 0) {
       if (!(_formKey.currentState?.validate() ?? false)) return;
-      _commitCourseInfo();
+      await _commitCourseInfo();
     }
+    if (!mounted) return;
     setState(() => _step += 1);
   }
 
   /// Finalise l'assistant à l'étape 4 : sauvegarde les métadonnées, publie éventuellement
   /// le cours via `CoursesController.setPublished` (si au moins un chapitre existe) et referme la route.
-  void _finish({required bool publish}) {
+  Future<void> _finish({required bool publish}) async {
     // Les valeurs vivent dans les contrôleurs (validées à l'étape 1) :
     // inutile de revalider le formulaire de l'étape 1 depuis la dernière
     // étape — son Form n'est plus monté à ce stade.
@@ -118,7 +155,8 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
       );
       return;
     }
-    _commitCourseInfo();
+    await _commitCourseInfo();
+    if (!mounted) return;
     if (publish) {
       final ok = _controller.setPublished(_course!.id, true);
       if (!ok) {
@@ -143,6 +181,145 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
         ),
       ),
     );
+  }
+
+  // ── Actions assistées par IA (couche Service `CoursesAiService`) ─────────
+
+  /// Suggère une description à partir du titre, de la matière et du niveau
+  /// saisis, puis l'inscrit dans le champ (modifiable ensuite librement).
+  Future<void> _suggestDescription() async {
+    final title = _titleController.text.trim();
+    final subject = _subject;
+    final level = _level;
+    if (title.isEmpty || subject == null || level == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text(
+            "Complétez d'abord le titre, la matière et le niveau.",
+          ),
+        ),
+      );
+      return;
+    }
+    final suggestion = await runWithAiLoader<String>(
+      context,
+      "L'IA rédige une description…",
+      () => CoursesAiService.instance.suggestDescription(
+        title: title,
+        subject: subject,
+        level: level,
+      ),
+    );
+    if (suggestion == null || !mounted) return;
+    setState(() => _descriptionController.text = suggestion);
+  }
+
+  /// Vérifie l'orthographe du titre et de la description via l'IA et ouvre
+  /// la feuille de comparaison avec application au choix.
+  Future<void> _checkSpelling() async {
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+    if (title.isEmpty && description.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Rien à vérifier : les champs sont vides.'),
+        ),
+      );
+      return;
+    }
+    final corrections = await runWithAiLoader<List<AiFieldCorrection>>(
+      context,
+      "Vérification de l'orthographe…",
+      () async {
+        final results = <AiFieldCorrection>[];
+        if (title.isNotEmpty) {
+          final corrected = await CoursesAiService.instance.correctSpelling(
+            label: 'Titre du cours',
+            text: title,
+          );
+          results.add(
+            AiFieldCorrection(
+              label: 'Titre du cours',
+              controller: _titleController,
+              corrected: corrected,
+            ),
+          );
+        }
+        if (description.isNotEmpty) {
+          final corrected = await CoursesAiService.instance.correctSpelling(
+            label: 'Description',
+            text: description,
+          );
+          results.add(
+            AiFieldCorrection(
+              label: 'Description',
+              controller: _descriptionController,
+              corrected: corrected,
+            ),
+          );
+        }
+        return results;
+      },
+    );
+    if (corrections == null || !mounted) return;
+    await showSpellingReviewSheet(context, corrections);
+  }
+
+  /// Relecture complète du cours (orthographe, clarté, attractivité)
+  /// affichée depuis l'aperçu de l'étape 3.
+  Future<void> _reviewCourse() async {
+    final subject = _subject;
+    final level = _level;
+    if (subject == null || level == null) return;
+    final feedback = await runWithAiLoader<String>(
+      context,
+      "Relecture du cours par l'IA…",
+      () => CoursesAiService.instance.reviewCourse(
+        title: _titleController.text.trim(),
+        subject: subject,
+        level: level,
+        description: _descriptionController.text.trim(),
+      ),
+    );
+    if (feedback == null || !mounted) return;
+    await showAiTextSheet(
+      context,
+      title: 'Relecture du cours',
+      body: feedback,
+    );
+  }
+
+  /// Ouvre le sélecteur d'images et garde le fichier en local ; le
+  /// téléversement vers Firebase Storage est fait à l'enregistrement.
+  Future<void> _pickCoverImage() async {
+    String? pickedPath;
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.image);
+      pickedPath = files.isEmpty ? null : files.first.path;
+    } catch (error) {
+      debugPrint('[CourseWizard] Sélection d\'image impossible : $error');
+    }
+    if (pickedPath == null) return;
+    // Garde-fou avant téléversement : 10 Mo maximum pour une image.
+    final file = File(pickedPath);
+    if (file.lengthSync() > 10 * 1024 * 1024) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 2),
+            content: Text('Image trop volumineuse — 10 Mo maximum.'),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _coverFile = file;
+      _coverUploaded = false;
+    });
   }
 
   @override
@@ -183,16 +360,25 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    for (var i = 0; i < _stepLabels.length; i++) ...[
-                      if (i > 0)
-                        const Expanded(
-                          child: Divider(color: CourseColors.border),
-                        ),
-                      _stepChip(i),
+                // FittedBox : la ligne de jalons se réduit proprement sur les
+                // écrans étroits (séparateurs à largeur fixe — un Expanded
+                // serait incompatible avec la mise à l'échelle).
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < _stepLabels.length; i++) ...[
+                        if (i > 0)
+                          Container(
+                            width: 18,
+                            height: 1,
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            color: CourseColors.border,
+                          ),
+                        _stepChip(i),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -400,6 +586,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
               initialValue: _subject,
+              isExpanded: true,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: courseInputDecoration(
                 label: 'Matière',
@@ -411,6 +598,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                       value: subject,
                       child: Text(
                         subject,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -426,6 +614,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
               initialValue: _level,
+              isExpanded: true,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: courseInputDecoration(
                 label: 'Niveau',
@@ -437,6 +626,7 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                       value: level,
                       child: Text(
                         level,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -468,22 +658,28 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
               },
             ),
             const SizedBox(height: 14),
+            // Outils IA (couche Service) : suggestion de description et
+            // correction orthographique des champs saisis.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                AiToolButton(
+                  'Suggérer la description',
+                  onPressed: _suggestDescription,
+                ),
+                AiToolButton(
+                  "Vérifier l'orthographe",
+                  onPressed: _checkSpelling,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               height: 46,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  // Point d'entrée réservé au téléversement distant de l'image de couverture.
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      duration: Duration(seconds: 2),
-                      content: Text(
-                        'Image de couverture via le service média '
-                        '— intégration à venir.',
-                      ),
-                    ),
-                  );
-                },
+                onPressed: _pickCoverImage,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: CourseColors.primary,
                   side: const BorderSide(color: CourseColors.border),
@@ -492,12 +688,60 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                   ),
                 ),
                 icon: const Icon(Icons.image_outlined, size: 18),
-                label: const Text(
-                  'Ajouter une image de couverture',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                label: Text(
+                  _coverFile == null
+                      ? 'Ajouter une image de couverture'
+                      : "Changer l'image de couverture",
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
+            if (_coverFile != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: courseCardDecoration(),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        _coverFile!,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Image de couverture prête — enregistrée avec '
+                        'le cours.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: CourseColors.muted,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: "Retirer l'image",
+                      onPressed: () => setState(() {
+                        _coverFile = null;
+                        _coverUploaded = false;
+                      }),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: CourseColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -701,8 +945,49 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                     'Supprimer le chapitre',
                     style: TextStyle(color: CourseColors.danger),
                   ),
-                  onTap: () {
+                  // Confirmation préalable : suppression d'un contenu
+                  // destructrice pour la progression des étudiants.
+                  onTap: () async {
                     Navigator.pop(sheetContext);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        title: const Text(
+                          'Supprimer ce chapitre ?',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        content: Text(
+                          '« ${chapter.title} » sera définitivement retiré '
+                          'du cours et la progression des étudiants sera '
+                          'ajustée.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Annuler'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: CourseColors.danger,
+                            ),
+                            child: const Text('Supprimer'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !mounted) return;
                     _controller.deleteChapter(_course!.id, chapter.id);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -818,6 +1103,13 @@ class _CourseWizardScreenState extends State<CourseWizardScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: AiToolButton(
+            'Vérifier mon cours (IA)',
+            onPressed: _reviewCourse,
           ),
         ),
       ],

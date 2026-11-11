@@ -42,12 +42,26 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(const EduLinkApp());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Passer'));
+    // Connexion en mode démonstration (Firebase absent en tests) : le
+    // bouton « Passer » n'existe plus, on passe par le formulaire.
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Adresse e-mail'),
+      'etudiant@edulink.tn',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Mot de passe'),
+      'motdepasse',
+    );
+    await tester.tap(find.text('Se connecter'));
+    await tester.pumpAndSettle();
+    // Laisse la SnackBar « Bienvenue » se refermer : sinon elle masque les
+    // éléments en bas de page (champ du forum, boutons…).
+    await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
   }
 
   testWidgets(
-    "L'écran de connexion s'affiche puis « Passer » ouvre l'onglet Cours",
+    "L'écran de connexion s'affiche puis la connexion ouvre l'onglet Cours",
     (WidgetTester tester) async {
     tolerateListTileWarning();
       await tester.pumpWidget(const EduLinkApp());
@@ -60,7 +74,18 @@ void main() {
       expect(find.text('Google'), findsOneWidget);
       expect(find.text('Apple'), findsOneWidget);
 
-      await tester.tap(find.text('Passer'));
+      // Le contournement « Passer » a été retiré : la connexion est obligatoire.
+      expect(find.text('Passer'), findsNothing);
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Adresse e-mail'),
+        'etudiant@edulink.tn',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Mot de passe'),
+        'motdepasse',
+      );
+      await tester.tap(find.text('Se connecter'));
       await tester.pumpAndSettle();
       expect(find.text('EduLink · Cours'), findsOneWidget);
       expect(find.text('Mes cours'), findsOneWidget);

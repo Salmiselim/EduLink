@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../../courses/data/courses_mock_data.dart';
 import '../models/evaluations_models.dart';
+import '../services/evaluations_ai_service.dart';
 import '../services/evaluations_api_service.dart';
 import '../services/evaluations_firestore_service.dart';
 import '../services/evaluations_local_service.dart';
@@ -34,14 +35,32 @@ class EvaluationsController extends ChangeNotifier {
     return _instance!;
   }
 
-  EvaluationsController._() {
-    _initRepository();
+  EvaluationsController._() : _isTesting = false {
+    _initFuture = _initRepository();
+    CoursesController.instance.addListener(_onCoursesUpdated);
+  }
+
+  /// Constructeur réservé aux tests : injecte directement un repository
+  /// (double de service) sans toucher à Firebase, à l'API REST ni au cache
+  /// Hive — permet de vérifier la logique métier de façon déterministe.
+  @visibleForTesting
+  EvaluationsController.forTesting(EvaluationsRepository repo)
+      : _isTesting = true {
+    _repo = repo;
+    _ready = true;
   }
 
   // ── Repository & services ─────────────────────────────────────────────────
 
   late EvaluationsRepository _repo;
   bool _ready = false;
+  bool _cloudReady = false;
+  final bool _isTesting;
+  Future<void>? _initFuture;
+  String _lastCourseIdsSignature = '';
+
+  /// Vrai si aucun compte Firebase réel n'est connecté (mode démonstration).
+  bool get isDemoMode => !_cloudReady;
 
   Future<void> _initRepository() async {
     final local = EvaluationsLocalService();
@@ -66,6 +85,47 @@ class EvaluationsController extends ChangeNotifier {
     await loadAll();
   }
 
+  /// Synchronise la liste des cours liés dès que le module Cours change
+  /// (ex: inscription d'un étudiant à un cours ou création d'un cours par
+  /// l'enseignant) et recharge les évaluations si les cours ont évolué.
+  void _onCoursesUpdated() {
+    if (_isTesting) return;
+    _syncCoursesFromModule();
+    final currentSig = _courses.map((c) => c.id).join(',');
+    if (currentSig != _lastCourseIdsSignature) {
+      _lastCourseIdsSignature = currentSig;
+      if (_ready) {
+        loadAll();
+      } else {
+        notifyListeners();
+      }
+    } else {
+      notifyListeners();
+    }
+  }
+
+  /// Met à jour `_courses` selon le rôle :
+  /// - Enseignant : uniquement les cours dont il est propriétaire (`teacherCourses`).
+  /// - Étudiant : uniquement les cours auxquels il est inscrit (`enrolledCourses`).
+  void _syncCoursesFromModule() {
+    final coursesCtrl = CoursesController.instance;
+    final source = isTeacher
+        ? coursesCtrl.teacherCourses
+        : coursesCtrl.enrolledCourses;
+    if (source.isNotEmpty || _cloudReady) {
+      _courses = source
+          .map((c) => LinkedCourse(
+                id: c.id,
+                title: c.title,
+                subject: c.subject,
+                level: c.level,
+                teacherId: c.teacherId,
+                teacherName: c.teacherName,
+              ))
+          .toList();
+    }
+  }
+
   // ── État utilisateur ──────────────────────────────────────────────────────
 
   /// IDs utilisateur disponibles pour le basculement de rôle en dev.
@@ -76,8 +136,12 @@ class EvaluationsController extends ChangeNotifier {
   String currentUserId = _defaultStudentId;
   String currentUserName = 'Amine Ben Ali';
 
-  /// Bascule entre rôle étudiant et enseignant (dev uniquement).
+  /// Bascule entre rôle étudiant et enseignant (mode démonstration uniquement).
   void toggleRole() {
+    if (_cloudReady) {
+      notifyListeners();
+      return;
+    }
     if (currentUserRole == UserRole.student) {
       currentUserRole = UserRole.teacher;
       currentUserId = _defaultTeacherId;
@@ -99,15 +163,66 @@ class EvaluationsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Vide toutes les données en mémoire et le cache local lors d'une
+  /// déconnexion ou d'un changement d'utilisateur pour empêcher toute fuite
+  /// de données entre comptes.
+  Future<void> resetSession() async {
+    quizzes = [];
+    attempts = [];
+    assignments = [];
+    submissions = [];
+    documents = [];
+    gradebookRows = [];
+    upcomingItems = [];
+    notifications = [];
+    selectedCourseId = null;
+    error = null;
+    _cloudReady = false;
+    _lastCourseIdsSignature = '';
+    currentUserRole = UserRole.student;
+    currentUserId = _defaultStudentId;
+    currentUserName = 'Amine Ben Ali';
+    if (_ready) {
+      _repo.currentUserId = currentUserId;
+      _repo.currentUserName = currentUserName;
+      _repo.currentUserRole = currentUserRole;
+      await _repo.clearLocalCache();
+    }
+    notifyListeners();
+  }
+
   /// Connecte le contrôleur au compte Firebase : identité réelle (uid, nom,
   /// rôle lu dans `users/{uid}`), liaison L4 avec les cours du module Cours
   /// (mêmes identifiants), puis rechargement des données depuis Firestore.
   Future<void> connectCloud() async {
+    if (!_ready && _initFuture != null) {
+      try {
+        await _initFuture;
+      } catch (_) {}
+    }
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      final userDoc =
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      // Si l'utilisateur connecté change, purge immédiatement l'état précédent
+      // et le cache Hive afin qu'aucune donnée d'un autre compte ne subsiste.
+      if (currentUserId != user.uid) {
+        quizzes = [];
+        attempts = [];
+        assignments = [];
+        submissions = [];
+        documents = [];
+        gradebookRows = [];
+        upcomingItems = [];
+        notifications = [];
+        selectedCourseId = null;
+        if (_ready) {
+          await _repo.clearLocalCache();
+        }
+      }
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       currentUserId = user.uid;
       currentUserName = (userDoc.data()?['name'] as String?) ??
           user.displayName ??
@@ -115,22 +230,15 @@ class EvaluationsController extends ChangeNotifier {
       currentUserRole = (userDoc.data()?['role'] == 'teacher')
           ? UserRole.teacher
           : UserRole.student;
+      _cloudReady = true;
       if (_ready) {
         _repo.currentUserId = currentUserId;
         _repo.currentUserName = currentUserName;
         _repo.currentUserRole = currentUserRole;
       }
-      // Liaison L4 réelle : les cours rattachés proviennent du module Cours.
-      _courses = CoursesController.instance.publishedCourses
-          .map((c) => LinkedCourse(
-                id: c.id,
-                title: c.title,
-                subject: c.subject,
-                level: c.level,
-                teacherId: c.teacherId,
-                teacherName: c.teacherName,
-              ))
-          .toList();
+      // Liaison L4 réelle : cours possédés (enseignant) ou cours inscrits (étudiant).
+      _syncCoursesFromModule();
+      _lastCourseIdsSignature = _courses.map((c) => c.id).join(',');
       if (_ready) await loadAll();
       notifyListeners();
     } catch (e) {
@@ -164,8 +272,20 @@ class EvaluationsController extends ChangeNotifier {
   // ════════════════════════════════════════════════════════════════════════
 
   /// Charge toutes les données du module selon le rôle et le cours courant.
+  /// Inclut désormais les TENTATIVES, les COPIES et le CARNET DE NOTES :
+  /// sans ce chargement, après un redémarrage de l'application, le compteur
+  /// de tentatives (`canTakeQuiz`), la liste « Copies à corriger » et le
+  /// carnet restaient vides alors que les données existaient dans Firestore.
   Future<void> loadAll() async {
+    if (!_ready && _initFuture != null) {
+      try {
+        await _initFuture;
+      } catch (_) {}
+    }
     if (!_ready) return;
+    if (!_isTesting) {
+      _syncCoursesFromModule();
+    }
     _setLoading(true);
     try {
       await Future.wait([
@@ -173,7 +293,9 @@ class EvaluationsController extends ChangeNotifier {
         _loadAssignments(),
         _loadDocuments(),
         _loadUpcoming(),
-        _loadGradebookAll(),
+        _loadAttempts(),
+        _loadSubmissions(),
+        _loadGradebooks(),
       ]);
       error = null;
     } catch (e) {
@@ -215,6 +337,37 @@ class EvaluationsController extends ChangeNotifier {
     upcomingItems = await _repo.getUpcoming();
   }
 
+  /// Tentatives visibles : celles de l'étudiant, ou celles des quiz de
+  /// l'enseignant (alimente `canTakeQuiz`, les résultats et les statistiques).
+  Future<void> _loadAttempts() async {
+    attempts = await _repo.getVisibleAttempts();
+  }
+
+  /// Copies visibles : celles de l'étudiant, ou celles des devoirs de
+  /// l'enseignant (alimente « Copies à corriger » et `canSubmitAssignment`).
+  Future<void> _loadSubmissions() async {
+    submissions = await _repo.getVisibleSubmissions();
+  }
+
+  /// Carnet de notes agrégé sur les cours PERTINENTS pour l'utilisateur :
+  /// les cours dont il est propriétaire (enseignant) ou ceux où il est
+  /// inscrit (étudiant) — évite de balayer tout le catalogue.
+  Future<void> _loadGradebooks() async {
+    final coursesCtrl = CoursesController.instance;
+    final courseIds = isTeacher
+        ? coursesCtrl.teacherCourses.map((c) => c.id).toSet()
+        : coursesCtrl.myEnrollments.map((e) => e.courseId).toSet();
+    final rows = <GradebookRow>[];
+    for (final id in courseIds) {
+      try {
+        rows.addAll(await _repo.getGradebook(id));
+      } catch (_) {
+        // Un cours sans notes (ou hors-ligne) ne doit pas bloquer les autres.
+      }
+    }
+    gradebookRows = rows;
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // QUIZ — CRUD
   // ════════════════════════════════════════════════════════════════════════
@@ -238,18 +391,15 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> deleteQuiz(String quizId) async {
-    // Purge optimiste immédiate en mémoire (quiz + tentatives)
     final prevQuizzes = quizzes;
     final prevAttempts = attempts;
     quizzes = quizzes.where((q) => q.id != quizId).toList();
     attempts = attempts.where((a) => a.quizId != quizId).toList();
     notifyListeners();
-
     await _wrapVoid(() async {
       try {
         await _repo.deleteQuiz(quizId);
       } catch (e) {
-        // En cas d'erreur réseau, rollback de l'état local
         quizzes = prevQuizzes;
         attempts = prevAttempts;
         notifyListeners();
@@ -303,7 +453,11 @@ class EvaluationsController extends ChangeNotifier {
   ) async {
     return _wrap(() async {
       final attempt = await _repo.submitAttempt(attemptId, answers);
-      attempts = [...attempts, attempt];
+      attempts = [
+        ...attempts.where((a) => a.id != attempt.id),
+        attempt,
+      ];
+      await _loadGradebooks();
       notifyListeners();
       return attempt;
     });
@@ -344,18 +498,16 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> deleteAssignment(String assignmentId) async {
-    // Purge optimiste immédiate en mémoire (devoir + copies)
     final prevAssignments = assignments;
     final prevSubmissions = submissions;
     assignments = assignments.where((a) => a.id != assignmentId).toList();
-    submissions = submissions.where((s) => s.assignmentId != assignmentId).toList();
+    submissions =
+        submissions.where((s) => s.assignmentId != assignmentId).toList();
     notifyListeners();
-
     await _wrapVoid(() async {
       try {
         await _repo.deleteAssignment(assignmentId);
       } catch (e) {
-        // En cas d'erreur réseau, rollback de l'état local
         assignments = prevAssignments;
         submissions = prevSubmissions;
         notifyListeners();
@@ -377,7 +529,12 @@ class EvaluationsController extends ChangeNotifier {
         fileUrls: fileUrls,
         comment: comment,
       );
-      submissions = [...submissions, sub];
+      submissions = [
+        ...submissions.where((s) =>
+            !(s.assignmentId == assignmentId && s.studentId == sub.studentId)),
+        sub,
+      ];
+      await _loadGradebooks();
       notifyListeners();
       return sub;
     });
@@ -403,6 +560,7 @@ class EvaluationsController extends ChangeNotifier {
       submissions = submissions
           .map((s) => s.id == submissionId ? graded : s)
           .toList();
+      await _loadGradebooks();
       notifyListeners();
       return graded;
     });
@@ -436,16 +594,13 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   Future<void> deleteDocument(String documentId) async {
-    // Purge optimiste immédiate en mémoire
     final prevDocuments = documents;
     documents = documents.where((d) => d.id != documentId).toList();
     notifyListeners();
-
     await _wrapVoid(() async {
       try {
         await _repo.deleteDocument(documentId);
       } catch (e) {
-        // En cas d'erreur réseau, rollback de l'état local
         documents = prevDocuments;
         notifyListeners();
         rethrow;
@@ -473,12 +628,44 @@ class EvaluationsController extends ChangeNotifier {
   // HELPERS MÉTIER (compatibilité avec les écrans existants)
   // ════════════════════════════════════════════════════════════════════════
 
-  /// Quiz visibles par l'étudiant courant : publiés et dans ses cours inscrits.
-  List<Quiz> get studentQuizzes =>
-      quizzes.where((q) => q.isPublished).toList();
+  /// Permet de surcharger explicitement la liste des cours inscrits en test.
+  @visibleForTesting
+  Set<String>? enrolledCourseIdsOverride;
 
-  /// Devoirs visibles par l'étudiant courant.
-  List<Assignment> get studentAssignments => assignments;
+  /// Identifiants des cours auxquels l'étudiant courant est inscrit.
+  Set<String>? get _enrolledCourseIds {
+    if (enrolledCourseIdsOverride != null) return enrolledCourseIdsOverride;
+    if (_isTesting) return null;
+    return CoursesController.instance.myEnrollments
+        .map((e) => e.courseId)
+        .toSet();
+  }
+
+  /// Quiz appartenant exclusivement à l'enseignant connecté.
+  List<Quiz> get teacherQuizzes =>
+      quizzes.where((q) => q.teacherId == currentUserId).toList();
+
+  /// Devoirs appartenant exclusivement à l'enseignant connecté.
+  List<Assignment> get teacherAssignments =>
+      assignments.where((a) => a.teacherId == currentUserId).toList();
+
+  /// Quiz visibles par l'étudiant courant : publiés et dans ses cours inscrits.
+  List<Quiz> get studentQuizzes {
+    final enrolled = _enrolledCourseIds;
+    return quizzes.where((q) {
+      if (!q.isPublished) return false;
+      if (enrolled != null && !enrolled.contains(q.courseId)) return false;
+      return true;
+    }).toList();
+  }
+
+  /// Devoirs visibles par l'étudiant courant : uniquement ceux des cours
+  /// auxquels il est inscrit.
+  List<Assignment> get studentAssignments {
+    final enrolled = _enrolledCourseIds;
+    if (enrolled == null) return assignments;
+    return assignments.where((a) => enrolled.contains(a.courseId)).toList();
+  }
 
   /// Nombre de quiz à faire (pas encore de tentative soumise).
   int get studentPendingTodoCount {
@@ -490,8 +677,7 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   /// Nombre de copies en attente de correction pour l'enseignant.
-  int get pendingCopiesCount =>
-      submissions.where((s) => s.status == SubmissionStatus.submitted).length;
+  int get pendingCopiesCount => copiesToGrade().length;
 
   /// Moyenne calculée localement à partir du carnet de notes chargé.
   double calculateStudentAverage() {
@@ -531,11 +717,18 @@ class EvaluationsController extends ChangeNotifier {
         : score.toStringAsFixed(1);
   }
 
-  /// Génère le CSV du carnet de notes chargé.
+  /// Génère le CSV du carnet de notes chargé. Même correctif que
+  /// [gradebook] : résolution identifiant de cours → titre.
   String exportGradebookCsv({String? courseId, String? student}) {
+    String? courseTitle;
+    if (courseId != null) {
+      courseTitle = _courseTitleFor(courseId) ?? courseId;
+    }
     final rows = gradebookRows.where((r) {
-      if (courseId != null && r.courseTitle != courseId) return false;
-      if (student != null && r.studentName != student) return false;
+      if (courseTitle != null && r.courseTitle != courseTitle) return false;
+      // Même convention que [gradebook] : filtre par IDENTIFIANT étudiant
+      // (l'écran passe currentUserId, pas le nom).
+      if (student != null && r.studentId != student) return false;
       return true;
     }).toList();
     final buf = StringBuffer(
@@ -593,12 +786,11 @@ class EvaluationsController extends ChangeNotifier {
   /// Cours auxquels l'étudiant est inscrit / que l'enseignant possède.
   List<LinkedCourse> get accessibleCourses => courses;
 
-  /// Quiz publiés visibles par l'étudiant courant.
-  List<Quiz> publishedQuizzesForStudent() =>
-      quizzes.where((q) => q.isPublished).toList();
+  /// Quiz publiés visibles par l'étudiant courant (filtrés par cours inscrits).
+  List<Quiz> publishedQuizzesForStudent() => studentQuizzes;
 
-  /// Devoirs accessibles à l'étudiant courant.
-  List<Assignment> assignmentsForStudent() => assignments;
+  /// Devoirs accessibles à l'étudiant courant (filtrés par cours inscrits).
+  List<Assignment> assignmentsForStudent() => studentAssignments;
 
   /// Nombre de tentatives soumises pour un quiz donné par un étudiant.
   int attemptCountFor(String quizId, String studentId) => attempts
@@ -650,8 +842,16 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   /// Retourne une liste des copies en attente de correction pour l'enseignant.
-  List<Submission> copiesToGrade() =>
-      submissions.where((s) => s.status == SubmissionStatus.submitted).toList();
+  List<Submission> copiesToGrade() {
+    final myAssignIds = teacherAssignments.map((a) => a.id).toSet();
+    return submissions.where((s) {
+      if (s.status != SubmissionStatus.submitted) return false;
+      if (myAssignIds.isNotEmpty && !myAssignIds.contains(s.assignmentId)) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
 
   /// Trouve un quiz par son identifiant.
   Quiz? quizById(String id) {
@@ -677,14 +877,35 @@ class EvaluationsController extends ChangeNotifier {
     return found.isNotEmpty ? found.first : null;
   }
 
+  /// Résout le TITRE d'un cours à partir de son identifiant (les lignes du
+  /// carnet ne portent que le titre). Cherche d'abord dans les cours liés du
+  /// contrôleur, puis dans le module Cours (liaison L4).
+  String? _courseTitleFor(String courseId) {
+    for (final c in _courses) {
+      if (c.id == courseId) return c.title;
+    }
+    for (final c in CoursesController.instance.allCourses) {
+      if (c.id == courseId) return c.title;
+    }
+    return null;
+  }
+
   /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
-  /// Si `gradebookRows` est vide ou partiel, consolide en temps réel avec les
-  /// quiz complétés et devoirs notés en mémoire.
+  /// Correctif : le filtre recevait un IDENTIFIANT de cours et le comparait
+  /// au TITRE stocké dans la ligne — aucun résultat n'apparaissait dès
+  /// qu'un cours était sélectionné.
+  ///
+  /// Si `gradebookRows` est vide (carnet pas encore synchronisé, mode hors
+  /// ligne), le carnet est consolidé à partir des quiz complétés et des
+  /// devoirs notés présents en mémoire.
   List<GradebookRow> gradebook({String? courseId, String? student}) {
-    // Si des lignes sont déjà synchronisées du serveur, on les filtre
+    String? courseTitle;
+    if (courseId != null) {
+      courseTitle = _courseTitleFor(courseId) ?? courseId;
+    }
     if (gradebookRows.isNotEmpty) {
       return gradebookRows.where((r) {
-        if (courseId != null && r.courseTitle != courseId) return false;
+        if (courseTitle != null && r.courseTitle != courseTitle) return false;
         if (student != null && r.studentId != student) return false;
         return true;
       }).toList();
@@ -733,14 +954,22 @@ class EvaluationsController extends ChangeNotifier {
     return synthesized;
   }
 
-  /// Documents visibles filtrés par cours, dossier et recherche textuelle.
+  /// Documents visibles filtrés par propriétaire (enseignant) ou cours inscrits
+  /// (étudiant), cours sélectionné, dossier et recherche textuelle.
   List<CourseDocument> visibleDocuments({
     String? courseId,
     DocumentFolder? folder,
     String? search,
   }) {
     final now = DateTime.now();
+    final enrolled = isTeacher ? null : _enrolledCourseIds;
     return documents.where((d) {
+      if (isTeacher && d.teacherId.isNotEmpty && d.teacherId != currentUserId) {
+        return false;
+      }
+      if (!isTeacher && enrolled != null && !enrolled.contains(d.courseId)) {
+        return false;
+      }
       if (courseId != null && d.courseId != courseId) return false;
       if (folder != null && d.folder != folder) return false;
       if (!isTeacher && d.visibleFrom.isAfter(now)) return false;
@@ -759,7 +988,11 @@ class EvaluationsController extends ChangeNotifier {
   // ── Wrappers synchrones d'écriture (optimiste) ───────────────────────────
 
   /// Crée ou met à jour un quiz. Déclenche l'API en arrière-plan.
-  /// [publish] à true → publie immédiatement après upsert.
+  /// [publish] à true → positionne explicitement l'état publié APRÈS
+  /// l'enregistrement. Correctif important : l'ancien code appelait
+  /// `publishQuiz` qui BASCULE l'état — un quiz créé avec
+  /// `isPublished: true` était donc re-basculé en brouillon dans Firestore
+  /// alors que l'interface affichait « Publié ».
   void upsertQuiz(Quiz quiz, {bool publish = false}) {
     // Mise à jour optimiste locale.
     final idx = quizzes.indexWhere((q) => q.id == quiz.id);
@@ -769,26 +1002,50 @@ class EvaluationsController extends ChangeNotifier {
       quizzes = [...quizzes, quiz];
     }
     notifyListeners();
-    // Appel API en arrière-plan.
+    // Persistance en arrière-plan : enregistrement puis positionnement
+    // EXPLICITE de l'état publié si demandé (corrige le bug du toggle),
+    // rafraîchissement final avec l'état réel renvoyé par la source.
     final body = _quizToBody(quiz);
-    if (idx >= 0) {
-      _repo.updateQuiz(quiz.id, body).then((updated) {
-        quizzes = quizzes.map((q) => q.id == updated.id ? updated : q).toList();
-        if (publish) _repo.publishQuiz(updated.id);
-        notifyListeners();
-      }).catchError((e) => debugPrint('[Controller] upsertQuiz error: $e'));
-    } else {
-      _repo.createQuiz(body).then((created) {
-        quizzes = [...quizzes.where((q) => q.id != quiz.id), created];
-        if (publish) _repo.publishQuiz(created.id);
-        notifyListeners();
-      }).catchError((e) => debugPrint('[Controller] createQuiz error: $e'));
+    Future<void> persist() async {
+      Quiz stored;
+      if (idx >= 0) {
+        stored = await _repo.updateQuiz(quiz.id, body);
+        quizzes = quizzes
+            .map((q) => q.id == stored.id ? stored : q)
+            .toList();
+      } else {
+        stored = await _repo.createQuiz(body);
+        quizzes = [...quizzes.where((q) => q.id != quiz.id), stored];
+      }
+      if (publish && !stored.isPublished) {
+        stored = await _repo.setQuizPublished(stored.id, published: true);
+        quizzes = quizzes
+            .map((q) => q.id == stored.id ? stored : q)
+            .toList();
+      }
+      notifyListeners();
     }
+
+    persist()
+        .catchError((e) => debugPrint('[Controller] upsertQuiz error: $e'));
   }
 
-  /// Publie ou dépublie un quiz. [publish] ignoré ici (le serveur gère le toggle).
+  /// Publie ou masque un quiz : positionne EXPLICITEMENT l'état demandé
+  /// ([publish]) au lieu de basculer — la carte enseignant appelle cette
+  /// méthode avec `!quiz.isPublished` comme cible.
   Future<Quiz?> publishQuizToggle(String quizId, [bool publish = true]) {
-    return publishQuiz(quizId);
+    return _wrap(() async {
+      final updated = await _repo.setQuizPublished(quizId, published: publish);
+      quizzes = quizzes.map((q) => q.id == quizId ? updated : q).toList();
+      if (publish) {
+        _addNotification(
+          title: 'Quiz publié',
+          body: 'Le quiz "${updated.title}" est maintenant visible.',
+        );
+      }
+      notifyListeners();
+      return updated;
+    });
   }
 
   /// Crée ou met à jour un devoir. Déclenche l'API en arrière-plan.
@@ -801,15 +1058,25 @@ class EvaluationsController extends ChangeNotifier {
     }
     notifyListeners();
     final body = _assignmentToBody(assignment);
-    if (idx >= 0) {
-      _repo.updateAssignment(assignment.id, body)
-          .then((_) => notifyListeners())
-          .catchError((e) => debugPrint('[Controller] upsertAssignment error: $e'));
-    } else {
-      _repo.createAssignment(body)
-          .then((_) => notifyListeners())
-          .catchError((e) => debugPrint('[Controller] createAssignment error: $e'));
+    Future<void> persist() async {
+      if (idx >= 0) {
+        final stored = await _repo.updateAssignment(assignment.id, body);
+        assignments = assignments
+            .map((a) => (a.id == assignment.id || a.id == stored.id) ? stored : a)
+            .toList();
+      } else {
+        final stored = await _repo.createAssignment(body);
+        assignments = [
+          ...assignments.where((a) => a.id != assignment.id && a.id != stored.id),
+          stored,
+        ];
+      }
+      notifyListeners();
     }
+
+    persist().catchError(
+      (e) => debugPrint('[Controller] upsertAssignment error: $e'),
+    );
   }
 
   /// Crée ou met à jour un document. Déclenche l'API en arrière-plan.
@@ -822,15 +1089,25 @@ class EvaluationsController extends ChangeNotifier {
     }
     notifyListeners();
     final body = _documentToBody(doc);
-    if (idx >= 0) {
-      _repo.updateDocument(doc.id, body)
-          .then((_) => notifyListeners())
-          .catchError((e) => debugPrint('[Controller] upsertDocument error: $e'));
-    } else {
-      _repo.createDocument(body)
-          .then((_) => notifyListeners())
-          .catchError((e) => debugPrint('[Controller] createDocument error: $e'));
+    Future<void> persist() async {
+      if (idx >= 0) {
+        final stored = await _repo.updateDocument(doc.id, body);
+        documents = documents
+            .map((d) => (d.id == doc.id || d.id == stored.id) ? stored : d)
+            .toList();
+      } else {
+        final stored = await _repo.createDocument(body);
+        documents = [
+          ...documents.where((d) => d.id != doc.id && d.id != stored.id),
+          stored,
+        ];
+      }
+      notifyListeners();
     }
+
+    persist().catchError(
+      (e) => debugPrint('[Controller] upsertDocument error: $e'),
+    );
   }
 
   /// Sauvegarde les réponses intermédiaires d'une tentative (sync mock wrapper).
@@ -845,8 +1122,12 @@ class EvaluationsController extends ChangeNotifier {
     // Retrouve les réponses depuis le cache local.
     final draftAnswers = getDraftAnswers(attemptId) ?? [];
     // Déclenche l'appel API asynchrone et met à jour l'état quand il revient.
-    _repo.submitAttempt(attemptId, draftAnswers).then((attempt) {
-      attempts = [...attempts, attempt];
+    _repo.submitAttempt(attemptId, draftAnswers).then((attempt) async {
+      attempts = [
+        ...attempts.where((a) => a.id != attempt.id),
+        attempt,
+      ];
+      await _loadGradebooks();
       notifyListeners();
     }).catchError((e) => debugPrint('[Controller] submitAttempt error: $e'));
     // Retourne provisoirement 0.0 ; l'UI sera rafraîchie dès la réponse API.
@@ -925,9 +1206,23 @@ class EvaluationsController extends ChangeNotifier {
     ];
   }
 
+  /// Génère un brouillon de questions via l'API Gemini gratuite (clé partagée
+  /// du fichier `.env`, plan gratuit d'AI Studio) puis retombe sur le
+  /// générateur local de démonstration si la clé est absente ou si le
+  /// service est momentanément indisponible — l'assistant n'est jamais bloqué.
+  Future<List<QuizQuestion>> generateQuizDraftAi({required String topic}) async {
+    final questions = await EvaluationsAiService.instance.generateQuizQuestions(
+      topic: topic,
+      count: 3,
+    );
+    if (questions != null && questions.isNotEmpty) return questions;
+    return generateGeminiQuestions(topic);
+  }
+
   // ── Serialisation pour les appels API ────────────────────────────────────
 
   Map<String, dynamic> _quizToBody(Quiz q) => {
+        'id': q.id,
         'courseId': q.courseId,
         'title': q.title,
         'timeLimitMin': q.timeLimitMin,
@@ -948,6 +1243,7 @@ class EvaluationsController extends ChangeNotifier {
       };
 
   Map<String, dynamic> _assignmentToBody(Assignment a) => {
+        'id': a.id,
         'courseId': a.courseId,
         'title': a.title,
         'instructions': a.instructions,
@@ -958,6 +1254,7 @@ class EvaluationsController extends ChangeNotifier {
       };
 
   Map<String, dynamic> _documentToBody(CourseDocument d) => {
+        'id': d.id,
         'courseId': d.courseId,
         'title': d.title,
         'description': d.description,

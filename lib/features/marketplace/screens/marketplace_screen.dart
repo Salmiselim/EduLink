@@ -748,13 +748,16 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
               // IndexedStack conservant l'état et la position de défilement de chaque vue lors du changement d'onglet
               Expanded(
-                child: IndexedStack(
-                  index: _topSectionIndex,
-                  children: [
-                    _buildExplorerView(),
-                    _buildMyOffersView(),
-                    _buildMyOrdersView(),
-                  ],
+                child: RefreshIndicator(
+                  onRefresh: _onRefresh,
+                  child: IndexedStack(
+                    index: _topSectionIndex,
+                    children: [
+                      _buildExplorerView(),
+                      _buildMyOffersView(),
+                      _buildMyOrdersView(),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -782,6 +785,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     );
   }
 
+  /// Rafraîchissement manuel (glisser vers le bas) : rebranche les flux
+  /// temps réel et recharge l'identité — utile au cas où, par exemple si un
+  /// flux est resté silencieux ou après une coupure réseau.
+  Future<void> _onRefresh() async {
+    await MarketplaceController.instance.connectFirestore();
+  }
+
   /// Construit la vue « Explorer » : barre de recherche, puces [FilterChip] rapides,
   /// carrousel horizontal des offres rattachées aux cours suivis et liste principale de [OfferCard].
   Widget _buildExplorerView() {
@@ -805,6 +815,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         .toList();
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         // 1. Barre de recherche par mot-clé + Bouton Filtres avancés + Bouton Favoris ♥
@@ -1093,6 +1104,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             ratedOffers.length;
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
       children: [
         // 1. Carte récapitulative des statistiques vendeur (vues cumulées, ventes, séances et moyenne)
@@ -1421,6 +1433,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         : baseList.where((o) => o.status == _orderStatusFilter).toList();
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         // 1. Sous-bascule : Mes achats (Acheteur) | Demandes reçues (Vendeur)

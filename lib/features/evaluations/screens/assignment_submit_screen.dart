@@ -46,7 +46,14 @@ class _AssignmentSubmitScreenState extends State<AssignmentSubmitScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final assignment = _controller.assignmentById(widget.assignmentId)!;
+    final assignment = _controller.assignmentById(widget.assignmentId);
+    if (assignment == null) {
+      // Garde : devoir absent de la mémoire — état vide au lieu d'un crash.
+      return const Scaffold(
+        backgroundColor: EduColors.scaffold,
+        body: Center(child: Text('Devoir introuvable')),
+      );
+    }
     // Détecte si l'horloge courante a dépassé la date limite fixée sur le devoir.
     final late = DateTime.now().isAfter(assignment.dueDate);
 

@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:provider/provider.dart';
 
@@ -14,6 +15,7 @@ import 'features/courses/data/courses_mock_data.dart';
 import 'features/courses/models/courses_models.dart';
 import 'features/courses/routes/courses_routes.dart';
 import 'features/courses/screens/courses_screen.dart';
+import 'features/courses/services/courses_push_service.dart';
 import 'features/evaluations/data/evaluations_mock_data.dart';
 import 'features/evaluations/models/evaluations_models.dart';
 import 'features/evaluations/routes/evaluations_routes.dart';
@@ -30,12 +32,24 @@ import 'features/forum/routes/app_routes.dart';
 import 'screens/forum_feed_screen.dart';
 
 /// Point d'entrée principal de l'application EduLink.
-/// Le shell intégré [EduLinkShell] est ouvert après la connexion (ou via le
-/// bouton « Passer » de l'écran de démonstration).
+/// Le shell intégré [EduLinkShell] est ouvert après la connexion
+/// (réelle ou en mode démonstration si Firebase est indisponible).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _loadEnv();
   await _initFirebase();
   runApp(const EduLinkApp());
+}
+
+/// Charge le fichier `.env` (clé Gemini) sans jamais bloquer le démarrage :
+/// si le fichier est absent ou illisible, l'IA est simplement « non
+/// configurée » et les écrans affichent leur message d'aide habituel.
+Future<void> _loadEnv() async {
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (error) {
+    debugPrint('.env non chargé — IA non configurée : $error');
+  }
 }
 
 /// Initialise Firebase puis branche la Marketplace sur Cloud Firestore.
@@ -46,16 +60,31 @@ Future<void> _initFirebase() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(const Duration(seconds: 5));
+    // Notifications push (FCM) : permission + jeton enregistré dans
+    // users/{uid} ; sans effet hors Android/iOS (repli silencieux).
+    unawaited(CoursesPushService.init());
     MarketplaceFirestoreService.enableOfflinePersistence();
     CoursesController.firebaseReady = true;
     AuthService.onSignedIn = (user) async {
       await CoursesController.instance.connectCloud();
       await MarketplaceController.instance.connectFirestore();
       await EvaluationsController.instance.connectCloud();
+      // Ré-enregistre le jeton FCM pour le compte qui vient de se connecter.
+      unawaited(CoursesPushService.refreshForCurrentUser());
     };
-    // Connexion aux collections Firestore en arrière-plan pour ne jamais bloquer l'affichage initial
+    AuthService.onSignedOut = () async {
+      CoursesController.instance.resetSession();
+      await EvaluationsController.instance.resetSession();
+    };
+    // Connexion aux collections Firestore en arrière-plan (amélioration QA)
+    // pour ne jamais bloquer l'affichage initial ; les erreurs réseau sont
+    // gérées à l'intérieur de chaque contrôleur (repli démonstration).
     unawaited(MarketplaceController.instance.connectFirestore());
-    unawaited(CoursesController.instance.connectCloud());
+    unawaited(
+      CoursesController.instance
+          .connectCloud()
+          .then((_) => EvaluationsController.instance.connectCloud()),
+    );
   } catch (e) {
     debugPrint('Firebase non configuré, mode hors Firestore : $e');
   }
@@ -128,9 +157,50 @@ class EduLinkShell extends StatefulWidget {
   State<EduLinkShell> createState() => _EduLinkShellState();
 }
 
-class _EduLinkShellState extends State<EduLinkShell> {
+class _EduLinkShellState extends State<EduLinkShell>
+    with WidgetsBindingObserver {
   /// Onglet affiché au démarrage : Cours.
   int _currentIndex = 0;
+
+  /// Anti-doublon : plusieurs reprises peuvent se déclencher en rafale
+  /// (retour depuis l'arrière-plan, bascule d'application…).
+  DateTime? _lastResumeRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Reprise de l'application (retour depuis l'arrière-plan ou une autre
+  /// application) : recharge les données Firestore des modules Cours et
+  /// Évaluations pour que les ajouts des collègues apparaissent sans
+  /// relancer l'application. La Marketplace et la cloche des notifications
+  /// sont déjà en temps réel — rien à faire pour eux.
+  /// Coût maîtrisé : une recharge ≈ 30-60 lectures Firestore, très en
+  /// dessous du quota gratuit (50 000 lectures/jour) ; un anti-doublon de
+  /// 15 secondes évite les recharges en rafale.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed) return;
+    final now = DateTime.now();
+    final last = _lastResumeRefresh;
+    if (last != null && now.difference(last) < const Duration(seconds: 15)) {
+      return;
+    }
+    _lastResumeRefresh = now;
+    if (!AuthService.instance.isFirebaseReady) return;
+    if (AuthService.instance.currentUser == null) return;
+    unawaited(CoursesController.instance.connectCloud());
+    unawaited(EvaluationsController.instance.connectCloud());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -245,6 +315,21 @@ class CoursesRoot extends StatelessWidget {
               ],
             ),
             actions: [
+              // Cloche des notifications in-app (nouveaux chapitres,
+              // publications) alimentée en temps réel par Firestore.
+              IconButton(
+                tooltip: 'Notifications',
+                onPressed: () => _showNotificationsSheet(context, controller),
+                icon: Badge(
+                  isLabelVisible: controller.unreadNotificationCount > 0,
+                  label: Text('${controller.unreadNotificationCount}'),
+                  backgroundColor: const Color(0xFFDC2626),
+                  child: const Icon(
+                    Icons.notifications_outlined,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              ),
               // Bascule de rôle simulé — visible uniquement en mode démonstration
               // (en mode réel, le rôle vient du compte Firebase).
               if (controller.isDemoMode)
@@ -296,6 +381,153 @@ class CoursesRoot extends StatelessWidget {
           ),
           // Écran principal du module Cours (Mes cours | Catalogue / Statistiques)
           body: const CoursesScreen(),
+        );
+      },
+    );
+  }
+
+  /// Feuille modale listant les notifications in-app de l'utilisateur
+  /// (nouveaux chapitres, publications de cours), avec marquage « lu ».
+  void _showNotificationsSheet(
+    BuildContext context,
+    CoursesController controller,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) {
+            final notifications = controller.myNotifications;
+            final unread = controller.unreadNotificationCount;
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * 0.62,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.notifications_rounded,
+                            color: Color(0xFF2563EB),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Notifications',
+                              style: TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                          if (unread > 0)
+                            TextButton(
+                              onPressed: controller.markAllMyNotificationsRead,
+                              child: const Text(
+                                'Tout marquer comme lu',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: notifications.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.notifications_none_rounded,
+                                    size: 40,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    'Aucune notification pour le moment. Les '
+                                    'nouveautés de vos cours (nouveaux '
+                                    'chapitres, publications) apparaîtront ici.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.5,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              itemCount: notifications.length,
+                              itemBuilder: (context, index) {
+                                final notification = notifications[index];
+                                final date = notification.createdAt;
+                                return ListTile(
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: notification.read
+                                          ? const Color(0xFFF1F5F9)
+                                          : const Color(0xFFDBEAFE),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      notification.icon,
+                                      size: 18,
+                                      color: notification.read
+                                          ? const Color(0xFF64748B)
+                                          : const Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    notification.title,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: notification.read
+                                          ? FontWeight.w600
+                                          : FontWeight.w800,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    '${notification.body}\n'
+                                    '${notification.courseTitle} · '
+                                    '${date.day.toString().padLeft(2, '0')}/'
+                                    '${date.month.toString().padLeft(2, '0')}'
+                                    '/${date.year}',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      height: 1.4,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  isThreeLine: true,
+                                  onTap: () => controller
+                                      .markNotificationRead(notification.id),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -485,34 +717,37 @@ class EvaluationsRoot extends StatelessWidget {
               ],
             ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ActionChip(
-                  tooltip: 'Changer de rôle simulé (RoleAware)',
-                  onPressed: controller.toggleRole,
-                  backgroundColor:
-                      isTeacher ? EduColors.infoBg : EduColors.neutralBg,
-                  avatar: Icon(
-                    isTeacher
-                        ? Icons.verified_rounded
-                        : Icons.school_outlined,
-                    size: 16,
-                    color: isTeacher
-                        ? const Color(0xFF1D4ED8)
-                        : const Color(0xFF475569),
-                  ),
-                  label: Text(
-                    isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+              // Bascule de rôle simulé — visible uniquement en mode démonstration
+              // (en mode réel, le rôle vient du compte Firebase).
+              if (controller.isDemoMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    tooltip: 'Changer de rôle simulé (RoleAware)',
+                    onPressed: controller.toggleRole,
+                    backgroundColor:
+                        isTeacher ? EduColors.infoBg : EduColors.neutralBg,
+                    avatar: Icon(
+                      isTeacher
+                          ? Icons.verified_rounded
+                          : Icons.school_outlined,
+                      size: 16,
                       color: isTeacher
                           ? const Color(0xFF1D4ED8)
-                          : const Color(0xFF334155),
+                          : const Color(0xFF475569),
+                    ),
+                    label: Text(
+                      isTeacher ? 'Rôle: Enseignant' : 'Rôle: Étudiant',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isTeacher
+                            ? const Color(0xFF1D4ED8)
+                            : const Color(0xFF334155),
+                      ),
                     ),
                   ),
                 ),
-              ),
               const SizedBox(width: 4),
             ],
           ),

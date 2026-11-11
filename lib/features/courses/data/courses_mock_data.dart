@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -46,6 +48,10 @@ class CoursesController extends ChangeNotifier {
   /// Connecte le contrôleur à Firestore (implémenté par la variante cloud) ;
   /// sans effet sur la variante mock.
   Future<void> connectCloud() async {}
+
+  /// Réinitialise la session lors d'une déconnexion afin d'éviter toute fuite
+  /// de données (cours, inscriptions, notifications) entre deux comptes.
+  void resetSession() {}
 
   /// Indique si le profil actif dispose des droits enseignant sur l'interface.
   bool get isTeacher => currentUserRole == CourseRole.teacher;
@@ -216,17 +222,29 @@ class CoursesController extends ChangeNotifier {
 
   /// Bascule la visibilité publique d'un cours dans le catalogue (`PATCH /courses/:id/publish`).
   /// Refuse la publication et retourne `false` si le cours ne comporte encore aucun chapitre.
+  /// Une publication déclenche une notification pour chaque étudiant inscrit.
   bool setPublished(String courseId, bool published) {
     final course = courseById(courseId);
     if (course == null) return false;
     if (published && chaptersOf(courseId).isEmpty) return false;
     course.isPublished = published;
     notifyListeners();
+    if (published) {
+      _notifyEnrolled(
+        courseId,
+        type: 'course_published',
+        title: 'Nouveau cours publié',
+        body:
+            'Le cours « ${course.title} » est désormais disponible dans le '
+            'catalogue.',
+      );
+    }
     return true;
   }
 
   /// Ajoute un chapitre en fin de séquence sur [courseId], met à jour le compteur
   /// `chaptersCount` du cours et appelle `notifyListeners()` (`POST /courses/:id/chapters`).
+  /// Les étudiants inscrits reçoivent une notification in-app.
   Chapter addChapter(
     String courseId, {
     required String title,
@@ -247,7 +265,130 @@ class CoursesController extends ChangeNotifier {
     final course = courseById(courseId);
     if (course != null) course.chaptersCount = chapters.length;
     notifyListeners();
+    _notifyEnrolled(
+      courseId,
+      type: 'new_chapter',
+      title: 'Nouveau chapitre',
+      body:
+          '« ${chapter.title} » a été ajouté au cours '
+          '« ${course?.title ?? courseId} ».',
+    );
     return chapter;
+  }
+
+  // Notifications in-app des étudiants inscrits (nouveau chapitre, publication).
+
+  /// Notifications générées côté contrôleur (mode démonstration) ; en mode
+  /// cloud la liste est remplie par l'abonnement temps réel de
+  /// [CoursesCloudController].
+  final List<CourseNotification> _notifications = [];
+
+  /// Notifications destinées à [userId], de la plus récente à la plus ancienne.
+  List<CourseNotification> notificationsFor(String userId) {
+    final list =
+        _notifications.where((n) => n.userId == userId).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return List.unmodifiable(list);
+  }
+
+  /// Notifications de l'utilisateur courant.
+  List<CourseNotification> get myNotifications =>
+      notificationsFor(currentUserId);
+
+  /// Nombre de notifications non lues de l'utilisateur courant (badge de la cloche).
+  int get unreadNotificationCount =>
+      myNotifications.where((n) => !n.read).length;
+
+  /// Marque une notification comme lue (mémoire, puis Firestore en mode cloud).
+  void markNotificationRead(String notificationId) {
+    for (final notification in _notifications) {
+      if (notification.id == notificationId) notification.read = true;
+    }
+    notifyListeners();
+  }
+
+  /// Marque toutes les notifications de l'utilisateur courant comme lues.
+  void markAllMyNotificationsRead() {
+    for (final notification in myNotifications) {
+      notification.read = true;
+    }
+    notifyListeners();
+  }
+
+  /// Crée une notification pour chaque étudiant inscrit au cours (hors auteur).
+  /// Variante mock : écritures en mémoire. La variante cloud surcharge cette
+  /// méthode pour écrire dans la collection `notifications` de Firestore.
+  void _notifyEnrolled(
+    String courseId, {
+    required String type,
+    required String title,
+    required String body,
+  }) {
+    final course = courseById(courseId);
+    if (course == null) return;
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    var index = 0;
+    for (final enrollment in enrollmentsOf(courseId)) {
+      if (enrollment.studentId == currentUserId) continue;
+      _notifications.add(
+        CourseNotification(
+          id: 'notif_${stamp}_${index++}',
+          userId: enrollment.studentId,
+          fromId: currentUserId,
+          courseId: courseId,
+          courseTitle: course.title,
+          type: type,
+          title: title,
+          body: body,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    if (index > 0) notifyListeners();
+  }
+
+  // Traductions assistées par IA (générées par l'enseignant, stockées avec
+  // le cours pour être lues gratuitement par les étudiants).
+
+  /// Enregistre la traduction d'un chapitre dans la langue [languageCode].
+  void saveChapterTranslation(
+    String courseId,
+    String chapterId,
+    String languageCode,
+    String translatedText,
+  ) {
+    final chapter = chaptersOf(courseId)
+        .where((c) => c.id == chapterId)
+        .firstOrNull;
+    if (chapter == null) return;
+    chapter.translations = {
+      ...chapter.translations,
+      languageCode: translatedText,
+    };
+    notifyListeners();
+  }
+
+  /// Enregistre la traduction de la description d'un cours.
+  void saveCourseDescriptionTranslation(
+    String courseId,
+    String languageCode,
+    String translatedText,
+  ) {
+    final course = courseById(courseId);
+    if (course == null) return;
+    course.descriptionTranslations = {
+      ...course.descriptionTranslations,
+      languageCode: translatedText,
+    };
+    notifyListeners();
+  }
+
+  /// Met à jour l'image de couverture d'un cours après téléversement.
+  void setCoverImageUrl(String courseId, String? url) {
+    final course = courseById(courseId);
+    if (course == null) return;
+    course.coverImageUrl = url;
+    notifyListeners();
   }
 
   /// Modifie le titre, la durée estimée et éventuellement le contenu d'un chapitre existant,
@@ -883,6 +1024,10 @@ class CoursesCloudController extends CoursesController {
   /// Vrai dès que les données réelles ont été chargées pour un compte connecté.
   bool _cloudReady = false;
 
+  /// Abonnement temps réel aux notifications de l'utilisateur courant ;
+  /// annulé puis recréé à chaque reconnexion (évite les doublons).
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _notificationsSub;
+
   @override
   bool get isDemoMode => !_cloudReady;
 
@@ -976,10 +1121,13 @@ class CoursesCloudController extends CoursesController {
       }
 
       _cloudReady = true;
+      _subscribeToNotifications(user.uid);
       notifyListeners();
 
-      // Un enseignant sans cours reçoit le jeu de démonstration.
-      if (isTeacher && _courses.where((c) => c.teacherId == user.uid).isEmpty) {
+      // Uniquement si la base Firestore est totalement vide (aucun cours
+      // existant), on initialise le jeu de démonstration. On n'écrase JAMAIS
+      // les cours publiés appartenant à un autre enseignant.
+      if (isTeacher && _courses.isEmpty) {
         await seedDemoCourses();
       }
     } catch (e) {
@@ -987,13 +1135,34 @@ class CoursesCloudController extends CoursesController {
     }
   }
 
-  /// Écrit le jeu de démonstration dans Firestore (une seule fois) : tous les
-  /// cours du seed deviennent la propriété du compte enseignant connecté.
+  @override
+  void resetSession() {
+    _notificationsSub?.cancel();
+    _notificationsSub = null;
+    _cloudReady = false;
+    currentUserId = 'user_me';
+    currentUserName = 'Yasmine Ben Ali';
+    currentUserRole = CourseRole.student;
+    _courses.clear();
+    _chaptersByCourse.clear();
+    _enrollments.clear();
+    _seedInitialData();
+    notifyListeners();
+  }
+
+  /// Écrit le jeu de démonstration dans Firestore uniquement pour les cours
+  /// qui n'appartiennent pas déjà à un autre enseignant réel.
   Future<void> seedDemoCourses() async {
     try {
       final uid = currentUserId;
       final batch = _db.batch();
       for (final course in _courses) {
+        // Sécurité : ne jamais s'approprier le cours d'un autre enseignant.
+        if (course.teacherId.isNotEmpty &&
+            course.teacherId != uid &&
+            !course.teacherId.startsWith('teacher_')) {
+          continue;
+        }
         course.teacherName = currentUserName;
         course.teacherVerified = true;
         batch.set(
@@ -1234,6 +1403,177 @@ class CoursesCloudController extends CoursesController {
     }).catchError((e) => debugPrint('[CoursesCloud] setChapterCompleted : $e'));
   }
 
+  // ── Notifications temps réel & traductions (cloud) ────────────────────────
+
+  /// Abonne l'utilisateur courant aux notifications le concernant
+  /// (collection `notifications`, filtre `userId`) : la liste en mémoire est
+  /// remplacée à chaque instantané Firestore, comme sur la Marketplace.
+  void _subscribeToNotifications(String uid) {
+    _notificationsSub?.cancel();
+    _notificationsSub = _db
+        .collection('notifications')
+        .where('userId', isEqualTo: uid)
+        .snapshots()
+        .listen((snapshot) {
+      _notifications
+        ..clear()
+        ..addAll(snapshot.docs.map(_notificationFromDoc));
+      notifyListeners();
+    });
+  }
+
+  /// Variante cloud : les notifications sont écrites dans Firestore pour
+  /// chaque étudiant inscrit (une fiche par étudiant, `userId` = destinataire).
+  @override
+  void _notifyEnrolled(
+    String courseId, {
+    required String type,
+    required String title,
+    required String body,
+  }) {
+    if (!_cloudReady) {
+      super._notifyEnrolled(courseId, type: type, title: title, body: body);
+      return;
+    }
+    _notifyEnrolledOnCloud(courseId, type: type, title: title, body: body);
+  }
+
+  Future<void> _notifyEnrolledOnCloud(
+    String courseId, {
+    required String type,
+    required String title,
+    required String body,
+  }) async {
+    try {
+      final course = courseById(courseId);
+      if (course == null) return;
+      final enrollments =
+          await _enrollmentsRef.where('courseId', isEqualTo: courseId).get();
+      final batch = _db.batch();
+      for (final doc in enrollments.docs) {
+        final studentId = doc.data()['studentId'] as String?;
+        if (studentId == null || studentId == currentUserId) continue;
+        batch.set(_db.collection('notifications').doc(), {
+          'userId': studentId,
+          'fromId': currentUserId,
+          'courseId': courseId,
+          'courseTitle': course.title,
+          'type': type,
+          'title': title,
+          'body': body,
+          'read': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[CoursesCloud] notifications : $e');
+    }
+  }
+
+  /// Marquage « lu » persisté dans Firestore (les règles limitent la mise à
+  /// jour au seul champ `read`).
+  @override
+  void markNotificationRead(String notificationId) {
+    super.markNotificationRead(notificationId);
+    if (!_cloudReady) return;
+    _db
+        .collection('notifications')
+        .doc(notificationId)
+        .update({'read': true})
+        .catchError((e) => debugPrint('[CoursesCloud] markRead : $e'));
+  }
+
+  @override
+  void markAllMyNotificationsRead() {
+    super.markAllMyNotificationsRead();
+    if (!_cloudReady) return;
+    try {
+      final batch = _db.batch();
+      for (final notification in myNotifications) {
+        batch.update(
+          _db.collection('notifications').doc(notification.id),
+          {'read': true},
+        );
+      }
+      batch.commit().catchError(
+            (e) => debugPrint('[CoursesCloud] markAllRead : $e'),
+          );
+    } catch (e) {
+      debugPrint('[CoursesCloud] markAllRead : $e');
+    }
+  }
+
+  /// Sauvegarde la traduction d'un chapitre dans son document Firestore.
+  @override
+  void saveChapterTranslation(
+    String courseId,
+    String chapterId,
+    String languageCode,
+    String translatedText,
+  ) {
+    super.saveChapterTranslation(courseId, chapterId, languageCode, translatedText);
+    if (!_cloudReady) return;
+    final chapter =
+        chaptersOf(courseId).where((c) => c.id == chapterId).firstOrNull;
+    if (chapter == null) return;
+    _chaptersRef(courseId)
+        .doc(chapterId)
+        .update({'translations': chapter.translations})
+        .catchError((e) => debugPrint('[CoursesCloud] translation : $e'));
+  }
+
+  /// Sauvegarde la traduction de la description dans le document du cours.
+  @override
+  void saveCourseDescriptionTranslation(
+    String courseId,
+    String languageCode,
+    String translatedText,
+  ) {
+    super.saveCourseDescriptionTranslation(
+      courseId,
+      languageCode,
+      translatedText,
+    );
+    if (!_cloudReady) return;
+    final course = courseById(courseId);
+    if (course == null) return;
+    _coursesRef
+        .doc(courseId)
+        .update({'descriptionTranslations': course.descriptionTranslations})
+        .catchError((e) => debugPrint('[CoursesCloud] translation : $e'));
+  }
+
+  /// Persiste l'URL de couverture téléversée sur Firebase Storage.
+  @override
+  void setCoverImageUrl(String courseId, String? url) {
+    super.setCoverImageUrl(courseId, url);
+    if (!_cloudReady) return;
+    _coursesRef
+        .doc(courseId)
+        .update({'coverImageUrl': url})
+        .catchError((e) => debugPrint('[CoursesCloud] cover : $e'));
+  }
+
+  /// Reconstruit une [CourseNotification] depuis son document Firestore.
+  CourseNotification _notificationFromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final d = doc.data();
+    return CourseNotification(
+      id: doc.id,
+      userId: (d['userId'] as String?) ?? '',
+      fromId: (d['fromId'] as String?) ?? '',
+      courseId: (d['courseId'] as String?) ?? '',
+      courseTitle: (d['courseTitle'] as String?) ?? '',
+      type: (d['type'] as String?) ?? 'new_chapter',
+      title: (d['title'] as String?) ?? '',
+      body: (d['body'] as String?) ?? '',
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      read: (d['read'] as bool?) ?? false,
+    );
+  }
+
   // ── Mapping Firestore ↔ modèles ───────────────────────────────────────────
 
   Map<String, dynamic> _courseToMap(Course c) => {
@@ -1244,6 +1584,7 @@ class CoursesCloudController extends CoursesController {
         'subject': c.subject,
         'level': c.level,
         'description': c.description,
+        'descriptionTranslations': c.descriptionTranslations,
         'coverImageUrl': c.coverImageUrl,
         'chaptersCount': c.chaptersCount,
         'isPublished': c.isPublished,
@@ -1262,6 +1603,9 @@ class CoursesCloudController extends CoursesController {
       subject: (d['subject'] as String?) ?? 'Général',
       level: (d['level'] as String?) ?? 'L1',
       description: (d['description'] as String?) ?? '',
+      descriptionTranslations: ((d['descriptionTranslations'] as Map?) ??
+              const {})
+          .map((key, value) => MapEntry(key.toString(), value.toString())),
       coverImageUrl: d['coverImageUrl'] as String?,
       chaptersCount: (d['chaptersCount'] as num?)?.toInt() ?? 0,
       isPublished: (d['isPublished'] as bool?) ?? false,
@@ -1274,6 +1618,7 @@ class CoursesCloudController extends CoursesController {
         'title': c.title,
         'type': c.type.firestoreValue,
         'content': c.content,
+        'translations': c.translations,
         'durationMin': c.durationMin,
         'order': c.order,
       };
@@ -1285,6 +1630,8 @@ class CoursesCloudController extends CoursesController {
       title: (d['title'] as String?) ?? 'Sans titre',
       type: ChapterTypeX.fromFirestore((d['type'] as String?) ?? 'text'),
       content: d['content'] as String?,
+      translations: ((d['translations'] as Map?) ?? const {})
+          .map((key, value) => MapEntry(key.toString(), value.toString())),
       durationMin: (d['durationMin'] as num?)?.toInt() ?? 30,
       order: (d['order'] as num?)?.toInt() ?? 0,
     );

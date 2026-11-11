@@ -39,7 +39,19 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(const EduLinkApp());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Passer'));
+    // Connexion en mode démonstration (Firebase absent en tests).
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Adresse e-mail'),
+      'etudiant@edulink.tn',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Mot de passe'),
+      'motdepasse',
+    );
+    await tester.tap(find.text('Se connecter'));
+    await tester.pumpAndSettle();
+    // Laisse la SnackBar « Bienvenue » se refermer avant les interactions.
+    await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Marketplace'));
     await tester.pumpAndSettle();
