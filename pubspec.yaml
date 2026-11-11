@@ -60,6 +60,7 @@ dependencies:
   flutter_pdfview: ^1.4.5
   share_plus: ^13.3.1
   flutter_dotenv: ^6.0.1
+  youtube_player_iframe: ^6.0.2
 
 dev_dependencies:
   flutter_test:

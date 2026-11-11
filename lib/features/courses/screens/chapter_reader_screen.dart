@@ -13,6 +13,7 @@ import '../widgets/ai_tools.dart';
 import '../widgets/chapter_tile.dart';
 import '../widgets/courses_ui.dart';
 import 'pdf_viewer_screen.dart';
+import 'youtube_player_screen.dart';
 
 // Écran plein écran de lecture d'un chapitre (`ChapterReaderScreen`).
 // Adapte la zone principale au format du chapitre (`text`, `pdf`, `video`, `link`)
@@ -54,6 +55,32 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
 
   /// Résolutions oEmbed des vidéos par chapitre (mémo, même principe).
   final Map<String, Future<YouTubeVideoInfo?>> _videoFutures = {};
+
+  /// WebView disponible pour la lecture intégrée des vidéos YouTube
+  /// (Android, iOS et Web) ; sur les autres plateformes (bureau sans
+  /// WebView), la lecture retombe sur l'ouverture externe dans YouTube,
+  /// comme la visionneuse PDF est réservée au mobile.
+  static bool get _canPlayInApp =>
+      kIsWeb || (!kIsWeb && (Platform.isAndroid || Platform.isIOS));
+
+  /// Ouvre la vidéo du chapitre dans le lecteur YouTube intégré à
+  /// l'application (plein écran, comme la visionneuse PDF), ou dans
+  /// YouTube à l'extérieur lorsque la plateforme n'a pas de WebView.
+  void _playVideo(Chapter chapter, String videoId) {
+    if (!_canPlayInApp) {
+      _openExternalUrl(YouTubeOEmbedService.watchUrl(videoId));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => YouTubePlayerScreen(
+          videoId: videoId,
+          title: chapter.title,
+        ),
+      ),
+    );
+  }
 
   /// Ouvre une URL externe dans le navigateur / l'application dédiée via
   /// url_launcher ; message d'erreur explicite en cas d'échec.
@@ -935,9 +962,11 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
   }
 
   /// Affiche la vidéo du chapitre : miniature officielle et titre réels via
-  /// l'API oEmbed de YouTube (gratuite, sans clé), ouverture dans YouTube en
-  /// un tap sur la miniature, et repli sur l'encart générique si les
-  /// métadonnées sont indisponibles (hors-ligne, vidéo privée).
+  /// l'API oEmbed de YouTube (gratuite, sans clé), lecture DANS l'application
+  /// via le lecteur YouTube intégré — un tap sur la miniature ouvre le lecteur
+  /// plein écran, comme la visionneuse PDF — et repli sur l'ouverture externe
+  /// (plateforme sans WebView) ou sur l'encart générique si les métadonnées
+  /// sont indisponibles (hors-ligne, vidéo privée).
   Widget _videoContent(Chapter chapter) {
     final future = _videoFutures.putIfAbsent(
       chapter.id,
@@ -947,15 +976,15 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
       future: future,
       builder: (context, snapshot) {
         final info = snapshot.data;
-        final canOpen =
-            YouTubeOEmbedService.extractVideoId(chapter.content ?? '') != null;
+        final videoId =
+            YouTubeOEmbedService.extractVideoId(chapter.content ?? '');
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Miniature officielle (ou encart sombre en repli) : un tap
-              // ouvre la vidéo dans l'application YouTube.
+              // ouvre le lecteur intégré de l'application, comme un PDF.
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: ClipRRect(
@@ -971,7 +1000,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                         )
                       else
                         _videoPlaceholder(),
-                      if (canOpen) ...[
+                      if (videoId != null) ...[
                         Center(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -992,13 +1021,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () => _openExternalUrl(
-                                YouTubeOEmbedService.watchUrl(
-                                  YouTubeOEmbedService.extractVideoId(
-                                    chapter.content ?? '',
-                                  )!,
-                                ),
-                              ),
+                              onTap: () => _playVideo(chapter, videoId),
                               child: const SizedBox.expand(),
                             ),
                           ),
@@ -1079,6 +1102,18 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                         ],
                       ),
                     ),
+                    if (videoId != null)
+                      IconButton(
+                        tooltip: 'Ouvrir dans YouTube',
+                        onPressed: () => _openExternalUrl(
+                          YouTubeOEmbedService.watchUrl(videoId),
+                        ),
+                        icon: const Icon(
+                          Icons.open_in_new_rounded,
+                          color: CourseColors.primary,
+                          size: 19,
+                        ),
+                      ),
                     IconButton(
                       tooltip: 'Copier le lien',
                       onPressed: () {
@@ -1101,19 +1136,13 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                   ],
                 ),
               ),
-              if (canOpen) ...[
+              if (videoId != null) ...[
                 const SizedBox(height: 10),
                 SizedBox(
                   width: 280,
                   height: 44,
                   child: FilledButton.icon(
-                    onPressed: () => _openExternalUrl(
-                      YouTubeOEmbedService.watchUrl(
-                        YouTubeOEmbedService.extractVideoId(
-                          chapter.content ?? '',
-                        )!,
-                      ),
-                    ),
+                    onPressed: () => _playVideo(chapter, videoId),
                     style: FilledButton.styleFrom(
                       backgroundColor: CourseColors.danger,
                       shape: RoundedRectangleBorder(
@@ -1121,9 +1150,11 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                       ),
                     ),
                     icon: const Icon(Icons.play_circle_rounded, size: 18),
-                    label: const Text(
-                      'Ouvrir dans YouTube',
-                      style: TextStyle(
+                    label: Text(
+                      _canPlayInApp
+                          ? "Regarder dans l'application"
+                          : 'Ouvrir dans YouTube',
+                      style: const TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
                       ),
@@ -1135,7 +1166,8 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  'Titre et miniature récupérés via YouTube oEmbed '
+                  "Vidéo lue dans l'application (lecteur YouTube intégré) ; "
+                  'titre et miniature récupérés via YouTube oEmbed '
                   '(API externe gratuite, sans clé).',
                   style: TextStyle(
                     fontSize: 10.5,
