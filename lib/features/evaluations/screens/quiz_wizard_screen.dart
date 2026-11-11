@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../data/evaluations_mock_data.dart';
 import '../models/evaluations_models.dart';
-import '../services/eval_gemini_service.dart';
 import '../widgets/eval_ui.dart';
 
 /// Assistant enseignant en trois étapes pour créer ou modifier un [Quiz] :

@@ -73,7 +73,6 @@ void main() {
       expect(find.text('Mot de passe oublié ?'), findsOneWidget);
       expect(find.text('Google'), findsOneWidget);
       expect(find.text('Apple'), findsOneWidget);
-
       // Le contournement « Passer » a été retiré : la connexion est obligatoire.
       expect(find.text('Passer'), findsNothing);
 

@@ -145,7 +145,7 @@ flutter analyze
 flutter test test/evaluations_metiers_test.dart
 ```
 
-La suite `test/evaluations_metiers_test.dart` valide **8 scénarios critiques** :
+La suite `test/evaluations_metiers_test.dart` valide **9 scénarios critiques** :
 1. Rechargement des tentatives et des copies après redémarrage (`loadAll`).
 2. Publication explicite d'un quiz depuis l'assistant sans bascule involontaire en brouillon.
 3. Bouton Publier / Masquer sur les cartes enseignant.
@@ -154,6 +154,7 @@ La suite `test/evaluations_metiers_test.dart` valide **8 scénarios critiques** 
 6. **Isolation enseignant** : l'enseignant A (`tch_alice`) ne voit jamais les quiz, devoirs, documents ni copies à corriger de l'enseignant B (`tch_bob`).
 7. **Filtrage étudiant par cours inscrits** : un étudiant inscrit uniquement à `course_algo_1` ne voit que les quiz publiés, devoirs et documents de `course_algo_1` (ceux de `course_reseau_1` sont masqués).
 8. **Suppression enseignant de bout en bout** : `deleteQuiz`, `deleteAssignment` et `deleteDocument` suppriment immédiatement les éléments créés via `upsertQuiz`, `upsertAssignment` et `upsertDocument`.
+9. **API Notifications Push par cours inscrit** : la publication d'un quiz (`quiz_published`), d'un devoir/dépôt (`assignment_published`) ou d'un document (`document_published`) envoie une notification push uniquement aux étudiants inscrits au cours concerné (aucune notification pour un brouillon ou pour les étudiants non inscrits).
 
 ---
 
@@ -197,3 +198,15 @@ La suite `test/evaluations_metiers_test.dart` valide **8 scénarios critiques** 
 3. **Retour côté Étudiant** :
    - Dans **À faire**, la carte du devoir affiche `17 / 20`, le badge **Copie corrigée** et l'encadré **« Commentaire enseignant : Très bon travail sur l'architecture. »**.
    - Dans **Notes**, la ligne affiche `17 / 20` avec le badge vert **Noté** et peut être exportée en CSV.
+
+#### Scénario E — Notifications Push lors de la publication d'un Quiz, Dépôt ou Document
+1. **Architecture (`EvaluationsPushService`)** :
+   - Dès qu'un enseignant publie un **Quiz** (`createQuiz` avec `isPublished: true`, `upsertQuiz(..., publish: true)`, `publishQuiz` ou `publishQuizToggle(..., true)`), crée un **Devoir / Dépôt** (`createAssignment` / `upsertAssignment`) ou publie un **Document** (`createDocument` / `upsertDocument`), `EvaluationsPushService.instance.notifyCourseStudents(...)` cible **exclusivement** les étudiants inscrits à ce `courseId` (via `CoursesController.instance.notifyEnrolledStudents` + requête Firestore `enrollments` où `courseId == courseId`).
+   - Chaque étudiant inscrit reçoit :
+     1. Une **notification push temps réel** dans la collection Firestore `notifications` (conforme aux règles `firestore.rules` existantes : `fromId == request.auth.uid` et vérification `exists(enrollments/{courseId}_{userId})`).
+     2. Une **bannière push flottante** immédiate à l'écran (`SnackBar` temps réel déclenchée par le flux `snapshots()` et `FirebaseMessaging.onMessage`) ainsi qu'un **badge rouge** sur l'icône cloche dans la barre supérieure des onglets **Évaluations** et **Cours**.
+     3. Un envoi HTTP optionnel vers un relai FCM (`FCM_PUSH_RELAY_URL` dans `.env`) avec les `fcmTokens` des appareils des étudiants inscrits si configuré.
+2. **Comment tester en 30 secondes** :
+   - En mode démonstration (ou avec deux comptes Firebase Enseignant / Étudiant inscrit au cours *Algorithmique*) :
+     - En tant qu'**Enseignant**, créez et publiez un Quiz, un Devoir (dépôt) ou un Document sur le cours *Algorithmique*.
+     - Basculez en **Rôle : Étudiant** (qui est inscrit à *Algorithmique*) : une bannière push apparaît et la **cloche des notifications** en haut à droite de l'onglet **Évaluations** affiche le compteur rouge mis à jour avec les icônes dédiées (Quiz, Devoir, Document).

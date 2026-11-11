@@ -8,6 +8,7 @@ import '../services/evaluations_ai_service.dart';
 import '../services/evaluations_api_service.dart';
 import '../services/evaluations_firestore_service.dart';
 import '../services/evaluations_local_service.dart';
+import '../services/evaluations_push_service.dart';
 import '../repositories/evaluations_repository.dart';
 
 /// Contrôleur d'état réactif du module Évaluations.
@@ -188,6 +189,7 @@ class EvaluationsController extends ChangeNotifier {
       _repo.currentUserRole = currentUserRole;
       await _repo.clearLocalCache();
     }
+    EvaluationsPushService.instance.stopRealtimePushes();
     notifyListeners();
   }
 
@@ -239,6 +241,7 @@ class EvaluationsController extends ChangeNotifier {
       // Liaison L4 réelle : cours possédés (enseignant) ou cours inscrits (étudiant).
       _syncCoursesFromModule();
       _lastCourseIdsSignature = _courses.map((c) => c.id).join(',');
+      EvaluationsPushService.instance.subscribeToRealtimePushes();
       if (_ready) await loadAll();
       notifyListeners();
     } catch (e) {
@@ -305,22 +308,6 @@ class EvaluationsController extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadGradebookAll() async {
-    if (selectedCourseId != null) {
-      await loadGradebook(selectedCourseId!);
-    } else {
-      // Charge le carnet de tous les cours accessibles
-      final allRows = <GradebookRow>[];
-      for (final c in accessibleCourses) {
-        try {
-          final rows = await _repo.getGradebook(c.id);
-          allRows.addAll(rows);
-        } catch (_) {}
-      }
-      gradebookRows = allRows;
-    }
-  }
-
   Future<void> _loadQuizzes() async {
     quizzes = await _repo.getQuizzes(courseId: selectedCourseId);
   }
@@ -376,6 +363,15 @@ class EvaluationsController extends ChangeNotifier {
     return _wrap(() async {
       final quiz = await _repo.createQuiz(body);
       quizzes = [...quizzes, quiz];
+      if (quiz.isPublished) {
+        await _pushCourseNotification(
+          courseId: quiz.courseId,
+          courseTitle: quiz.courseTitle,
+          type: 'quiz_published',
+          title: 'Nouveau quiz publié',
+          body: 'Le quiz « ${quiz.title} » est disponible.',
+        );
+      }
       notifyListeners();
       return quiz;
     });
@@ -416,6 +412,15 @@ class EvaluationsController extends ChangeNotifier {
         title: 'Quiz publié',
         body: 'Le quiz "${published.title}" est maintenant visible.',
       );
+      if (published.isPublished) {
+        await _pushCourseNotification(
+          courseId: published.courseId,
+          courseTitle: published.courseTitle,
+          type: 'quiz_published',
+          title: 'Nouveau quiz publié',
+          body: 'Le quiz « ${published.title} » est maintenant disponible.',
+        );
+      }
       notifyListeners();
       return published;
     });
@@ -477,6 +482,13 @@ class EvaluationsController extends ChangeNotifier {
       _addNotification(
         title: 'Devoir créé',
         body: '"${a.title}" — échéance ${a.dueDate.toLocal()}.',
+      );
+      await _pushCourseNotification(
+        courseId: a.courseId,
+        courseTitle: a.courseTitle,
+        type: 'assignment_published',
+        title: 'Nouveau devoir publié',
+        body: 'Le devoir « ${a.title} » a été publié dans votre cours.',
       );
       notifyListeners();
       return a;
@@ -574,6 +586,14 @@ class EvaluationsController extends ChangeNotifier {
     return _wrap(() async {
       final doc = await _repo.createDocument(body);
       documents = [...documents, doc];
+      await _pushCourseNotification(
+        courseId: doc.courseId,
+        courseTitle: doc.courseTitle,
+        type: 'document_published',
+        title: 'Nouveau document publié',
+        body:
+            'Le support « ${doc.title} » (${doc.folder.label}) a été ajouté au cours.',
+      );
       notifyListeners();
       return doc;
     });
@@ -703,6 +723,28 @@ class EvaluationsController extends ChangeNotifier {
     notifications.insert(
       0,
       EvalNotification(title: title, body: body, createdAt: DateTime.now()),
+    );
+  }
+
+  /// Envoie une notification push (in-app + Firestore + relai FCM) à tous les
+  /// étudiants inscrits au cours [courseId].
+  Future<void> _pushCourseNotification({
+    required String courseId,
+    required String courseTitle,
+    required String type,
+    required String title,
+    required String body,
+  }) async {
+    final resolvedTitle = courseTitle.trim().isNotEmpty
+        ? courseTitle
+        : (_courseTitleFor(courseId) ?? courseId);
+    await EvaluationsPushService.instance.notifyCourseStudents(
+      courseId: courseId,
+      courseTitle: resolvedTitle,
+      type: type,
+      title: title,
+      body: body,
+      senderId: currentUserId,
     );
   }
 
@@ -891,18 +933,18 @@ class EvaluationsController extends ChangeNotifier {
   }
 
   /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
+  /// Lignes du carnet de notes filtrées localement (pour l'écran Carnet).
   /// Correctif : le filtre recevait un IDENTIFIANT de cours et le comparait
   /// au TITRE stocké dans la ligne — aucun résultat n'apparaissait dès
   /// qu'un cours était sélectionné.
-  ///
-  /// Si `gradebookRows` est vide (carnet pas encore synchronisé, mode hors
-  /// ligne), le carnet est consolidé à partir des quiz complétés et des
-  /// devoirs notés présents en mémoire.
+  /// Si `gradebookRows` est vide (hors-ligne, démonstration), consolide en
+  /// temps réel avec les quiz complétés et devoirs notés en mémoire.
   List<GradebookRow> gradebook({String? courseId, String? student}) {
     String? courseTitle;
     if (courseId != null) {
       courseTitle = _courseTitleFor(courseId) ?? courseId;
     }
+    // Si des lignes sont déjà synchronisées du serveur, on les filtre
     if (gradebookRows.isNotEmpty) {
       return gradebookRows.where((r) {
         if (courseTitle != null && r.courseTitle != courseTitle) return false;
@@ -996,16 +1038,20 @@ class EvaluationsController extends ChangeNotifier {
   void upsertQuiz(Quiz quiz, {bool publish = false}) {
     // Mise à jour optimiste locale.
     final idx = quizzes.indexWhere((q) => q.id == quiz.id);
+    final wasPublished = idx >= 0 ? quizzes[idx].isPublished : false;
+    final effectiveQuiz = publish && !quiz.isPublished
+        ? quiz.copyWith(isPublished: true)
+        : quiz;
     if (idx >= 0) {
-      quizzes = [...quizzes]..[idx] = quiz;
+      quizzes = [...quizzes]..[idx] = effectiveQuiz;
     } else {
-      quizzes = [...quizzes, quiz];
+      quizzes = [...quizzes, effectiveQuiz];
     }
     notifyListeners();
     // Persistance en arrière-plan : enregistrement puis positionnement
     // EXPLICITE de l'état publié si demandé (corrige le bug du toggle),
     // rafraîchissement final avec l'état réel renvoyé par la source.
-    final body = _quizToBody(quiz);
+    final body = _quizToBody(effectiveQuiz);
     Future<void> persist() async {
       Quiz stored;
       if (idx >= 0) {
@@ -1022,6 +1068,20 @@ class EvaluationsController extends ChangeNotifier {
         quizzes = quizzes
             .map((q) => q.id == stored.id ? stored : q)
             .toList();
+      }
+      if (stored.isPublished && (idx < 0 || !wasPublished)) {
+        _addNotification(
+          title: 'Quiz publié',
+          body: 'Le quiz "${stored.title}" est maintenant visible.',
+        );
+        await _pushCourseNotification(
+          courseId: stored.courseId,
+          courseTitle: stored.courseTitle,
+          type: 'quiz_published',
+          title: 'Nouveau quiz publié',
+          body:
+              'Le quiz « ${stored.title} » est disponible (${stored.timeLimitMin} min).',
+        );
       }
       notifyListeners();
     }
@@ -1041,6 +1101,14 @@ class EvaluationsController extends ChangeNotifier {
         _addNotification(
           title: 'Quiz publié',
           body: 'Le quiz "${updated.title}" est maintenant visible.',
+        );
+        await _pushCourseNotification(
+          courseId: updated.courseId,
+          courseTitle: updated.courseTitle,
+          type: 'quiz_published',
+          title: 'Nouveau quiz publié',
+          body:
+              'Le quiz « ${updated.title} » est maintenant disponible.',
         );
       }
       notifyListeners();
@@ -1070,6 +1138,18 @@ class EvaluationsController extends ChangeNotifier {
           ...assignments.where((a) => a.id != assignment.id && a.id != stored.id),
           stored,
         ];
+        _addNotification(
+          title: 'Devoir créé',
+          body: 'Le devoir "${stored.title}" est ouvert aux dépôts.',
+        );
+        await _pushCourseNotification(
+          courseId: stored.courseId,
+          courseTitle: stored.courseTitle,
+          type: 'assignment_published',
+          title: 'Nouveau devoir / dépôt publié',
+          body:
+              'Le devoir « ${stored.title} » a été publié dans votre cours.',
+        );
       }
       notifyListeners();
     }
@@ -1101,6 +1181,18 @@ class EvaluationsController extends ChangeNotifier {
           ...documents.where((d) => d.id != doc.id && d.id != stored.id),
           stored,
         ];
+        _addNotification(
+          title: 'Document ajouté',
+          body: 'Le support "${stored.title}" est en ligne.',
+        );
+        await _pushCourseNotification(
+          courseId: stored.courseId,
+          courseTitle: stored.courseTitle,
+          type: 'document_published',
+          title: 'Nouveau document publié',
+          body:
+              'Le support « ${stored.title} » (${stored.folder.label}) a été ajouté au cours.',
+        );
       }
       notifyListeners();
     }

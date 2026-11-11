@@ -164,43 +164,15 @@ class _ForumCodeBlockState extends State<ForumCodeBlock> {
                     icon: const Icon(Icons.copy_rounded,
                         size: 16, color: _lightMuted),
                   ),
-                  TextButton.icon(
-                    onPressed: _explaining ? null : _explain,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _aiText,
-                      disabledForegroundColor: _lightMuted,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    icon: _explaining
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _lightMuted,
-                            ),
-                          )
-                        : const Icon(Icons.auto_awesome_rounded, size: 16),
-                    label: Text(
-                      _explaining
-                          ? 'Analyse...'
-                          : (_errorOutput != null
-                              ? "Expliquer l'erreur"
-                              : 'Expliquer'),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (runnable)
-                    TextButton.icon(
-                      onPressed: _running ? null : _run,
+                  Flexible(
+                    child: TextButton.icon(
+                      onPressed: _explaining ? null : _explain,
                       style: TextButton.styleFrom(
-                        foregroundColor: _okText,
+                        foregroundColor: _aiText,
                         disabledForegroundColor: _lightMuted,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                       ),
-                      icon: _running
+                      icon: _explaining
                           ? const SizedBox(
                               width: 14,
                               height: 14,
@@ -209,12 +181,50 @@ class _ForumCodeBlockState extends State<ForumCodeBlock> {
                                 color: _lightMuted,
                               ),
                             )
-                          : const Icon(Icons.play_arrow_rounded, size: 18),
+                          : const Icon(Icons.auto_awesome_rounded, size: 16),
                       label: Text(
-                        _running ? 'Exécution...' : 'Exécuter',
+                        _explaining
+                            ? 'Analyse...'
+                            : (_errorOutput != null
+                                ? "Expliquer l'erreur"
+                                : 'Expliquer'),
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (runnable)
+                    Flexible(
+                      child: TextButton.icon(
+                        onPressed: _running ? null : _run,
+                        style: TextButton.styleFrom(
+                          foregroundColor: _okText,
+                          disabledForegroundColor: _lightMuted,
+                        ),
+                        icon: _running
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: _lightMuted,
+                                ),
+                              )
+                            : const Icon(Icons.play_arrow_rounded, size: 18),
+                        label: Text(
+                          _running ? 'Exécution...' : 'Exécuter',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),

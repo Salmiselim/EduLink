@@ -315,28 +315,56 @@ class CoursesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Crée une notification pour chaque étudiant inscrit au cours (hors auteur).
-  /// Variante mock : écritures en mémoire. La variante cloud surcharge cette
-  /// méthode pour écrire dans la collection `notifications` de Firestore.
-  void _notifyEnrolled(
+  /// Notifie tous les étudiants inscrits à [courseId] (utilisé par les modules
+  /// Cours et Évaluations lors de la publication d'un cours, chapitre, quiz,
+  /// devoir/dépôt ou document). Retourne la liste des `studentId` notifiés en
+  /// mémoire.
+  List<String> notifyEnrolledStudents(
     String courseId, {
     required String type,
     required String title,
     required String body,
+    String? courseTitleFallback,
+    String? senderIdOverride,
+  }) {
+    return _notifyEnrolled(
+      courseId,
+      type: type,
+      title: title,
+      body: body,
+      courseTitleFallback: courseTitleFallback,
+      senderIdOverride: senderIdOverride,
+    );
+  }
+
+  /// Crée une notification pour chaque étudiant inscrit au cours (hors auteur).
+  /// Variante mock : écritures en mémoire. La variante cloud surcharge cette
+  /// méthode pour écrire dans la collection `notifications` de Firestore.
+  List<String> _notifyEnrolled(
+    String courseId, {
+    required String type,
+    required String title,
+    required String body,
+    String? courseTitleFallback,
+    String? senderIdOverride,
   }) {
     final course = courseById(courseId);
-    if (course == null) return;
+    final resolvedCourseTitle =
+        course?.title ?? courseTitleFallback ?? courseId;
+    final senderId = senderIdOverride ?? currentUserId;
     final stamp = DateTime.now().millisecondsSinceEpoch;
     var index = 0;
+    final notified = <String>[];
     for (final enrollment in enrollmentsOf(courseId)) {
-      if (enrollment.studentId == currentUserId) continue;
+      if (enrollment.studentId == senderId) continue;
+      notified.add(enrollment.studentId);
       _notifications.add(
         CourseNotification(
           id: 'notif_${stamp}_${index++}',
           userId: enrollment.studentId,
-          fromId: currentUserId,
+          fromId: senderId,
           courseId: courseId,
-          courseTitle: course.title,
+          courseTitle: resolvedCourseTitle,
           type: type,
           title: title,
           body: body,
@@ -345,6 +373,7 @@ class CoursesController extends ChangeNotifier {
       );
     }
     if (index > 0) notifyListeners();
+    return notified;
   }
 
   // Traductions assistées par IA (générées par l'enseignant, stockées avec
@@ -1425,17 +1454,32 @@ class CoursesCloudController extends CoursesController {
   /// Variante cloud : les notifications sont écrites dans Firestore pour
   /// chaque étudiant inscrit (une fiche par étudiant, `userId` = destinataire).
   @override
-  void _notifyEnrolled(
+  List<String> _notifyEnrolled(
     String courseId, {
     required String type,
     required String title,
     required String body,
+    String? courseTitleFallback,
+    String? senderIdOverride,
   }) {
-    if (!_cloudReady) {
-      super._notifyEnrolled(courseId, type: type, title: title, body: body);
-      return;
+    final localNotified = super._notifyEnrolled(
+      courseId,
+      type: type,
+      title: title,
+      body: body,
+      courseTitleFallback: courseTitleFallback,
+      senderIdOverride: senderIdOverride,
+    );
+    if (_cloudReady) {
+      _notifyEnrolledOnCloud(
+        courseId,
+        type: type,
+        title: title,
+        body: body,
+        courseTitleFallback: courseTitleFallback,
+      );
     }
-    _notifyEnrolledOnCloud(courseId, type: type, title: title, body: body);
+    return localNotified;
   }
 
   Future<void> _notifyEnrolledOnCloud(
@@ -1443,10 +1487,11 @@ class CoursesCloudController extends CoursesController {
     required String type,
     required String title,
     required String body,
+    String? courseTitleFallback,
   }) async {
     try {
       final course = courseById(courseId);
-      if (course == null) return;
+      final resolvedTitle = course?.title ?? courseTitleFallback ?? courseId;
       final enrollments =
           await _enrollmentsRef.where('courseId', isEqualTo: courseId).get();
       final batch = _db.batch();
@@ -1457,7 +1502,7 @@ class CoursesCloudController extends CoursesController {
           'userId': studentId,
           'fromId': currentUserId,
           'courseId': courseId,
-          'courseTitle': course.title,
+          'courseTitle': resolvedTitle,
           'type': type,
           'title': title,
           'body': body,

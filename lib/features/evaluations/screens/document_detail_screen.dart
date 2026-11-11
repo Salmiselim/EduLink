@@ -94,15 +94,26 @@ class DocumentDetailScreen extends StatelessWidget {
                       ),
                     );
                     if (ok != true || !context.mounted) return;
-                    final messenger = ScaffoldMessenger.of(context);
-                    Navigator.pop(context);
-                    await controller.deleteDocument(doc.id);
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        duration: Duration(seconds: 2),
-                        content: Text('Document supprimé.'),
-                      ),
-                    );
+                    try {
+                      final messenger = ScaffoldMessenger.of(context);
+                      await controller.deleteDocument(doc.id);
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          duration: Duration(seconds: 2),
+                          content: Text('Document supprimé.'),
+                        ),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur : $e'),
+                          backgroundColor: EduColors.danger,
+                        ),
+                      );
+                    }
                   },
                   icon: const Icon(
                     Icons.delete_outline_rounded,

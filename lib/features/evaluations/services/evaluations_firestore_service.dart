@@ -65,12 +65,11 @@ class EvaluationsFirestoreService extends EvaluationsApiService {
     }
   }
 
-  bool _isTeacher = true;
+  bool get _isTeacher => _cachedRole == 'teacher';
 
   /// Met à jour dynamiquement le rôle actif dans le service Firestore
   void setRole(String role) {
     _cachedRole = role;
-    _isTeacher = role == 'teacher';
   }
 
   /// Filtre excluant les documents marqués comme supprimés (soft-delete).
